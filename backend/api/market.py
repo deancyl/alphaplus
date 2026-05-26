@@ -16,9 +16,85 @@ from backend.models.fund import (
 )
 from backend.services.cache import realtime_cache
 from backend.services.akshare_data import akshare_data_service
+from backend.services.index_valuation import get_all_indices_valuation, get_index_pe_history
 from backend.schemas.fund import DashboardResponse, DashboardDataQuality
+from backend.schemas.market import (
+    IndexValuationItem,
+    IndexValuationResponse,
+    IndexPEHistoryItem,
+    IndexPEHistoryResponse,
+)
 
 router = APIRouter()
+
+
+@router.get("/index-valuation", response_model=IndexValuationResponse)
+async def get_all_index_valuations():
+    """
+    指数估值总览 - 返回17个核心指数的PE/PB数据.
+    
+    Performance: <150ms via parallel fetching with asyncio.gather.
+    Graceful degradation: Returns simulated data if AkShare fails.
+    """
+    valuations = await get_all_indices_valuation()
+    
+    items = []
+    for v in valuations:
+        zone = v.get("markarea", {}).get("label", "正常")
+        items.append(IndexValuationItem(
+            index_code=v["index_code"],
+            index_name=v["index_name"],
+            pe_ttm=v["pe_ttm"],
+            pb=v["pb"],
+            dividend_yield=v["dividend_yield"],
+            pe_percentile=v["pe_percentile"],
+            pb_percentile=v["pb_percentile"],
+            zone=zone,
+            is_simulated=v["is_simulated"],
+        ))
+    
+    return IndexValuationResponse(
+        items=items,
+        total=len(items),
+        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+@router.get("/index-valuation/{index_code}/history", response_model=IndexPEHistoryResponse)
+async def get_index_valuation_history(
+    index_code: str,
+    days: int = Query(365, description="历史天数", ge=1, le=3650),
+):
+    """
+    指数PE历史 - 单个指数的历史PE数据.
+    
+    Args:
+        index_code: 指数代码 (如 000300)
+        days: 历史天数 (默认365天)
+    
+    Returns:
+        List of {date, pe, percentile} for charting
+    """
+    from backend.services.index_valuation import CORE_INDICES
+    
+    history_data = await get_index_pe_history(index_code, days)
+    
+    index_name = CORE_INDICES.get(index_code, "未知指数")
+    
+    history_items = [
+        IndexPEHistoryItem(
+            date=h["date"],
+            pe=h["pe_value"],
+            percentile=h["percentile"],
+        )
+        for h in history_data
+    ]
+    
+    return IndexPEHistoryResponse(
+        index_code=index_code,
+        index_name=index_name,
+        history=history_items,
+    )
 
 
 @router.get("/indices")

@@ -168,6 +168,12 @@ def _generate_simulated_valuation(index_code: str, index_name: str) -> Dict[str,
         default_params["pb_mean"] = 4.0
     
     # Generate simulated current values using GBM
+    # Use hash of index_code for seed to handle non-numeric codes
+    try:
+        seed = int(index_code[:6]) % 10000
+    except ValueError:
+        seed = hash(index_code) % 10000
+    
     pe_sim = GBMSimulator(
         S0=default_params["pe_mean"],
         mu=0.0,  # No drift for valuation
@@ -176,7 +182,7 @@ def _generate_simulated_valuation(index_code: str, index_name: str) -> Dict[str,
         N=252,
         n_paths=1
     )
-    pe_paths = pe_sim.simulate(seed=int(index_code[:6]) % 10000)
+    pe_paths = pe_sim.simulate(seed=seed)
     current_pe = float(pe_paths[0, -1])
     
     pb_sim = GBMSimulator(
@@ -187,7 +193,7 @@ def _generate_simulated_valuation(index_code: str, index_name: str) -> Dict[str,
         N=252,
         n_paths=1
     )
-    pb_paths = pb_sim.simulate(seed=int(index_code[:6]) % 10000 + 1000)
+    pb_paths = pb_sim.simulate(seed=seed + 1000)
     current_pb = float(pb_paths[0, -1])
     
     dividend_sim = GBMSimulator(
@@ -198,7 +204,7 @@ def _generate_simulated_valuation(index_code: str, index_name: str) -> Dict[str,
         N=252,
         n_paths=1
     )
-    dividend_paths = dividend_sim.simulate(seed=int(index_code[:6]) % 10000 + 2000)
+    dividend_paths = dividend_sim.simulate(seed=seed + 2000)
     current_dividend = float(dividend_paths[0, -1])
     
     # Generate simulated history for percentile calculation
@@ -452,7 +458,11 @@ async def get_index_pe_history(index_code: str, days: int = 365) -> List[Dict[st
         N=days,
         n_paths=1
     )
-    paths = pe_sim.simulate(seed=int(index_code[:6]) % 10000)
+    try:
+        seed = int(index_code[:6]) % 10000
+    except ValueError:
+        seed = hash(index_code) % 10000
+    paths = pe_sim.simulate(seed=seed)
     pe_history = list(paths[0, :])
     
     result = []

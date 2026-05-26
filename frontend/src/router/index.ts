@@ -98,6 +98,24 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/MarketCrowding.vue'),
     meta: { title: '拥挤度分析' },
   },
+  {
+    path: '/market/indexValuation',
+    name: 'IndexValuation',
+    component: () => import('@/views/IndexValuation.vue'),
+    meta: { title: '指数估值' },
+  },
+  {
+    path: '/fof/fundCalcAIP',
+    name: 'FundCalcAIP',
+    component: () => import('@/views/FundCalcAIP.vue'),
+    meta: { title: '定投计算器' },
+  },
+  {
+    path: '/market/indexZone',
+    name: 'IndexZone',
+    component: () => import('@/views/IndexZone.vue'),
+    meta: { title: '指数专区' },
+  },
   // Product placeholder routes
   {
     path: '/product/wmpFilter',

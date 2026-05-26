@@ -267,3 +267,32 @@ class FundSimilarityResponse(BaseModel):
     factor_exposure: List[FactorExposureItem] = Field(..., description="Factor exposure of input fund")
     calculation_method: str = Field(default="euclidean", description="Distance calculation method")
     elapsed_ms: Optional[float] = Field(None, description="Calculation time in milliseconds")
+
+
+# ==================== AIP Calculator Schemas ====================
+
+class AIPCalculateRequest(BaseModel):
+    """定投计算请求."""
+    fund_code: str = Field(..., description="基金代码")
+    frequency: str = Field(..., pattern="^(weekly|biweekly|monthly)$", description="定投频率: weekly/biweekly/monthly")
+    amount: float = Field(..., gt=0, description="每期投资金额(元)")
+    start_date: str = Field(..., description="开始日期 YYYY-MM-DD")
+    end_date: Optional[str] = Field(default=None, description="结束日期 YYYY-MM-DD, 默认今天")
+
+
+class AIPCalculateResponse(BaseModel):
+    """定投计算响应."""
+    fund_code: str
+    fund_name: str
+    frequency: str
+    amount: float
+    total_investment: float = Field(..., description="累计投资金额")
+    current_value: float = Field(..., description="当前市值")
+    return_rate: float = Field(..., description="收益率(%)")
+    max_drawdown: float = Field(..., description="最大回撤(%)")
+    volatility: float = Field(..., description="年化波动率(%)")
+    periods: int = Field(..., description="投资期数")
+    units_total: float = Field(..., description="累计份额")
+    lump_sum_comparison: dict = Field(..., description="一次性投资对比 {value, return_rate}")
+    investment_dates: List[str] = Field(..., description="投资日期列表")
+    nav_history: List[dict] = Field(..., description="净值历史 [{date, nav, units, value, cumulative_return}]")

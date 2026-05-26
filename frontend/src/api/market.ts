@@ -1,7 +1,37 @@
 /**
  * Market API endpoints
  */
-import api from './index'
+import axios from './index'
+const api = axios
+
+// Index Valuation Item
+export interface IndexValuationItem {
+  index_code: string
+  index_name: string
+  pe_ttm: number
+  pb: number
+  dividend_yield: number
+  pe_percentile: number
+  pb_percentile: number
+  zone: string  // "低估", "正常", "高估"
+  is_simulated: boolean
+}
+
+// Index PE History Item
+export interface IndexPEHistoryItem {
+  trade_date: string
+  pe_ttm: number
+  percentile: number
+}
+
+// Get index valuation list
+export const getIndexValuation = async (): Promise<{ items: IndexValuationItem[], total: number }> => {
+  return api.get('/market/index-valuation')
+}
+
+export const getIndexPEHistory = async (indexCode: string, days: number = 365): Promise<IndexPEHistoryItem[]> => {
+  return api.get(`/market/index-valuation/${indexCode}/history`, { params: { days } })
+}
 
 // Get index quotes (5s cache)
 export const getIndices = async (): Promise<Record<string, {
@@ -14,7 +44,7 @@ export const getIndices = async (): Promise<Record<string, {
 }
 
 // Get index valuation
-export const getIndexValuation = async (
+export const getIndexValuationHistory = async (
   indexCode: string
 ): Promise<Array<{
   trade_date: string

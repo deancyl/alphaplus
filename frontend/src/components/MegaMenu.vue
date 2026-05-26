@@ -35,6 +35,7 @@ const menuItems = [
       { label: '相似度计算', path: '/fof/fundSimilarity', group: '公募基金研究' },
       { label: '基金发行', path: '/fof/fundIssue', group: '公募基金研究' },
       { label: '基金公司', path: '/fof/fundCompany', group: '公募基金研究' },
+      { label: '定投计算器', path: '/fof/fundCalcAIP', group: '公募基金研究', isNew: true },
       { label: '理财筛选', path: '/product/wmpFilter', group: '理财产品', isNew: true },
       { label: '理财对比', path: '/product/wmpCompare', group: '理财产品', isNew: true },
       { label: '保险筛选', path: '/product/insuranceFilter', group: '其他产品', isNew: true },
@@ -57,11 +58,13 @@ const menuItems = [
     ],
   },
   {
-    label: '市场总览',
+    label: '市场研究',
     children: [
       { label: '全球市场', path: '/market/globalMarket' },
       { label: 'A股市场', path: '/market/domesticStockMarket' },
       { label: '债券市场', path: '/market/domesticBondMarket' },
+      { label: '主要指数估值', path: '/market/indexValuation', isNew: true },
+      { label: '指数专区', path: '/market/indexZone', isNew: true },
     ],
   },
   {

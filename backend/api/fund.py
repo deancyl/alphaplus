@@ -20,6 +20,8 @@ from backend.schemas.fund import (
     FundSimilarityResponse,
     SimilarFund,
     FactorExposureItem,
+    AIPCalculateRequest,
+    AIPCalculateResponse,
 )
 from backend.services.correlation import calculate_pearson_matrix, correlation_matrix_to_list
 from backend.services.factor_exposure import FactorExposureAnalyzer, ALL_FACTORS
@@ -373,6 +375,62 @@ async def compare_funds(
         sample_size=len(request.fund_codes),
         data_quality={"is_real_data": is_real_data},
     )
+
+
+@router.post("/aip-calculate", response_model=AIPCalculateResponse)
+async def calculate_aip_endpoint(
+    request: AIPCalculateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    定投收益计算 - 计算定期定额投资的收益、回撤、波动率.
+    支持周定投、双周定投、月定投.
+    """
+    from backend.services.aip_calculator import calculate_aip, AIPCalculatorError
+    from backend.models.fund import FundIndicators
+    
+    try:
+        result = await calculate_aip(
+            fund_code=request.fund_code,
+            frequency=request.frequency,
+            amount=request.amount,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            db=db
+        )
+        
+        fund_result = await db.execute(
+            select(FundIndicators).where(FundIndicators.fund_code == request.fund_code)
+        )
+        fund = fund_result.scalar_one_or_none()
+        fund_name = fund.fund_name if fund else request.fund_code
+        
+        return AIPCalculateResponse(
+            fund_code=request.fund_code,
+            fund_name=fund_name,
+            frequency=request.frequency,
+            amount=request.amount,
+            total_investment=result.total_investment,
+            current_value=result.current_value,
+            return_rate=result.return_rate,
+            max_drawdown=result.max_drawdown,
+            volatility=result.volatility,
+            periods=result.periods,
+            units_total=result.units_total,
+            lump_sum_comparison=result.lump_sum_comparison,
+            investment_dates=result.investment_dates,
+            nav_history=result.nav_history
+        )
+    
+    except AIPCalculatorError as e:
+        error_msg = str(e)
+        if "No NAV history" in error_msg:
+            raise HTTPException(status_code=404, detail=error_msg)
+        else:
+            raise HTTPException(status_code=400, detail=error_msg)
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Calculation error: {str(e)}")
 
 
 @router.get("/{fund_code}")

@@ -122,3 +122,42 @@ export const getFundNavTrend = async (
     params: { days }
   })
 }
+
+// AIP (Automatic Investment Plan) Calculator Types
+export interface AIPCalculateRequest {
+  fund_code: string
+  frequency: 'weekly' | 'biweekly' | 'monthly'
+  amount: number
+  start_date: string
+  end_date?: string
+}
+
+export interface AIPCalculateResponse {
+  fund_code: string
+  fund_name: string
+  frequency: string
+  amount: number
+  total_investment: number
+  current_value: number
+  return_rate: number
+  max_drawdown: number
+  volatility: number
+  periods: number
+  units_total: number
+  lump_sum_comparison: { value: number; return_rate: number }
+  investment_dates: string[]
+  nav_history: Array<{
+    date: string
+    nav: number
+    units: number
+    value: number
+    cumulative_return: number
+  }>
+}
+
+// Calculate AIP
+export const calculateAIP = async (
+  data: AIPCalculateRequest
+): Promise<AIPCalculateResponse> => {
+  return api.post('/fund/aip-calculate', data)
+}
