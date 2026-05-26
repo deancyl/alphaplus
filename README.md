@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.2.0)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.1)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -192,7 +192,7 @@ alphaplus/
 
 ## 版本历史
 
-### v0.2.0 (2026-05-26)
+### v0.1.1 (2026-05-26)
 
 **新功能:**
 - Pandas 内存缓存服务，26,801只基金 ~7ms 筛选
