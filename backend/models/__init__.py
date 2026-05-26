@@ -18,6 +18,8 @@ from backend.models.fund import (
     BacktestStatsMacroStrategies,
     FundNavHistory,
     MarketCalendar,
+    UserFavoritesRegistry,
+    FundPoolRegistry,
 )
 
 __all__ = [
@@ -37,4 +39,6 @@ __all__ = [
     "BacktestStatsMacroStrategies",
     "FundNavHistory",
     "MarketCalendar",
+    "UserFavoritesRegistry",
+    "FundPoolRegistry",
 ]

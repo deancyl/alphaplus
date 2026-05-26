@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.2)
+[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.3)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -203,6 +203,41 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.3 (2026-05-26)
+
+**基金池管理系统:**
+- 三池架构: 准入池 (备选池) / 重点池 (核心池) / 出池 (已清退)
+- 拖拽转移: 卡片拖拽实现池间转移
+- 批量操作: 支持批量添加基金 (<200ms for 50 funds)
+- 状态管理: 活跃/已移除状态跟踪
+
+**我的自选管理:**
+- localStorage 存储: 设备本地持久化，无需认证
+- 混合模式: 支持可选后端同步 (`/api/v1/favorites`)
+- 拖拽重排: 置顶/上移/下移操作
+- 四类资产: 基金/股票/理财/保险分类管理
+- Star 导航: Header 星标图标 + Badge 计数
+
+**产品占位视图:**
+- 理财筛选: "即将上线 - v0.2.0" 占位页
+- 保险筛选: "即将上线 - v0.2.0" 占位页
+- 存款产品: "即将上线 - v0.2.0" 占位页
+- 黄金产品: "即将上线 - v0.2.0" 占位页
+
+**新增 API:**
+- `/api/v1/favorites` 自选 CRUD (GET/POST/DELETE/PUT)
+- `/api/v1/pool` 基金池管理 (6 endpoints)
+- `/api/v1/pool/transfer` 池间转移
+- `/api/v1/pool/bulk-add` 批量添加
+
+**新增数据库表:**
+- `user_favorites_registry` 自选资产注册表
+- `fund_pool_registry` 基金池状态明细表
+
+**测试覆盖:**
+- test_favorites.py: 6 tests (CRUD + reorder)
+- test_pool.py: 6 tests (add/transfer/remove/status)
 
 ### v0.1.2 (2026-05-26)
 

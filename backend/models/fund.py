@@ -2,9 +2,9 @@
 SQLAlchemy models for all database tables.
 Based on PRD Chapter 4 - High-performance local database physical structure design.
 """
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
-from sqlalchemy import String, Float, Integer, Text, Date, Index
+from sqlalchemy import String, Float, Integer, Text, Date, DateTime, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.core.database import Base
@@ -232,4 +232,45 @@ class MarketCalendar(Base):
 
     __table_args__ = (
         Index("idx_market_date", "market_code", "trade_date"),
+    )
+
+
+# ==================== User Favorites & Fund Pool Tables ====================
+
+class UserFavoritesRegistry(Base):
+    """用户收藏注册表 - User favorites for funds, WMPs, stocks, insurance."""
+    __tablename__ = "user_favorites_registry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(50), default="default", index=True)
+    product_type: Mapped[str] = mapped_column(String(20), nullable=False)  # fund, wmp, stock, insurance
+    product_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    product_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)  # For drag-drop reorder
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "product_type", "product_code", name="uq_user_favorites"),
+        Index("idx_user_favorites", "user_id", "product_type"),
+    )
+
+
+class FundPoolRegistry(Base):
+    """基金池注册表 - Entry pool, focus pool, exit pool management."""
+    __tablename__ = "fund_pool_registry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pool_type: Mapped[str] = mapped_column(String(20), nullable=False)  # entry, focus, exit
+    fund_code: Mapped[str] = mapped_column(String(10), nullable=False)
+    fund_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active, removed
+    added_date: Mapped[date] = mapped_column(Date, default=date.today)
+    removed_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("pool_type", "fund_code", name="uq_fund_pool"),
+        Index("idx_fund_pool", "pool_type", "status"),
     )

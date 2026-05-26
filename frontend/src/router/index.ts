@@ -98,6 +98,42 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/MarketCrowding.vue'),
     meta: { title: '拥挤度分析' },
   },
+  // Product placeholder routes
+  {
+    path: '/product/wmpFilter',
+    name: 'WMPFilter',
+    component: () => import('@/views/PlaceholderComingSoon.vue'),
+    props: { title: '理财筛选', description: '净值型理财、现金管理类、固收+理财产品筛选', expectedRelease: 'v0.2.0' },
+    meta: { title: '理财筛选' },
+  },
+  {
+    path: '/product/insuranceFilter',
+    name: 'InsuranceFilter',
+    component: () => import('@/views/PlaceholderComingSoon.vue'),
+    props: { title: '保险筛选', description: '增额终身寿、年金险、重疾险产品对比', expectedRelease: 'v0.2.0' },
+    meta: { title: '保险筛选' },
+  },
+  {
+    path: '/product/deposit',
+    name: 'DepositMarket',
+    component: () => import('@/views/PlaceholderComingSoon.vue'),
+    props: { title: '存款产品', description: '大额存单、结构性存款、同业存款报价', expectedRelease: 'v0.2.0' },
+    meta: { title: '存款产品' },
+  },
+  {
+    path: '/product/gold',
+    name: 'GoldProducts',
+    component: () => import('@/views/PlaceholderComingSoon.vue'),
+    props: { title: '黄金产品', description: '实物金、黄金账户(定期/活期)、积存金', expectedRelease: 'v0.2.0' },
+    meta: { title: '黄金产品' },
+  },
+  // Pool management routes
+  {
+    path: '/pool/fundPool',
+    name: 'FundPoolManagement',
+    component: () => import('@/views/FundPoolManagement.vue'),
+    meta: { title: '基金池管理' },
+  },
 ]
 
 const router = createRouter({

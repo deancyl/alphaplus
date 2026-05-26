@@ -1,19 +1,56 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import MegaMenu from '@/components/MegaMenu.vue'
 import IndexBar from '@/components/IndexBar.vue'
+import FavoritesDrawer from '@/components/FavoritesDrawer.vue'
+
+const favoritesDrawerVisible = ref(false)
+const favoritesCount = ref(0)
+
+const STORAGE_KEY = 'alphaplus_favorites'
+
+const loadFavoritesCount = () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      favoritesCount.value = Object.values(parsed).reduce(
+        (sum: number, arr: unknown) => sum + (Array.isArray(arr) ? arr.length : 0),
+        0
+      )
+    }
+  } catch (error) {
+    console.error('Failed to load favorites count:', error)
+  }
+}
+
+const handleOpenFavorites = () => {
+  favoritesDrawerVisible.value = true
+}
+
+onMounted(() => {
+  loadFavoritesCount()
+  // Listen for storage changes
+  window.addEventListener('storage', loadFavoritesCount)
+})
 </script>
 
 <template>
   <div class="app-container">
     <header class="app-header">
-      <MegaMenu />
+      <MegaMenu @open-favorites="handleOpenFavorites" :favorites-count="favoritesCount" />
       <IndexBar />
     </header>
     
     <main class="app-main">
       <RouterView />
     </main>
+
+    <FavoritesDrawer
+      v-model:visible="favoritesDrawerVisible"
+      @update:visible="favoritesDrawerVisible = $event"
+    />
   </div>
 </template>
 

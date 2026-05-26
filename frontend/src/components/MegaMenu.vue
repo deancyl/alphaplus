@@ -2,6 +2,20 @@
 import { ref, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
+import { ElIcon, ElBadge } from 'element-plus'
+import { StarFilled } from '@element-plus/icons-vue'
+
+interface Props {
+  favoritesCount?: number
+}
+
+withDefaults(defineProps<Props>(), {
+  favoritesCount: 0,
+})
+
+const emit = defineEmits<{
+  'open-favorites': []
+}>()
 
 const router = useRouter()
 const route = useRoute()
@@ -14,13 +28,24 @@ const menuItems = [
     ],
   },
   {
-    label: '公募基金',
+    label: '产品研究',
     children: [
-      { label: '基金筛选', path: '/fof/fundFilter' },
-      { label: '基金对比', path: '/fof/fundCompare' },
-      { label: '相似度计算', path: '/fof/fundSimilarity' },
-      { label: '基金发行', path: '/fof/fundIssue' },
-      { label: '基金公司', path: '/fof/fundCompany' },
+      { label: '基金筛选', path: '/fof/fundFilter', group: '公募基金研究' },
+      { label: '基金对比', path: '/fof/fundCompare', group: '公募基金研究' },
+      { label: '相似度计算', path: '/fof/fundSimilarity', group: '公募基金研究' },
+      { label: '基金发行', path: '/fof/fundIssue', group: '公募基金研究' },
+      { label: '基金公司', path: '/fof/fundCompany', group: '公募基金研究' },
+      { label: '理财筛选', path: '/product/wmpFilter', group: '理财产品', isNew: true },
+      { label: '理财对比', path: '/product/wmpCompare', group: '理财产品', isNew: true },
+      { label: '保险筛选', path: '/product/insuranceFilter', group: '其他产品', isNew: true },
+      { label: '存款产品', path: '/product/deposit', group: '其他产品', isNew: true },
+      { label: '黄金产品', path: '/product/gold', group: '其他产品', isNew: true },
+    ],
+  },
+  {
+    label: '产品管理',
+    children: [
+      { label: '基金池管理', path: '/pool/fundPool', isNew: true },
     ],
   },
   {
@@ -114,6 +139,28 @@ const navigateTo = (path: RouteLocationRaw) => {
   expandedMobileMenu.value = null
 }
 
+const handleOpenFavorites = () => {
+  emit('open-favorites')
+}
+
+const getGroupedChildren = (children: any[]) => {
+  const grouped: Record<string, any[]> = {}
+  children.forEach(child => {
+    if (child.group) {
+      if (!grouped[child.group]) {
+        grouped[child.group] = []
+      }
+      grouped[child.group].push(child)
+    } else {
+      if (!grouped['ungrouped']) {
+        grouped['ungrouped'] = []
+      }
+      grouped['ungrouped'].push(child)
+    }
+  })
+  return grouped
+}
+
 watch(() => route.path, () => {
   mobileMenuOpen.value = false
   expandedMobileMenu.value = null
@@ -146,19 +193,49 @@ onUnmounted(() => {
           <div
             v-if="activeMenu === item.label"
             class="dropdown-panel"
+            :class="{ 'has-groups': item.children.some((c: any) => c.group) }"
           >
-            <div
-              v-for="child in item.children"
-              :key="child.path"
-              class="dropdown-item"
-              @click="navigateTo(child.path)"
-            >
-              <span>{{ child.label }}</span>
-              <span v-if="child.isNew" class="new-badge">新</span>
-            </div>
+            <template v-for="(groupChildren, groupName) in getGroupedChildren(item.children)" :key="groupName">
+              <div v-if="groupName !== 'ungrouped'" class="dropdown-group">
+                <div class="dropdown-group-title">{{ groupName }}</div>
+                <div
+                  v-for="child in groupChildren"
+                  :key="child.path"
+                  class="dropdown-item"
+                  @click="navigateTo(child.path)"
+                >
+                  <span>{{ child.label }}</span>
+                  <span v-if="child.isNew" class="new-badge">新</span>
+                </div>
+              </div>
+            </template>
+            <template v-if="getGroupedChildren(item.children).ungrouped">
+              <div
+                v-for="child in getGroupedChildren(item.children).ungrouped"
+                :key="child.path"
+                class="dropdown-item"
+                @click="navigateTo(child.path)"
+              >
+                <span>{{ child.label }}</span>
+                <span v-if="child.isNew" class="new-badge">新</span>
+              </div>
+            </template>
           </div>
         </Transition>
       </div>
+    </div>
+
+    <!-- Favorites Icon -->
+    <div class="favorites-icon hide-mobile" @click="handleOpenFavorites">
+      <ElBadge
+        :value="favoritesCount"
+        :hidden="favoritesCount === 0"
+        class="favorites-badge"
+      >
+        <ElIcon class="star-icon">
+          <StarFilled />
+        </ElIcon>
+      </ElBadge>
     </div>
 
     <!-- Mobile Hamburger Button -->
@@ -210,15 +287,31 @@ onUnmounted(() => {
             
             <Transition name="expand">
               <div v-if="expandedMobileMenu === item.label" class="mobile-submenu">
-                <div
-                  v-for="child in item.children"
-                  :key="child.path"
-                  class="mobile-menu-item"
-                  @click="navigateTo(child.path)"
-                >
-                  <span>{{ child.label }}</span>
-                  <span v-if="child.isNew" class="new-badge">新</span>
-                </div>
+                <template v-for="(groupChildren, groupName) in getGroupedChildren(item.children)" :key="groupName">
+                  <div v-if="groupName !== 'ungrouped'" class="mobile-group">
+                    <div class="mobile-group-title">{{ groupName }}</div>
+                    <div
+                      v-for="child in groupChildren"
+                      :key="child.path"
+                      class="mobile-menu-item"
+                      @click="navigateTo(child.path)"
+                    >
+                      <span>{{ child.label }}</span>
+                      <span v-if="child.isNew" class="new-badge">新</span>
+                    </div>
+                  </div>
+                </template>
+                <template v-if="getGroupedChildren(item.children).ungrouped">
+                  <div
+                    v-for="child in getGroupedChildren(item.children).ungrouped"
+                    :key="child.path"
+                    class="mobile-menu-item"
+                    @click="navigateTo(child.path)"
+                  >
+                    <span>{{ child.label }}</span>
+                    <span v-if="child.isNew" class="new-badge">新</span>
+                  </div>
+                </template>
               </div>
             </Transition>
           </div>
@@ -254,6 +347,40 @@ onUnmounted(() => {
   gap: 4px;
 }
 
+.favorites-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.favorites-icon:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.favorites-badge :deep(.el-badge__content) {
+  background-color: var(--market-up);
+  font-size: 11px;
+  height: 18px;
+  line-height: 18px;
+  padding: 0 6px;
+  border: none;
+}
+
+.star-icon {
+  font-size: 20px;
+  color: white;
+  transition: transform 0.2s, color 0.2s;
+}
+
+.favorites-icon:hover .star-icon {
+  transform: scale(1.1);
+  color: #FFD700;
+}
+
 .menu-item {
   position: relative;
   padding: 0 12px;
@@ -283,6 +410,29 @@ onUnmounted(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   padding: 8px 0;
   z-index: 1000;
+}
+
+.dropdown-panel.has-groups {
+  min-width: 200px;
+  max-width: 280px;
+}
+
+.dropdown-group {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-line);
+}
+
+.dropdown-group:last-child {
+  border-bottom: none;
+}
+
+.dropdown-group-title {
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .dropdown-item {
@@ -432,6 +582,25 @@ onUnmounted(() => {
 
 .mobile-submenu {
   background: var(--bg-system);
+}
+
+.mobile-group {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-line);
+}
+
+.mobile-group:last-child {
+  border-bottom: none;
+}
+
+.mobile-group-title {
+  padding: 8px var(--spacing-md);
+  padding-left: calc(var(--spacing-md) + var(--spacing-md));
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .mobile-menu-item {

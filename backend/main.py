@@ -93,10 +93,14 @@ async def health_check():
 from backend.api.fund import router as fund_router
 from backend.api.market import router as market_router
 from backend.api.analytics import router as analytics_router
+from backend.api.pool import pool_router
+from backend.api.favorites import favorites_router
 
 app.include_router(fund_router, prefix="/api/v1/fund", tags=["Fund"])
 app.include_router(market_router, prefix="/api/v1/market", tags=["Market"])
 app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["Analytics"])
+app.include_router(pool_router, prefix="/api/v1", tags=["pool"])
+app.include_router(favorites_router, prefix="/api/v1", tags=["favorites"])
 
 
 if __name__ == "__main__":
