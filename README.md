@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.0)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.2.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -14,33 +14,43 @@
 | 模块 | 功能 | 数据来源 |
 |------|------|----------|
 | 首页宏观复盘 | 恐惧贪婪指数、ERP、风格强度、拥挤度 | AkShare |
-| 基金筛选 | 5维度穿透筛选，26,801只基金 | AkShare |
-| 基金对比 | 相关性矩阵，最多15只基金 | 本地计算 |
-| 相似度计算器 | 基金相似度分析 | 本地计算 |
+| 基金筛选 | 5维度穿透筛选，26,801只基金，毫秒级响应 | AkShare |
+| 基金对比 | 相关性热力矩阵，最多15只基金，实时计算 | 本地计算 |
+| 相似度计算器 | 14因子暴露分析，SLSQP风格归因 | 本地计算 |
 | 基金发行看板 | 新发基金周历管线 | AkShare |
-| 基金公司透视 | 215家基金公司总览 | AkShare |
+| 基金公司透视 | Treemap资产分布 + 经理四象限气泡图 | AkShare |
 | 股票行情 | A股实时行情 | AkShare |
 | 债券行情 | 国债/信用债收益率曲线 | AkShare |
 | 期货行情 | 商品/金融期货报价 | AkShare |
 | 全球市场总览 | 8大全球指数、汇率、大宗商品 | AkShare |
 | A股市场总览 | 7大A股指数、行业表现、北向资金 | AkShare |
 | 债券市场总览 | 国债/国开债收益率曲线 | AkShare |
-| 恐惧贪婪指数 | 7因子情绪指标 | 本地计算 |
+| 恐惧贪婪指数 | 半圆Gauge + 六维拓扑树 | 本地计算 |
 | 市场风格强度 | 大小盘/成长价值风格切换 | AkShare |
-| 股债ERP | 估值分位数分析 | AkShare |
-| 市场拥挤度分析 | 资产拥挤度评分 | 本地计算 |
+| 股债ERP | SD/百分位双视角，±1SD/±2SD参考线 | AkShare |
+| 市场拥挤度分析 | 相空间轨迹向量图，轮动动量可视化 | 本地计算 |
 
 ### 技术亮点
 
 - **零数据成本**: 全部数据来自 AkShare 免费数据源
-- **高性能查询**: SQLite WAL 模式，支持万级基金毫秒级筛选
+- **高性能查询**: 
+  - SQLite WAL 模式 + 64MB 缓存
+  - Pandas 内存筛选，26,801只基金 ~7ms 响应
+- **量化引擎**:
+  - 相空间轨迹计算 (位置、速度、加速度)
+  - SciPy SLSQP 多因子暴露分析
+  - 实时 Pearson 相关系数矩阵
+- **高级可视化**:
+  - ECharts markArea 估值区间着色
+  - Sparkline 表格内嵌微图表
+  - 相空间轨迹向量动画
 - **移动端适配**: 响应式设计，支持手机/平板/电脑
 - **实时刷新**: 30秒自动刷新行情数据
 
 ## 技术栈
 
-**后端**: FastAPI + SQLite (WAL) + APScheduler + AkShare  
-**前端**: Vue3 + TypeScript + Vite + ECharts + Element Plus
+**后端**: FastAPI + SQLite (WAL) + APScheduler + AkShare + Pandas + SciPy  
+**前端**: Vue3 + TypeScript + Vite + ECharts + Element Plus + Tailwind CSS
 
 ## 快速开始
 
@@ -91,6 +101,8 @@ alphaplus/
 │   ├── schemas/          # Pydantic 模式
 │   ├── services/         # 业务逻辑
 │   │   ├── akshare_data.py  # AkShare 数据服务
+│   │   ├── pandas_cache.py  # Pandas 内存缓存
+│   │   ├── quant_engine.py  # 量化计算引擎
 │   │   ├── cache.py      # 缓存服务
 │   │   └── ingestion.py  # 数据导入服务
 │   └── main.py           # 应用入口
@@ -98,12 +110,14 @@ alphaplus/
 │   ├── src/
 │   │   ├── views/        # 16个页面组件
 │   │   ├── components/   # 通用组件
-│   │   │   ├── MegaMenu.vue    # 导航菜单 (支持移动端)
-│   │   │   ├── IndexBar.vue    # 实时行情条
-│   │   │   └── EChartsWrapper.vue  # 图表封装
+│   │   │   ├── MegaMenu.vue      # 导航菜单 (支持移动端)
+│   │   │   ├── SplitPanel.vue    # 弹性分栏组件
+│   │   │   ├── IndexBar.vue      # 实时行情条
+│   │   │   └── EChartsWrapper.vue # 图表封装 (markArea/sparkline/heatmap)
 │   │   ├── api/          # API 服务层
 │   │   ├── router/       # 路由配置
 │   │   └── assets/styles/ # 全局样式
+│   ├── tailwind.config.js # Tailwind 配置
 │   └── vite.config.ts    # Vite 配置
 ├── scripts/               # 工具脚本
 │   ├── fetch_real_data.py # 数据导入脚本
@@ -117,9 +131,9 @@ alphaplus/
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
-| `/api/v1/fund/filter` | POST | 基金筛选 (支持5维度过滤) |
+| `/api/v1/fund/filter` | POST | 基金筛选 (支持5维度过滤，毫秒级响应) |
 | `/api/v1/fund/{code}` | GET | 基金详情 |
-| `/api/v1/fund/compare` | POST | 基金对比 (相关性矩阵) |
+| `/api/v1/fund/compare` | POST | 基金对比 (实时相关性矩阵) |
 | `/api/v1/fund/issue` | GET | 基金发行日历 |
 | `/api/v1/fund/company` | GET | 基金公司列表 |
 
@@ -141,6 +155,8 @@ alphaplus/
 | `/api/v1/analytics/erp` | GET | 股债ERP |
 | `/api/v1/analytics/style-strength` | GET | 风格强度 |
 | `/api/v1/analytics/crowding` | GET | 拥挤度分析 |
+| `/api/v1/analytics/rotation-vector` | GET | 相空间轨迹向量 |
+| `/api/v1/analytics/factor-exposure` | GET | 多因子暴露分析 |
 
 ## 配置说明
 
@@ -175,6 +191,29 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.2.0 (2026-05-26)
+
+**新功能:**
+- Pandas 内存缓存服务，26,801只基金 ~7ms 筛选
+- 相空间轨迹计算引擎，支持轮动动量可视化
+- 实时 Pearson 相关系数矩阵，1小时缓存
+- 7个前端视图增强 (SplitPanel, Treemap, 轨迹图等)
+- Tailwind CSS 集成，PRD 语义色
+
+**前端增强:**
+- FundFilter: SplitPanel + sparkline + 300ms debounce
+- FundCompare: 三角热力矩阵 + 拖拽重排 + 15只限制
+- FundSimilarity: 14列因子暴露表 + 颜色编码
+- FundCompany: Treemap资产分布 + 经理四象限图
+- MarketCrowding: 相空间轨迹向量 + 动画控制
+- FearGreed: 半圆Gauge + 六维拓扑树
+- ERPSpread: SD/百分位切换 + ±1SD/±2SD线
+
+**后端增强:**
+- `pandas_cache.py`: GLOBAL_FUND_DF 单例缓存
+- `quant_engine.py`: 相空间轨迹计算模块
+- 基金对比相关系数缓存
 
 ### v0.1.0 (2026-05-26)
 
@@ -217,3 +256,4 @@ MIT
 - [Vue.js](https://vuejs.org/) - 渐进式 JavaScript 框架
 - [ECharts](https://echarts.apache.org/) - 可视化图表库
 - [Element Plus](https://element-plus.org/) - Vue 3 UI 组件库
+- [Tailwind CSS](https://tailwindcss.com/) - 实用优先的 CSS 框架
