@@ -54,6 +54,16 @@ class SchedulerService:
     def _add_jobs(self):
         """Add all scheduled jobs."""
         
+        # Job 0: Pandas cache refresh at 17:00
+        self._scheduler.add_job(
+            self._refresh_pandas_cache,
+            trigger=CronTrigger(hour=17, minute=0),
+            id="pandas_cache_refresh",
+            name="Pandas缓存刷新",
+            replace_existing=True,
+            max_instances=1,
+        )
+        
         # Job 1: Fund data sync at 18:00
         self._scheduler.add_job(
             self._sync_fund_data,
@@ -87,6 +97,15 @@ class SchedulerService:
             replace_existing=True,
             max_instances=1,
         )
+    
+    async def _refresh_pandas_cache(self):
+        """Refresh Pandas in-memory cache."""
+        from backend.services.pandas_cache import GLOBAL_FUND_DF
+        try:
+            stats = GLOBAL_FUND_DF.refresh_cache()
+            print(f"Pandas cache refreshed: {stats}")
+        except Exception as e:
+            print(f"Pandas cache refresh error: {e}")
     
     async def _sync_fund_data(self):
         """Sync fund data from AkShare."""

@@ -1,0 +1,11 @@
+/**
+ * Tailwind CSS Directives
+ * Import this file in main.ts to enable Tailwind utilities
+ * 
+ * Note: Preflight is disabled in tailwind.config.js to preserve
+ * existing CSS variables and global styles in main.css
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

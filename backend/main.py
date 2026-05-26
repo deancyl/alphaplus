@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.core import settings, init_db_pragma, async_engine, Base
 from backend.services.scheduler import scheduler_service
 from backend.services.cache import realtime_cache
+from backend.services.pandas_cache import GLOBAL_FUND_DF
 
 
 @asynccontextmanager
@@ -31,7 +32,10 @@ async def lifespan(app: FastAPI):
     # 3. Initialize real-time cache
     await realtime_cache.initialize()
     
-    # 4. Start scheduler
+    # 4. Initialize Pandas in-memory cache (lazy load)
+    GLOBAL_FUND_DF.df
+    
+    # 5. Start scheduler
     if settings.scheduler_enabled:
         await scheduler_service.start()
     

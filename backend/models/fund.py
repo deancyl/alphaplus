@@ -201,3 +201,17 @@ class BacktestStatsMacroStrategies(Base):
     holding_period: Mapped[str] = mapped_column(String(10), primary_key=True)  # 3M/6M/1Y
     win_probability: Mapped[float] = mapped_column(Float)  # 0-100%
     avg_return: Mapped[float] = mapped_column(Float)  # %
+
+
+class FundNavHistory(Base):
+    """基金净值历史表 - For correlation matrix calculation."""
+    __tablename__ = "fund_nav_history"
+
+    fund_code: Mapped[str] = mapped_column(String(10), primary_key=True)
+    nav_date: Mapped[str] = mapped_column(String(10), primary_key=True)  # YYYY-MM-DD
+    nav_value: Mapped[float] = mapped_column(Float)  # 单位净值
+    daily_return: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 日收益率%
+
+    __table_args__ = (
+        Index("idx_fund_nav", "fund_code", "nav_date"),
+    )

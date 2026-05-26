@@ -252,6 +252,68 @@ class AkShareDataService:
         except Exception as e:
             logger.error(f"Failed to fetch heatmap data: {e}")
             return {"rows": [], "cols": [], "cells": []}
+    
+    async def get_fund_nav_history(self, fund_code: str, days: int = 252) -> dict:
+        """
+        Fetch historical NAV data for a specific fund.
+        
+        Args:
+            fund_code: Fund code (e.g., "000001")
+            days: Number of trading days to fetch (default: 252 = 1 year)
+        
+        Returns:
+            Dict with 'dates' (list of date strings) and 'nav_values' (list of floats)
+        
+        Raises:
+            AkShareDataError: If data fetch fails
+        """
+        try:
+            df = await self._run_sync(
+                ak.fund_open_fund_info_em,
+                symbol=fund_code,
+                indicator="单位净值走势",
+                period="1年"
+            )
+            
+            if df.empty:
+                raise AkShareDataError(f"No NAV history found for fund {fund_code}")
+            
+            df.columns = ['date', 'nav', 'daily_return']
+            df = df.sort_values('date', ascending=False).head(days)
+            df = df.iloc[::-1]
+            
+            return {
+                "fund_code": fund_code,
+                "dates": df['date'].tolist(),
+                "nav_values": df['nav'].astype(float).tolist(),
+                "daily_returns": df['daily_return'].astype(float).tolist() if 'daily_return' in df.columns else None,
+            }
+        except AkShareDataError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to fetch NAV history for {fund_code}: {e}")
+            raise AkShareDataError(f"Failed to fetch NAV history for fund {fund_code}: {e}")
+    
+    async def get_multiple_fund_nav_histories(self, fund_codes: list[str], days: int = 252) -> dict[str, dict]:
+        """
+        Fetch historical NAV data for multiple funds.
+        
+        Args:
+            fund_codes: List of fund codes
+            days: Number of trading days to fetch per fund
+        
+        Returns:
+            Dict mapping fund_code to NAV history data
+        """
+        results = {}
+        for code in fund_codes:
+            try:
+                results[code] = await self.get_fund_nav_history(code, days)
+            except AkShareDataError as e:
+                logger.warning(f"Skipping fund {code}: {e}")
+                results[code] = None
+        
+        return results
 
 
 akshare_data_service = AkShareDataService()

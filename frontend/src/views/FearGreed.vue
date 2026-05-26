@@ -17,17 +17,24 @@ interface FearGreedData {
   factor_stock_strength: number | null
 }
 
+// Factor configuration for topology
+interface FactorConfig {
+  key: keyof FearGreedData
+  label: string
+  description: string
+  position: { x: number; y: number }
+  angle: number
+}
+
 // Reactive state
 const loading = ref(false)
 const fearGreedData = ref<FearGreedData[]>([])
 const gaugeChart = ref<echarts.ECharts | null>(null)
 const trendChart = ref<echarts.ECharts | null>(null)
-const radarChart = ref<echarts.ECharts | null>(null)
 
 // Chart DOM refs
 const gaugeChartRef = ref<HTMLElement | null>(null)
 const trendChartRef = ref<HTMLElement | null>(null)
-const radarChartRef = ref<HTMLElement | null>(null)
 
 // Current data (latest)
 const currentData = computed<FearGreedData | null>(() => {
@@ -37,38 +44,38 @@ const currentData = computed<FearGreedData | null>(() => {
 
 // Sentiment zone colors
 const getSentimentColor = (score: number): string => {
-  if (score <= 20) return '#E63935' // 极度恐惧 - red
-  if (score <= 40) return '#FF9800' // 恐惧 - orange
-  if (score <= 60) return '#999999' // 中性 - gray
-  if (score <= 80) return '#2E7D32' // 贪婪 - green
+  if (score <= 25) return '#E63935' // 极度恐惧 - red
+  if (score <= 45) return '#FF9800' // 恐惧 - orange
+  if (score <= 55) return '#999999' // 中性 - gray
+  if (score <= 75) return '#2E7D32' // 贪婪 - green
   return '#1565C0' // 极度贪婪 - blue
 }
 
 const getSentimentLabel = (score: number): string => {
-  if (score <= 20) return '极度恐惧'
-  if (score <= 40) return '恐惧'
-  if (score <= 60) return '中性'
-  if (score <= 80) return '贪婪'
+  if (score <= 25) return '极度恐惧'
+  if (score <= 45) return '恐惧'
+  if (score <= 55) return '中性'
+  if (score <= 75) return '贪婪'
   return '极度贪婪'
 }
 
 const getSentimentBgClass = (score: number): string => {
-  if (score <= 20) return 'status-extreme-fear'
-  if (score <= 40) return 'status-fear'
-  if (score <= 60) return 'status-neutral'
-  if (score <= 80) return 'status-greed'
+  if (score <= 25) return 'status-extreme-fear'
+  if (score <= 45) return 'status-fear'
+  if (score <= 55) return 'status-neutral'
+  if (score <= 75) return 'status-greed'
   return 'status-extreme-greed'
 }
 
-// Factor labels for display
-const factorLabels: Record<string, string> = {
-  factor_volatility: '波动率',
-  factor_safe_haven: '避险情绪',
-  factor_margin_ratio: '融资余额',
-  factor_volume_deviation: '成交量偏离',
-  factor_futures_basis: '期货基差',
-  factor_stock_strength: '股票强度',
-}
+// Factor configuration for topology tree
+const factorConfigs: FactorConfig[] = [
+  { key: 'factor_volatility', label: '波动率', description: '市场波动性指标', position: { x: 15, y: 20 }, angle: -60 },
+  { key: 'factor_margin_ratio', label: '融资余额', description: '杠杆资金变化', position: { x: 50, y: 5 }, angle: -30 },
+  { key: 'factor_stock_strength', label: '股票强度', description: '个股表现强度', position: { x: 85, y: 20 }, angle: 0 },
+  { key: 'factor_safe_haven', label: '避险情绪', description: '避险资产需求', position: { x: 85, y: 80 }, angle: 60 },
+  { key: 'factor_futures_basis', label: '期货基差', description: '期现价差', position: { x: 50, y: 95 }, angle: 30 },
+  { key: 'factor_volume_deviation', label: '成交量偏离', description: '成交量异常', position: { x: 15, y: 80 }, angle: 120 },
+]
 
 // Format date
 const formatDate = (dateStr: string): string => {
@@ -76,7 +83,14 @@ const formatDate = (dateStr: string): string => {
   return `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`
 }
 
-// Initialize gauge chart
+// Get factor value safely
+const getFactorValue = (key: keyof FearGreedData): number => {
+  if (!currentData.value) return 0
+  const value = currentData.value[key]
+  return value !== null && typeof value === 'number' ? Math.max(0, Math.min(100, value)) : 0
+}
+
+// Initialize gauge chart with enhanced animation
 const initGaugeChart = () => {
   if (!gaugeChartRef.value || !currentData.value) return
 
@@ -87,6 +101,7 @@ const initGaugeChart = () => {
   gaugeChart.value = echarts.init(gaugeChartRef.value)
   const score = currentData.value.composite_score
   const color = getSentimentColor(score)
+  const label = getSentimentLabel(score)
 
   const option: echarts.EChartsOption = {
     series: [
@@ -97,70 +112,97 @@ const initGaugeChart = () => {
         min: 0,
         max: 100,
         splitNumber: 5,
-        radius: '100%',
-        center: ['50%', '70%'],
+        radius: '95%',
+        center: ['50%', '65%'],
         axisLine: {
           lineStyle: {
-            width: 20,
+            width: 30,
             color: [
-              [0.2, '#E63935'],
-              [0.4, '#FF9800'],
-              [0.6, '#999999'],
-              [0.8, '#2E7D32'],
+              [0.25, '#E63935'],
+              [0.45, '#FF9800'],
+              [0.55, '#999999'],
+              [0.75, '#2E7D32'],
               [1, '#1565C0'],
             ],
           },
         },
         pointer: {
-          width: 5,
-          length: '60%',
+          width: 6,
+          length: '55%',
           itemStyle: {
             color: color,
+            shadowColor: 'rgba(0, 0, 0, 0.3)',
+            shadowBlur: 8,
+            shadowOffsetX: 2,
+            shadowOffsetY: 2,
+          },
+        },
+        anchor: {
+          show: true,
+          showAbove: true,
+          size: 18,
+          itemStyle: {
+            borderWidth: 4,
+            borderColor: color,
+            color: '#FFFFFF',
+            shadowColor: 'rgba(0, 0, 0, 0.2)',
+            shadowBlur: 6,
           },
         },
         axisTick: {
-          distance: -20,
-          length: 6,
+          distance: -30,
+          length: 8,
           lineStyle: {
             color: '#999',
             width: 1,
           },
         },
         splitLine: {
-          distance: -20,
-          length: 12,
+          distance: -30,
+          length: 15,
           lineStyle: {
             color: '#999',
             width: 2,
           },
         },
         axisLabel: {
-          distance: -35,
+          distance: -45,
           color: '#4A4A4A',
-          fontSize: 12,
+          fontSize: 11,
           formatter: (value: number) => {
             if (value === 0) return '极度恐惧'
-            if (value === 20) return '恐惧'
-            if (value === 40) return '中性'
-            if (value === 60) return '贪婪'
-            if (value === 80) return '极度贪婪'
-            if (value === 100) return ''
+            if (value === 25) return '恐惧'
+            if (value === 50) return '中性'
+            if (value === 75) return '贪婪'
+            if (value === 100) return '极度贪婪'
             return ''
           },
+        },
+        title: {
+          show: true,
+          offsetCenter: [0, '25%'],
+          fontSize: 16,
+          fontWeight: 600,
+          color: color,
+          formatter: () => label,
         },
         detail: {
           valueAnimation: true,
           formatter: '{value}',
-          fontSize: 36,
+          fontSize: 48,
           fontWeight: 'bold',
           color: color,
-          offsetCenter: [0, '10%'],
+          offsetCenter: [0, '-5%'],
+          fontFamily: 'DIN Alternate, -apple-system, sans-serif',
         },
         data: [
           {
             value: score,
           },
         ],
+        animation: true,
+        animationDuration: 2000,
+        animationEasing: 'cubicOut',
       },
     ],
   }
@@ -168,7 +210,7 @@ const initGaugeChart = () => {
   gaugeChart.value.setOption(option)
 }
 
-// Initialize trend chart
+// Initialize trend chart with zone shading
 const initTrendChart = () => {
   if (!trendChartRef.value || fearGreedData.value.length === 0) return
 
@@ -180,6 +222,7 @@ const initTrendChart = () => {
 
   const dates = fearGreedData.value.map(d => formatDate(d.trade_date))
   const scores = fearGreedData.value.map(d => d.composite_score)
+  const lastIndex = scores.length - 1
 
   const option: echarts.EChartsOption = {
     tooltip: {
@@ -191,14 +234,15 @@ const initTrendChart = () => {
         color: '#1A1A1A',
       },
       formatter: (params: unknown) => {
-        const p = params as Array<{ axisValue: string; value: number; marker: string }>
+        const p = params as Array<{ axisValue: string; value: number; marker: string; dataIndex: number }>
         if (!p || p.length === 0) return ''
         const data = p[0]
         const score = data.value
         const status = getSentimentLabel(score)
+        const isLatest = data.dataIndex === lastIndex
         return `
           <div style="padding: 8px;">
-            <div style="font-weight: 600; margin-bottom: 4px;">${data.axisValue}</div>
+            <div style="font-weight: 600; margin-bottom: 4px;">${data.axisValue} ${isLatest ? '<span style="color: #1565C0;">(当前)</span>' : ''}</div>
             <div>${data.marker} 恐惧贪婪指数: <strong>${score}</strong></div>
             <div style="color: ${getSentimentColor(score)};">情绪状态: ${status}</div>
           </div>
@@ -208,7 +252,7 @@ const initTrendChart = () => {
     grid: {
       left: '3%',
       right: '4%',
-      bottom: '3%',
+      bottom: '15%',
       top: '10%',
       containLabel: true,
     },
@@ -251,27 +295,39 @@ const initTrendChart = () => {
     visualMap: {
       show: false,
       pieces: [
-        { lte: 20, color: '#E63935' },
-        { gt: 20, lte: 40, color: '#FF9800' },
-        { gt: 40, lte: 60, color: '#999999' },
-        { gt: 60, lte: 80, color: '#2E7D32' },
-        { gt: 80, color: '#1565C0' },
+        { lte: 25, color: '#E63935' },
+        { gt: 25, lte: 45, color: '#FF9800' },
+        { gt: 45, lte: 55, color: '#999999' },
+        { gt: 55, lte: 75, color: '#2E7D32' },
+        { gt: 75, color: '#1565C0' },
       ],
     },
     series: [
       {
-        type: 'line',
+        type: 'line' as any,
         data: scores,
         smooth: true,
         symbol: 'circle',
-        symbolSize: 4,
+        symbolSize: function (value: number, params: { dataIndex: number }) {
+          return params.dataIndex === lastIndex ? 10 : 4
+        },
+        itemStyle: {
+          color: function (params: { dataIndex: number; value?: number }) {
+            return params.dataIndex === lastIndex ? '#1565C0' : getSentimentColor(params.value as number)
+          },
+          borderWidth: function (params: { dataIndex: number }) {
+            return params.dataIndex === lastIndex ? 3 : 0
+          },
+          borderColor: '#FFFFFF',
+        },
         lineStyle: {
-          width: 2,
+          width: 2.5,
         },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(21, 101, 192, 0.3)' },
-            { offset: 1, color: 'rgba(21, 101, 192, 0.05)' },
+            { offset: 0, color: 'rgba(21, 101, 192, 0.25)' },
+            { offset: 0.5, color: 'rgba(21, 101, 192, 0.1)' },
+            { offset: 1, color: 'rgba(21, 101, 192, 0.02)' },
           ]),
         },
         markLine: {
@@ -281,11 +337,49 @@ const initTrendChart = () => {
             type: 'dashed',
             width: 1,
           },
+          label: {
+            show: true,
+            position: 'insideEndTop',
+            fontSize: 10,
+            color: '#666',
+          },
           data: [
-            { yAxis: 20, lineStyle: { color: '#E63935' }, label: { formatter: '极度恐惧', position: 'end' } },
-            { yAxis: 40, lineStyle: { color: '#FF9800' }, label: { formatter: '恐惧', position: 'end' } },
-            { yAxis: 60, lineStyle: { color: '#999999' }, label: { formatter: '中性', position: 'end' } },
-            { yAxis: 80, lineStyle: { color: '#2E7D32' }, label: { formatter: '贪婪', position: 'end' } },
+            { yAxis: 25, lineStyle: { color: '#E63935' }, label: { formatter: '极度恐惧' } },
+            { yAxis: 45, lineStyle: { color: '#FF9800' }, label: { formatter: '恐惧' } },
+            { yAxis: 55, lineStyle: { color: '#999999' }, label: { formatter: '中性' } },
+            { yAxis: 75, lineStyle: { color: '#2E7D32' }, label: { formatter: '贪婪' } },
+          ],
+        },
+        markArea: {
+          silent: true,
+          data: [
+            [
+              { yAxis: 0, itemStyle: { color: 'rgba(230, 57, 53, 0.06)' } },
+              { yAxis: 25 },
+            ],
+            [
+              { yAxis: 75, itemStyle: { color: 'rgba(21, 101, 192, 0.06)' } },
+              { yAxis: 100 },
+            ],
+          ],
+        },
+        markPoint: {
+          symbol: 'pin',
+          symbolSize: 40,
+          data: [
+            {
+              coord: [dates[lastIndex], scores[lastIndex]],
+              value: scores[lastIndex],
+              itemStyle: {
+                color: getSentimentColor(scores[lastIndex]),
+              },
+              label: {
+                show: true,
+                color: '#FFFFFF',
+                fontSize: 11,
+                fontWeight: 'bold',
+              },
+            },
           ],
         },
       },
@@ -293,97 +387,6 @@ const initTrendChart = () => {
   }
 
   trendChart.value.setOption(option)
-}
-
-// Initialize radar chart
-const initRadarChart = () => {
-  if (!radarChartRef.value || !currentData.value) return
-
-  if (radarChart.value) {
-    radarChart.value.dispose()
-  }
-
-  radarChart.value = echarts.init(radarChartRef.value)
-
-  const data = currentData.value
-  const factorKeys = [
-    'factor_volatility',
-    'factor_safe_haven',
-    'factor_margin_ratio',
-    'factor_volume_deviation',
-    'factor_futures_basis',
-    'factor_stock_strength',
-  ] as const
-
-  const radarData = factorKeys.map(key => {
-    const value = data[key]
-    return value !== null ? Math.max(0, Math.min(100, value)) : 0
-  })
-
-  const option: echarts.EChartsOption = {
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      borderColor: '#E5E8ED',
-      borderWidth: 1,
-      textStyle: {
-        color: '#1A1A1A',
-      },
-    },
-    radar: {
-      indicator: factorKeys.map(key => ({
-        name: factorLabels[key],
-        max: 100,
-      })),
-      radius: '65%',
-      center: ['50%', '50%'],
-      splitNumber: 4,
-      axisName: {
-        color: '#4A4A4A',
-        fontSize: 12,
-      },
-      splitLine: {
-        lineStyle: {
-          color: '#E5E8ED',
-        },
-      },
-      splitArea: {
-        areaStyle: {
-          color: ['rgba(255, 255, 255, 0)', 'rgba(0, 51, 153, 0.03)'],
-        },
-      },
-      axisLine: {
-        lineStyle: {
-          color: '#E5E8ED',
-        },
-      },
-    },
-    series: [
-      {
-        type: 'radar',
-        data: [
-          {
-            value: radarData,
-            name: '因子贡献',
-            symbol: 'circle',
-            symbolSize: 6,
-            lineStyle: {
-              color: '#003399',
-              width: 2,
-            },
-            areaStyle: {
-              color: 'rgba(0, 51, 153, 0.2)',
-            },
-            itemStyle: {
-              color: '#003399',
-            },
-          },
-        ],
-      },
-    ],
-  }
-
-  radarChart.value.setOption(option)
 }
 
 // Fetch data from API
@@ -399,7 +402,6 @@ const fetchData = async () => {
     setTimeout(() => {
       initGaugeChart()
       initTrendChart()
-      initRadarChart()
     }, 100)
   } catch (error) {
     ElMessage.error('获取恐惧贪婪指数数据失败')
@@ -413,7 +415,6 @@ const fetchData = async () => {
 const handleResize = () => {
   gaugeChart.value?.resize()
   trendChart.value?.resize()
-  radarChart.value?.resize()
 }
 
 // Watch for data changes
@@ -421,7 +422,6 @@ watch(currentData, () => {
   if (currentData.value) {
     setTimeout(() => {
       initGaugeChart()
-      initRadarChart()
     }, 50)
   }
 })
@@ -435,7 +435,6 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   gaugeChart.value?.dispose()
   trendChart.value?.dispose()
-  radarChart.value?.dispose()
 })
 </script>
 
@@ -459,59 +458,132 @@ onUnmounted(() => {
     </div>
 
     <!-- Main content -->
-    <div class="content-grid" v-if="currentData">
-      <!-- Left: Gauge chart -->
-      <div class="gauge-section card">
-        <div class="card-title">当前情绪指数</div>
-        <div class="gauge-container" ref="gaugeChartRef"></div>
-        <div class="gauge-legend">
-          <div class="legend-item">
-            <span class="legend-color" style="background: #E63935;"></span>
-            <span>极度恐惧 (0-20)</span>
+    <div class="content-wrapper" v-if="currentData">
+      <!-- Topology Tree Section -->
+      <div class="topology-section">
+        <!-- SVG Connection Lines -->
+        <svg class="topology-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" style="stop-color: rgba(0, 51, 153, 0.3)" />
+              <stop offset="50%" style="stop-color: rgba(0, 51, 153, 0.5)" />
+              <stop offset="100%" style="stop-color: rgba(0, 51, 153, 0.3)" />
+            </linearGradient>
+          </defs>
+          <!-- Lines from center to each satellite -->
+          <line 
+            v-for="factor in factorConfigs" 
+            :key="`line-${factor.key}`"
+            :x1="50" 
+            :y1="50" 
+            :x2="factor.position.x" 
+            :y2="factor.position.y"
+            stroke="url(#lineGradient)"
+            stroke-width="0.3"
+            class="topology-line"
+          />
+          <!-- Center circle -->
+          <circle cx="50" cy="50" r="8" fill="var(--brand-navy-dark)" opacity="0.8" />
+        </svg>
+
+        <!-- Central Gauge Card -->
+        <div class="center-card">
+          <div class="gauge-wrapper" ref="gaugeChartRef"></div>
+        </div>
+
+        <!-- Satellite Factor Cards -->
+        <div 
+          v-for="factor in factorConfigs" 
+          :key="factor.key"
+          class="satellite-card"
+          :style="{ 
+            left: `${factor.position.x}%`, 
+            top: `${factor.position.y}%`,
+            transform: `translate(-50%, -50%)`
+          }"
+        >
+          <div class="satellite-header">
+            <span class="satellite-label">{{ factor.label }}</span>
+            <span 
+              class="satellite-value"
+              :style="{ color: getSentimentColor(getFactorValue(factor.key)) }"
+            >
+              {{ getFactorValue(factor.key).toFixed(1) }}
+            </span>
           </div>
-          <div class="legend-item">
-            <span class="legend-color" style="background: #FF9800;"></span>
-            <span>恐惧 (20-40)</span>
+          <div class="progress-bar">
+            <div 
+              class="progress-fill"
+              :style="{ 
+                width: `${getFactorValue(factor.key)}%`,
+                background: getSentimentColor(getFactorValue(factor.key))
+              }"
+            ></div>
           </div>
-          <div class="legend-item">
-            <span class="legend-color" style="background: #999999;"></span>
-            <span>中性 (40-60)</span>
-          </div>
-          <div class="legend-item">
-            <span class="legend-color" style="background: #2E7D32;"></span>
-            <span>贪婪 (60-80)</span>
-          </div>
-          <div class="legend-item">
-            <span class="legend-color" style="background: #1565C0;"></span>
-            <span>极度贪婪 (80-100)</span>
-          </div>
+          <div class="satellite-desc">{{ factor.description }}</div>
         </div>
       </div>
 
-      <!-- Right: Radar chart -->
-      <div class="radar-section card">
-        <div class="card-title">因子贡献分析</div>
-        <div class="radar-container" ref="radarChartRef"></div>
-        <div class="factor-list">
-          <div 
-            v-for="(label, key) in factorLabels" 
-            :key="key"
-            class="factor-item"
-          >
-            <span class="factor-name">{{ label }}</span>
-            <span class="factor-value">
-              {{ currentData[key as keyof FearGreedData] !== null 
-                ? (currentData[key as keyof FearGreedData] as number).toFixed(1) 
-                : '-' }}
+      <!-- Historical Trend Section -->
+      <div class="trend-section card">
+        <div class="card-title">
+          <span>历史趋势 (近30天)</span>
+          <div class="trend-legend">
+            <span class="legend-item">
+              <span class="legend-dot" style="background: #E63935;"></span>
+              极度恐惧
+            </span>
+            <span class="legend-item">
+              <span class="legend-dot" style="background: #FF9800;"></span>
+              恐惧
+            </span>
+            <span class="legend-item">
+              <span class="legend-dot" style="background: #999999;"></span>
+              中性
+            </span>
+            <span class="legend-item">
+              <span class="legend-dot" style="background: #2E7D32;"></span>
+              贪婪
+            </span>
+            <span class="legend-item">
+              <span class="legend-dot" style="background: #1565C0;"></span>
+              极度贪婪
             </span>
           </div>
         </div>
+        <div class="trend-container" ref="trendChartRef"></div>
       </div>
 
-      <!-- Bottom: Trend chart -->
-      <div class="trend-section card">
-        <div class="card-title">历史趋势 (近30天)</div>
-        <div class="trend-container" ref="trendChartRef"></div>
+      <!-- Factor Summary Grid -->
+      <div class="factor-summary card">
+        <div class="card-title">因子详情</div>
+        <div class="factor-grid">
+          <div 
+            v-for="factor in factorConfigs" 
+            :key="`summary-${factor.key}`"
+            class="factor-detail"
+          >
+            <div class="factor-detail-header">
+              <span class="factor-detail-label">{{ factor.label }}</span>
+              <span 
+                class="factor-detail-value"
+                :style="{ color: getSentimentColor(getFactorValue(factor.key)) }"
+              >
+                {{ getFactorValue(factor.key).toFixed(1) }}
+              </span>
+            </div>
+            <div class="factor-detail-bar">
+              <div 
+                class="factor-detail-fill"
+                :style="{ 
+                  width: `${getFactorValue(factor.key)}%`,
+                  background: `linear-gradient(90deg, ${getSentimentColor(getFactorValue(factor.key))} 0%, ${getSentimentColor(getFactorValue(factor.key))}88 100%)`
+                }"
+              ></div>
+            </div>
+            <div class="factor-detail-desc">{{ factor.description }}</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -525,15 +597,16 @@ onUnmounted(() => {
 <style scoped>
 .fear-greed {
   min-height: calc(100vh - 100px);
-  padding: 16px;
+  padding: var(--spacing-md);
+  background: var(--bg-system);
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
   border-bottom: 1px solid var(--border-line);
 }
 
@@ -547,7 +620,7 @@ onUnmounted(() => {
 .header-info {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--spacing-md);
 }
 
 .update-time {
@@ -585,104 +658,239 @@ onUnmounted(() => {
   color: #1565C0;
 }
 
-.content-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto auto;
-  gap: 16px;
+/* Content Wrapper */
+.content-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
 }
 
-.gauge-section,
-.radar-section {
+/* Topology Section */
+.topology-section {
+  position: relative;
+  width: 100%;
+  height: 500px;
   background: var(--bg-card);
-  border-radius: 4px;
-  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
 }
 
+.topology-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.topology-line {
+  stroke-dasharray: 2, 2;
+  animation: dash 20s linear infinite;
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+/* Center Card */
+.center-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 280px;
+  height: 280px;
+  background: var(--bg-card);
+  border-radius: 50%;
+  box-shadow: 
+    0 4px 20px rgba(0, 51, 153, 0.15),
+    0 0 0 1px rgba(0, 51, 153, 0.1);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gauge-wrapper {
+  width: 100%;
+  height: 100%;
+}
+
+/* Satellite Cards */
+.satellite-card {
+  position: absolute;
+  width: 140px;
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(0, 51, 153, 0.08);
+  z-index: 5;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.satellite-card:hover {
+  transform: translate(-50%, -50%) scale(1.05);
+  box-shadow: 
+    0 4px 16px rgba(0, 51, 153, 0.2),
+    0 0 0 2px rgba(0, 51, 153, 0.2);
+}
+
+.satellite-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.satellite-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.satellite-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: 'DIN Alternate', -apple-system, sans-serif;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-system);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.8s ease-out;
+}
+
+.satellite-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Trend Section */
 .trend-section {
-  grid-column: 1 / -1;
   background: var(--bg-card);
-  border-radius: 4px;
-  padding: 16px;
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 16px;
-  padding-bottom: 12px;
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-sm);
   border-bottom: 1px solid var(--border-line);
 }
 
-.gauge-container {
-  width: 100%;
-  height: 280px;
-}
-
-.gauge-legend {
+.trend-legend {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-line);
+  gap: var(--spacing-md);
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-regular);
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
-.legend-color {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-}
-
-.radar-container {
-  width: 100%;
-  height: 260px;
-}
-
-.factor-list {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-line);
-}
-
-.factor-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: var(--bg-system);
-  border-radius: 4px;
-}
-
-.factor-name {
-  font-size: 13px;
-  color: var(--text-regular);
-}
-
-.factor-value {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
 .trend-container {
   width: 100%;
-  height: 320px;
+  height: 300px;
 }
 
+/* Factor Summary */
+.factor-summary {
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.factor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-md);
+}
+
+.factor-detail {
+  padding: var(--spacing-sm);
+  background: var(--bg-system);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.factor-detail:hover {
+  background: rgba(0, 51, 153, 0.04);
+}
+
+.factor-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.factor-detail-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.factor-detail-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'DIN Alternate', -apple-system, sans-serif;
+}
+
+.factor-detail-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.factor-detail-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s ease-out;
+}
+
+.factor-detail-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Empty State */
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -694,12 +902,72 @@ onUnmounted(() => {
 
 /* Responsive */
 @media (max-width: 1200px) {
-  .content-grid {
+  .factor-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .topology-section {
+    height: 600px;
+  }
+  
+  .center-card {
+    width: 220px;
+    height: 220px;
+  }
+  
+  .satellite-card {
+    width: 110px;
+    padding: 6px 10px;
+  }
+  
+  .satellite-label {
+    font-size: 11px;
+  }
+  
+  .satellite-value {
+    font-size: 14px;
+  }
+  
+  .satellite-desc {
+    font-size: 10px;
+  }
+  
+  .factor-grid {
     grid-template-columns: 1fr;
   }
   
-  .trend-section {
-    grid-column: 1;
+  .trend-legend {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .header-info {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 480px) {
+  .topology-section {
+    height: 500px;
+  }
+  
+  .center-card {
+    width: 180px;
+    height: 180px;
+  }
+  
+  .satellite-card {
+    width: 90px;
+    padding: 4px 8px;
   }
 }
 </style>

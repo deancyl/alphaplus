@@ -82,6 +82,11 @@ const getValueClass = (val: number | null | undefined): string => {
   return val >= 0 ? 'text-up' : 'text-down'
 }
 
+// Fetch suggestions callback for autocomplete
+const fetchSuggestions = (query: string, cb: (results: StockSearchResult[]) => void) => {
+  cb(searchResults.value)
+}
+
 // Search with debounce
 const handleSearch = (query: string) => {
   if (searchTimer) clearTimeout(searchTimer)
@@ -302,7 +307,7 @@ onUnmounted(() => {
       <div class="search-box">
         <el-autocomplete
           v-model="searchQuery"
-          :fetch-suggestions="(query: string, cb: (results: StockSearchResult[]) => void) => cb(searchResults)"
+          :fetch-suggestions="fetchSuggestions"
           placeholder="输入股票代码或名称搜索"
           :loading="searchLoading"
           clearable

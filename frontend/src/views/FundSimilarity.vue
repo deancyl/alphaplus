@@ -21,6 +21,26 @@ interface FundSearchResult {
   company_name: string
 }
 
+interface FactorExposure {
+  fund_code: string
+  fund_name: string
+  large_cap_growth: number
+  large_cap_value: number
+  mid_cap_growth: number
+  mid_cap_value: number
+  small_cap_growth: number
+  small_cap_value: number
+  financial_sector: number
+  technology_sector: number
+  healthcare_sector: number
+  consumer_sector: number
+  industrial_sector: number
+  energy_sector: number
+  materials_sector: number
+  utilities_sector: number
+  calculation_time_ms?: number
+}
+
 // State
 const sourceFundCode = ref<string>('')
 const sourceFundName = ref<string>('')
@@ -36,6 +56,12 @@ const topN = ref<number>(10)
 const similarFunds = ref<SimilarFund[]>([])
 const loading = ref(false)
 const hasSearched = ref(false)
+
+// Factor exposure state
+const factorExposures = ref<FactorExposure[]>([])
+const factorLoading = ref(false)
+const factorCalculationTime = ref<number>(0)
+const showFactorTable = ref(false)
 
 // Algorithm options
 const algorithmOptions = [
@@ -82,6 +108,140 @@ const clearSelection = () => {
   searchQuery.value = ''
   similarFunds.value = []
   hasSearched.value = false
+  factorExposures.value = []
+  showFactorTable.value = false
+}
+
+// Factor column definitions
+const factorColumns = [
+  { key: 'large_cap_growth', label: '大盘成长' },
+  { key: 'large_cap_value', label: '大盘价值' },
+  { key: 'mid_cap_growth', label: '中盘成长' },
+  { key: 'mid_cap_value', label: '中盘价值' },
+  { key: 'small_cap_growth', label: '小盘成长' },
+  { key: 'small_cap_value', label: '小盘价值' },
+  { key: 'financial_sector', label: '金融' },
+  { key: 'technology_sector', label: '科技' },
+  { key: 'healthcare_sector', label: '医药' },
+  { key: 'consumer_sector', label: '消费' },
+  { key: 'industrial_sector', label: '工业' },
+  { key: 'energy_sector', label: '能源' },
+  { key: 'materials_sector', label: '材料' },
+  { key: 'utilities_sector', label: '公用事业' },
+]
+
+// Get color for factor weight (green=high, red=low)
+const getFactorColor = (weight: number): string => {
+  if (weight >= 0.15) return '#22c55e' // Green - high exposure
+  if (weight >= 0.10) return '#86efac' // Light green
+  if (weight >= 0.05) return '#fef08a' // Yellow
+  if (weight >= 0.02) return '#fdba74' // Orange
+  return '#f87171' // Red - low exposure
+}
+
+// Get background color class for cell
+const getFactorBgStyle = (weight: number): string => {
+  const alpha = Math.min(weight * 3, 0.4) // Max 40% opacity
+  const color = getFactorColor(weight)
+  return `background-color: ${color}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`
+}
+
+// Fetch factor exposure for a fund
+const fetchFactorExposure = async (fundCode: string, fundName: string): Promise<FactorExposure | null> => {
+  try {
+    const today = new Date()
+    const endDate = today.toISOString().split('T')[0]
+    const startDate = new Date(today.setFullYear(today.getFullYear() - 1)).toISOString().split('T')[0]
+    
+    const response = await api.post('/analytics/factor-exposure', null, {
+      params: {
+        fund_code: fundCode,
+        start_date: startDate,
+        end_date: endDate,
+      }
+    }) as unknown as { fund_code: string; exposure: number[] }
+    
+    const exposure = response.exposure || []
+    
+    return {
+      fund_code: fundCode,
+      fund_name: fundName,
+      large_cap_growth: exposure[0] || 0,
+      large_cap_value: exposure[1] || 0,
+      mid_cap_growth: exposure[2] || 0,
+      mid_cap_value: exposure[3] || 0,
+      small_cap_growth: exposure[4] || 0,
+      small_cap_value: exposure[5] || 0,
+      financial_sector: exposure[6] || 0,
+      technology_sector: exposure[7] || 0,
+      healthcare_sector: exposure[8] || 0,
+      consumer_sector: exposure[9] || 0,
+      industrial_sector: exposure[10] || 0,
+      energy_sector: exposure[11] || 0,
+      materials_sector: exposure[12] || 0,
+      utilities_sector: exposure[13] || 0,
+    }
+  } catch (error) {
+    console.error(`Failed to fetch factor exposure for ${fundCode}:`, error)
+    return null
+  }
+}
+
+// Calculate factor exposures for all similar funds
+const calculateFactorExposures = async () => {
+  if (similarFunds.value.length === 0) {
+    ElMessage.warning('请先计算相似基金')
+    return
+  }
+  
+  factorLoading.value = true
+  showFactorTable.value = true
+  const startTime = performance.now()
+  
+  try {
+    const promises = similarFunds.value.slice(0, 10).map(fund => 
+      fetchFactorExposure(fund.fund_code, fund.fund_name)
+    )
+    
+    const results = await Promise.all(promises)
+    factorExposures.value = results.filter((r): r is FactorExposure => r !== null)
+    
+    if (factorExposures.value.length === 0) {
+      ElMessage.warning('无法获取因子暴露数据')
+    }
+  } catch (error) {
+    ElMessage.error('因子暴露计算失败')
+    console.error(error)
+  } finally {
+    factorCalculationTime.value = Math.round(performance.now() - startTime)
+    factorLoading.value = false
+  }
+}
+
+// Export factor exposure to CSV
+const exportFactorExposure = () => {
+  if (factorExposures.value.length === 0) {
+    ElMessage.warning('没有可导出的数据')
+    return
+  }
+  
+  const headers = ['基金代码', '基金名称', ...factorColumns.map(c => c.label)]
+  const rows = factorExposures.value.map(exp => [
+    exp.fund_code,
+    exp.fund_name,
+    ...factorColumns.map(c => (exp[c.key as keyof FactorExposure] as number).toFixed(4)),
+  ])
+  
+  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `factor_exposure_${sourceFundCode.value}_${new Date().toISOString().split('T')[0]}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+  
+  ElMessage.success('导出成功')
 }
 
 // Calculate similarity
@@ -448,6 +608,119 @@ onMounted(() => {
               </el-table-column>
             </el-table>
           </div>
+
+          <!-- Factor Exposure Section -->
+          <div v-if="similarFunds.length > 0" class="factor-section">
+            <div class="factor-header">
+              <h4>因子暴露分析</h4>
+              <div class="factor-actions">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :loading="factorLoading"
+                  @click="calculateFactorExposures"
+                >
+                  计算因子暴露
+                </el-button>
+                <el-button
+                  v-if="factorExposures.length > 0"
+                  size="small"
+                  @click="exportFactorExposure"
+                >
+                  导出 CSV
+                </el-button>
+              </div>
+            </div>
+
+            <!-- Loading Progress -->
+            <div v-if="factorLoading" class="factor-loading">
+              <el-progress
+                :percentage="100"
+                :stroke-width="10"
+                status="success"
+                :indeterminate="true"
+              />
+              <p class="loading-text">正在计算 SLSQP 约束优化...</p>
+            </div>
+
+            <!-- Factor Exposure Table -->
+            <div v-if="showFactorTable && factorExposures.length > 0 && !factorLoading" class="factor-table-wrapper">
+              <div class="factor-meta">
+                <span class="calc-time">计算耗时: {{ factorCalculationTime }}ms</span>
+                <span class="fund-count">共 {{ factorExposures.length }} 只基金</span>
+              </div>
+              
+              <el-table
+                :data="factorExposures"
+                stripe
+                border
+                max-height="400"
+                size="small"
+              >
+                <el-table-column prop="fund_code" label="基金代码" width="90" fixed />
+                
+                <el-table-column prop="fund_name" label="基金名称" min-width="140" fixed>
+                  <template #default="{ row }">
+                    <span class="factor-fund-name">{{ row.fund_name }}</span>
+                  </template>
+                </el-table-column>
+
+                <!-- Style Factors -->
+                <el-table-column label="风格因子">
+                  <el-table-column
+                    v-for="col in factorColumns.slice(0, 6)"
+                    :key="col.key"
+                    :prop="col.key"
+                    :label="col.label"
+                    width="85"
+                  >
+                    <template #default="{ row }">
+                      <div
+                        class="factor-cell"
+                        :style="getFactorBgStyle(row[col.key])"
+                      >
+                        {{ (row[col.key] as number).toFixed(3) }}
+                      </div>
+                    </template>
+                  </el-table-column>
+                </el-table-column>
+
+                <!-- Sector Factors -->
+                <el-table-column label="板块因子">
+                  <el-table-column
+                    v-for="col in factorColumns.slice(6)"
+                    :key="col.key"
+                    :prop="col.key"
+                    :label="col.label"
+                    width="85"
+                  >
+                    <template #default="{ row }">
+                      <div
+                        class="factor-cell"
+                        :style="getFactorBgStyle(row[col.key])"
+                      >
+                        {{ (row[col.key] as number).toFixed(3) }}
+                      </div>
+                    </template>
+                  </el-table-column>
+                </el-table-column>
+              </el-table>
+
+              <!-- Factor Legend -->
+              <div class="factor-legend">
+                <span class="legend-title">颜色说明:</span>
+                <span class="legend-item high">≥15% 高暴露</span>
+                <span class="legend-item medium">≥10% 中等</span>
+                <span class="legend-item low">≥5% 较低</span>
+                <span class="legend-item minimal">&lt;5% 极低</span>
+              </div>
+            </div>
+
+            <!-- Empty Factor State -->
+            <div v-if="showFactorTable && factorExposures.length === 0 && !factorLoading" class="factor-empty">
+              <p>暂无因子暴露数据，请点击计算按钮</p>
+            </div>
+          </div>
         </template>
       </div>
     </div>
@@ -729,5 +1002,125 @@ onMounted(() => {
   .viz-card-wide {
     flex: none;
   }
+}
+
+/* Factor Exposure Section */
+.factor-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-line);
+}
+
+.factor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.factor-header h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.factor-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.factor-loading {
+  padding: 24px;
+  background: #fafafa;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.loading-text {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.factor-table-wrapper {
+  overflow-x: auto;
+}
+
+.factor-meta {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.calc-time {
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+.fund-count {
+  color: var(--text-regular);
+}
+
+.factor-cell {
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.factor-fund-name {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.factor-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 12px;
+}
+
+.legend-title {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.legend-item {
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.legend-item.high {
+  background: rgba(34, 197, 94, 0.2);
+  color: #166534;
+}
+
+.legend-item.medium {
+  background: rgba(134, 239, 172, 0.3);
+  color: #15803d;
+}
+
+.legend-item.low {
+  background: rgba(254, 240, 138, 0.4);
+  color: #854d0e;
+}
+
+.legend-item.minimal {
+  background: rgba(248, 113, 113, 0.2);
+  color: #991b1b;
+}
+
+.factor-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: #fafafa;
+  border-radius: 4px;
 }
 </style>

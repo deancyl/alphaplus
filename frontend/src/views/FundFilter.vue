@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { filterFunds, type FundFilterParams, type FundItem } from '@/api/fund'
+import SplitPanel from '@/components/SplitPanel.vue'
+import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import type { EChartsOption } from 'echarts'
 
 // 筛选条件
 const filterParams = ref<FundFilterParams>({
@@ -30,14 +33,26 @@ const fundTypes = [
 const tableData = ref<FundItem[]>([])
 const total = ref(0)
 const loading = ref(false)
-const leftPanelCollapsed = ref(false)
+const filterTimeMs = ref<number | null>(null)
+const splitPanelRef = ref<InstanceType<typeof SplitPanel> | null>(null)
 
-// 计算分页
-const totalPages = computed(() => Math.ceil(total.value / filterParams.value.page_size!))
+// Debounce timer for filter
+let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// Debounced filter execution
+const debouncedFilter = (delay = 300) => {
+  if (filterDebounceTimer) {
+    clearTimeout(filterDebounceTimer)
+  }
+  filterDebounceTimer = setTimeout(() => {
+    handleFilter()
+  }, delay)
+}
 
 // 执行筛选
 const handleFilter = async () => {
   loading.value = true
+  const startTime = performance.now()
   try {
     const response = await filterFunds(filterParams.value)
     tableData.value = response.funds
@@ -47,6 +62,7 @@ const handleFilter = async () => {
     console.error(error)
   } finally {
     loading.value = false
+    filterTimeMs.value = Math.round(performance.now() - startTime)
   }
 }
 
@@ -96,6 +112,60 @@ const getValueClass = (val: number | null): string => {
   return val >= 0 ? 'text-up' : 'text-down'
 }
 
+// Generate sparkline option for fund return trend
+const getSparklineOption = (fund: FundItem): EChartsOption => {
+  // Generate mock 30-day return trend data
+  // In production, this would come from API
+  const baseReturn = fund.return_1y || 0
+  const data: number[] = []
+  for (let i = 0; i < 30; i++) {
+    const variation = (Math.random() - 0.5) * 2
+    data.push(baseReturn + variation * (i / 30))
+  }
+  
+  const isPositive = data[data.length - 1] >= data[0]
+  const lineColor = isPositive ? '#2E7D32' : '#E63935'
+  
+  return {
+    xAxis: { type: 'category' as const },
+    yAxis: { type: 'value' as const },
+    series: [{
+      type: 'line' as const,
+      data,
+      lineStyle: { color: lineColor, width: 1.5 },
+      areaStyle: {
+        color: {
+          type: 'linear' as const,
+          x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [
+            { offset: 0, color: isPositive ? 'rgba(46, 125, 50, 0.3)' : 'rgba(230, 57, 53, 0.3)' },
+            { offset: 1, color: 'rgba(255, 255, 255, 0)' }
+          ]
+        }
+      }
+    }]
+  }
+}
+
+// Watch filter params for auto-filter with debounce
+watch(
+  () => [
+    filterParams.value.fund_types,
+    filterParams.value.setup_year_min,
+    filterParams.value.setup_year_max,
+    filterParams.value.scale_min,
+    filterParams.value.scale_max,
+    filterParams.value.return_1y_min,
+    filterParams.value.return_1y_max,
+    filterParams.value.max_drawdown_1y_max,
+    filterParams.value.sharpe_1y_min,
+  ],
+  () => {
+    debouncedFilter()
+  },
+  { deep: true }
+)
+
 onMounted(() => {
   handleFilter()
 })
@@ -103,248 +173,277 @@ onMounted(() => {
 
 <template>
   <div class="fund-filter">
-    <div class="filter-container" :class="{ collapsed: leftPanelCollapsed }">
-      <!-- 左侧筛选面板 -->
-      <div class="filter-panel">
-        <div class="panel-header">
-          <h3>筛选条件</h3>
-          <button class="collapse-btn" @click="leftPanelCollapsed = !leftPanelCollapsed">
-            {{ leftPanelCollapsed ? '展开' : '收起' }}
-          </button>
-        </div>
-        
-        <div v-if="!leftPanelCollapsed" class="filter-form">
-          <!-- 基础信息 -->
-          <div class="filter-section">
-            <h4>基础信息</h4>
-            <div class="form-item">
-              <label>基金类型</label>
-              <el-checkbox-group v-model="filterParams.fund_types">
-                <el-checkbox
-                  v-for="type in fundTypes"
-                  :key="type"
-                  :label="type"
-                />
-              </el-checkbox-group>
-            </div>
-            
-            <div class="form-item">
-              <label>成立年限</label>
-              <div class="range-input">
-                <el-input-number
-                  v-model="filterParams.setup_year_min"
-                  :min="0"
-                  :max="20"
-                  placeholder="最小"
-                />
-                <span>-</span>
-                <el-input-number
-                  v-model="filterParams.setup_year_max"
-                  :min="0"
-                  :max="20"
-                  placeholder="最大"
-                />
-              </div>
-            </div>
-            
-            <div class="form-item">
-              <label>基金规模 (亿)</label>
-              <div class="range-input">
-                <el-input-number
-                  v-model="filterParams.scale_min"
-                  :min="0"
-                  placeholder="最小"
-                />
-                <span>-</span>
-                <el-input-number
-                  v-model="filterParams.scale_max"
-                  :min="0"
-                  placeholder="最大"
-                />
-              </div>
-            </div>
+    <SplitPanel
+      ref="splitPanelRef"
+      :initial-left-size="320"
+      :min-left-size="260"
+      :max-left-size="480"
+      storage-key="fundfilter-panel-size"
+    >
+      <!-- Left Panel: Filter Conditions -->
+      <template #left="{ collapsed }">
+        <div class="filter-panel" :class="{ 'filter-panel--collapsed': collapsed }">
+          <div class="panel-header">
+            <h3 v-if="!collapsed">筛选条件</h3>
+            <h3 v-else class="collapsed-title">筛选</h3>
           </div>
           
-          <!-- 收益风险 -->
-          <div class="filter-section">
-            <h4>收益风险</h4>
-            <div class="form-item">
-              <label>近1年收益 (%)</label>
-              <div class="range-input">
+          <div v-if="!collapsed" class="filter-form">
+            <!-- 基础信息 -->
+            <div class="filter-section">
+              <h4>基础信息</h4>
+              <div class="form-item">
+                <label>基金类型</label>
+                <el-checkbox-group v-model="filterParams.fund_types">
+                  <el-checkbox
+                    v-for="type in fundTypes"
+                    :key="type"
+                    :label="type"
+                  />
+                </el-checkbox-group>
+              </div>
+              
+              <div class="form-item">
+                <label>成立年限</label>
+                <div class="range-input">
+                  <el-input-number
+                    v-model="filterParams.setup_year_min"
+                    :min="0"
+                    :max="20"
+                    placeholder="最小"
+                  />
+                  <span>-</span>
+                  <el-input-number
+                    v-model="filterParams.setup_year_max"
+                    :min="0"
+                    :max="20"
+                    placeholder="最大"
+                  />
+                </div>
+              </div>
+              
+              <div class="form-item">
+                <label>基金规模 (亿)</label>
+                <div class="range-input">
+                  <el-input-number
+                    v-model="filterParams.scale_min"
+                    :min="0"
+                    placeholder="最小"
+                  />
+                  <span>-</span>
+                  <el-input-number
+                    v-model="filterParams.scale_max"
+                    :min="0"
+                    placeholder="最大"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <!-- 收益风险 -->
+            <div class="filter-section">
+              <h4>收益风险</h4>
+              <div class="form-item">
+                <label>近1年收益 (%)</label>
+                <div class="range-input">
+                  <el-input-number
+                    v-model="filterParams.return_1y_min"
+                    placeholder="最小"
+                  />
+                  <span>-</span>
+                  <el-input-number
+                    v-model="filterParams.return_1y_max"
+                    placeholder="最大"
+                  />
+                </div>
+              </div>
+              
+              <div class="form-item">
+                <label>最大回撤 ≤ (%)</label>
                 <el-input-number
-                  v-model="filterParams.return_1y_min"
-                  placeholder="最小"
+                  v-model="filterParams.max_drawdown_1y_max"
+                  :min="0"
+                  :max="100"
                 />
-                <span>-</span>
+              </div>
+              
+              <div class="form-item">
+                <label>夏普比率 ≥</label>
                 <el-input-number
-                  v-model="filterParams.return_1y_max"
-                  placeholder="最大"
+                  v-model="filterParams.sharpe_1y_min"
+                  :step="0.1"
                 />
               </div>
             </div>
             
-            <div class="form-item">
-              <label>最大回撤 ≤ (%)</label>
-              <el-input-number
-                v-model="filterParams.max_drawdown_1y_max"
-                :min="0"
-                :max="100"
-              />
+            <!-- 操作按钮 -->
+            <div class="filter-actions">
+              <el-button type="primary" @click="handleFilter" :loading="loading">
+                筛选
+              </el-button>
+              <el-button @click="handleReset">
+                重置
+              </el-button>
+              <el-button @click="saveFilterConfig">
+                保存配置
+              </el-button>
+              <el-button @click="loadFilterConfig">
+                加载配置
+              </el-button>
             </div>
-            
-            <div class="form-item">
-              <label>夏普比率 ≥</label>
-              <el-input-number
-                v-model="filterParams.sharpe_1y_min"
-                :step="0.1"
-              />
-            </div>
-          </div>
-          
-          <!-- 操作按钮 -->
-          <div class="filter-actions">
-            <el-button type="primary" @click="handleFilter">
-              筛选
-            </el-button>
-            <el-button @click="handleReset">
-              重置
-            </el-button>
-            <el-button @click="saveFilterConfig">
-              保存配置
-            </el-button>
-            <el-button @click="loadFilterConfig">
-              加载配置
-            </el-button>
           </div>
         </div>
-      </div>
+      </template>
       
-      <!-- 右侧结果表格 -->
-      <div class="result-panel">
-        <div class="panel-header">
-          <h3>筛选结果 ({{ total }} 只)</h3>
-        </div>
-        
-        <el-table
-          :data="tableData"
-          :loading="loading"
-          stripe
-          height="calc(100vh - 200px)"
-        >
-          <el-table-column
-            prop="fund_code"
-            label="代码"
-            width="100"
-            fixed
-          />
-          <el-table-column
-            prop="fund_name"
-            label="名称"
-            min-width="180"
-            fixed
-          />
-          <el-table-column
-            prop="fund_type"
-            label="类型"
-            width="100"
-          />
-          <el-table-column
-            prop="manager"
-            label="经理"
-            width="100"
-          />
-          <el-table-column
-            prop="scale"
-            label="规模(亿)"
-            width="100"
-          >
-            <template #default="{ row }">
-              {{ formatNumber(row.scale) }}
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="return_1y"
-            label="近1年%"
-            width="100"
-            sortable
-          >
-            <template #default="{ row }">
-              <span :class="getValueClass(row.return_1y)">
-                {{ formatNumber(row.return_1y) }}
+      <!-- Right Panel: Results Table -->
+      <template #right>
+        <div class="result-panel">
+          <div class="panel-header">
+            <div class="header-left">
+              <h3>筛选结果 <span class="result-count">({{ total }} 只)</span></h3>
+              <span v-if="filterTimeMs !== null" class="filter-time">
+                {{ filterTimeMs }}ms
               </span>
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="max_drawdown_1y"
-            label="最大回撤%"
-            width="110"
-            sortable
+            </div>
+          </div>
+          
+          <el-table
+            :data="tableData"
+            :loading="loading"
+            stripe
+            height="calc(100vh - 220px)"
           >
-            <template #default="{ row }">
-              <span :class="getValueClass(-row.max_drawdown_1y)">
-                {{ formatNumber(row.max_drawdown_1y) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="sharpe_1y"
-            label="夏普"
-            width="80"
-            sortable
-          >
-            <template #default="{ row }">
-              {{ formatNumber(row.sharpe_1y) }}
-            </template>
-          </el-table-column>
-        </el-table>
-        
-        <!-- 分页 -->
-        <div class="pagination">
-          <el-pagination
-            :current-page="filterParams.page"
-            :page-size="filterParams.page_size"
-            :total="total"
-            layout="total, prev, pager, next, jumper"
-            @current-change="handlePageChange"
-          />
+            <el-table-column
+              prop="fund_code"
+              label="代码"
+              width="100"
+              fixed
+            />
+            <el-table-column
+              prop="fund_name"
+              label="名称"
+              min-width="160"
+              fixed
+            />
+            <el-table-column
+              prop="fund_type"
+              label="类型"
+              width="90"
+            />
+            <el-table-column
+              prop="manager"
+              label="经理"
+              width="80"
+            />
+            <el-table-column
+              prop="scale"
+              label="规模(亿)"
+              width="90"
+            >
+              <template #default="{ row }">
+                {{ formatNumber(row.scale) }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              label="收益趋势"
+              width="100"
+            >
+              <template #default="{ row }">
+                <EChartsWrapper
+                  :option="getSparklineOption(row)"
+                  :is-sparkline="true"
+                  height="40px"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="return_1y"
+              label="近1年%"
+              width="100"
+              sortable
+            >
+              <template #default="{ row }">
+                <span :class="getValueClass(row.return_1y)">
+                  {{ formatNumber(row.return_1y) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="max_drawdown_1y"
+              label="最大回撤%"
+              width="105"
+              sortable
+            >
+              <template #default="{ row }">
+                <span :class="getValueClass(-row.max_drawdown_1y)">
+                  {{ formatNumber(row.max_drawdown_1y) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="sharpe_1y"
+              label="夏普"
+              width="75"
+              sortable
+            >
+              <template #default="{ row }">
+                {{ formatNumber(row.sharpe_1y) }}
+              </template>
+            </el-table-column>
+          </el-table>
+          
+          <!-- 分页 -->
+          <div class="pagination">
+            <el-pagination
+              :current-page="filterParams.page"
+              :page-size="filterParams.page_size"
+              :total="total"
+              layout="total, prev, pager, next, jumper"
+              @current-change="handlePageChange"
+            />
+          </div>
         </div>
-      </div>
-    </div>
+      </template>
+    </SplitPanel>
   </div>
 </template>
 
 <style scoped>
 .fund-filter {
   height: calc(100vh - 100px);
-}
-
-.filter-container {
-  display: flex;
-  gap: 16px;
-  height: 100%;
-}
-
-.filter-container.collapsed .filter-panel {
-  width: 60px;
+  padding: 0;
 }
 
 .filter-panel {
-  width: 320px;
-  flex-shrink: 0;
+  height: 100%;
   background: var(--bg-card);
   border-radius: 4px;
   padding: 16px;
   overflow-y: auto;
-  transition: width 0.3s;
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-panel--collapsed {
+  padding: 12px 8px;
+  align-items: center;
+}
+
+.collapsed-title {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 14px;
+  letter-spacing: 2px;
 }
 
 .result-panel {
-  flex: 1;
+  height: 100%;
   background: var(--bg-card);
   border-radius: 4px;
   padding: 16px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .panel-header {
@@ -354,21 +453,33 @@ onMounted(() => {
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-line);
+  flex-shrink: 0;
 }
 
 .panel-header h3 {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
+  margin: 0;
 }
 
-.collapse-btn {
-  padding: 4px 12px;
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.result-count {
+  font-weight: 400;
+  color: var(--text-regular);
+}
+
+.filter-time {
   font-size: 12px;
-  background: #f0f0f0;
-  border: none;
+  color: var(--text-muted);
+  background: var(--bg-system);
+  padding: 2px 8px;
   border-radius: 4px;
-  cursor: pointer;
 }
 
 .filter-section {
@@ -414,5 +525,27 @@ onMounted(() => {
   margin-top: 16px;
   display: flex;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .fund-filter {
+    height: auto;
+    min-height: calc(100vh - 100px);
+  }
+  
+  .filter-panel {
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+  
+  .result-panel {
+    min-height: 50vh;
+  }
+  
+  .el-table {
+    font-size: 12px;
+  }
 }
 </style>

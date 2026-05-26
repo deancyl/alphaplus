@@ -87,6 +87,9 @@ class CorrelationMatrixResponse(BaseModel):
     """相关性矩阵响应."""
     fund_codes: List[str]
     correlation_matrix: List[List[float]]  # N x N Pearson correlation
+    calculation_date: str = Field(..., description="计算日期 YYYY-MM-DD")
+    sample_size: int = Field(..., description="样本数量 (交易日数)")
+    data_quality: Optional[dict] = Field(default=None, description="数据质量信息")
 
 
 class FactorExposureResponse(BaseModel):
@@ -149,8 +152,33 @@ class ERPSpreadResponse(BaseModel):
     index_close_price: Optional[float]
 
 
+class TrajectoryPoint(BaseModel):
+    """Phase space trajectory point."""
+    x: float = Field(..., description="Crowding score (0-100)")
+    y: float = Field(..., description="PE percentile (0-100)")
+    date: str = Field(..., description="Date YYYY-MM-DD")
+
+
+class TrajectoryVector(BaseModel):
+    """Enhanced trajectory vector with velocity and rotation."""
+    asset: str = Field(..., description="Asset code/name")
+    start: TrajectoryPoint = Field(..., description="Start point T₀")
+    end: TrajectoryPoint = Field(..., description="End point T₁")
+    velocity: float = Field(..., description="Average velocity (crowding change per day)")
+    rotation: str = Field(..., description="Rotation classification: clockwise/counter_clockwise/neutral/expansion/contraction")
+    magnitude: Optional[float] = Field(None, description="Trajectory magnitude")
+    direction_deg: Optional[float] = Field(None, description="Direction in degrees")
+
+
+class TrajectoryResponse(BaseModel):
+    """Phase space trajectory response for ECharts visualization."""
+    vectors: List[TrajectoryVector] = Field(..., description="List of trajectory vectors")
+    regime_change: bool = Field(..., description="Whether regime change detected")
+    regime_change_count: Optional[int] = Field(None, description="Number of regime changes")
+
+
 class CrowdingRotationVector(BaseModel):
-    """拥挤度旋转向量."""
+    """拥挤度旋转向量 - Legacy format for backward compatibility."""
     asset_code: str
     asset_name: str
     t0_date: str

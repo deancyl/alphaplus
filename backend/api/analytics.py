@@ -19,6 +19,13 @@ from backend.schemas.fund import (
     FearGreedResponse,
     ERPSpreadResponse,
     CrowdingRotationVector,
+    TrajectoryResponse,
+    TrajectoryVector,
+    TrajectoryPoint,
+)
+from backend.services.quant_engine import (
+    calculate_phase_space_trajectory,
+    build_echarts_trajectory_data,
 )
 
 router = APIRouter()
@@ -150,14 +157,95 @@ async def get_crowding_analysis(
 
 @router.get("/rotation-vector")
 async def get_rotation_vectors(
+    t0_date: str = Query(..., description="起始日期 (YYYY-MM-DD)"),
+    t1_date: str = Query(..., description="结束日期 (YYYY-MM-DD)"),
+    category: str = Query("sector", description="sector/index/style"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    相空间旋转轨迹向量图 - 行业轮动向量提取.
+    
+    Mathematical Framework:
+    -----------------------
+    Phase Space Vector: (crowding_score, pe_percentile)
+    - Position: (x, y) at time T
+    - Velocity: d(crowding_score)/dt
+    - Acceleration: d²(crowding_score)/dt²
+    
+    Trajectory Vector (T₀ → T₁):
+    - Start point: (crowding_T0, pe_T0)
+    - End point: (crowding_T1, pe_T1)
+    - Arrow direction: θ = atan2(Δpe, Δcrowding)
+    - Magnitude: |v| = sqrt(Δcrowding² + Δpe²)
+    
+    Rotation Detection:
+    - Clockwise: PE decreasing (improving valuation)
+    - Counter-clockwise: PE increasing (deteriorating valuation)
+    - Regime change: |angular velocity| > threshold
+    
+    Returns T0→T1 trajectory vectors for visualization.
+    Performance target: <500ms for 100 assets.
+    """
+    # Validate date format
+    try:
+        from datetime import datetime
+        dt0 = datetime.strptime(t0_date, "%Y-%m-%d")
+        dt1 = datetime.strptime(t1_date, "%Y-%m-%d")
+        if dt1 <= dt0:
+            return {"error": "End date must be after start date", "vectors": [], "regime_change": False}
+    except ValueError:
+        return {"error": "Invalid date format. Use YYYY-MM-DD", "vectors": [], "regime_change": False}
+    
+    # Query historical data for the date range
+    result = await db.execute(
+        select(MarketCrowdingValuationHistory)
+        .where(
+            MarketCrowdingValuationHistory.trade_date >= t0_date,
+            MarketCrowdingValuationHistory.trade_date <= t1_date,
+            MarketCrowdingValuationHistory.category == category,
+        )
+        .order_by(MarketCrowdingValuationHistory.trade_date)
+    )
+    data = result.scalars().all()
+    
+    # Group by asset_code
+    asset_data = {}
+    for d in data:
+        if d.asset_code not in asset_data:
+            asset_data[d.asset_code] = []
+        asset_data[d.asset_code].append({
+            "trade_date": d.trade_date,
+            "crowding_score": d.crowding_score,
+            "pe_percentile": d.pe_percentile,
+        })
+    
+    # Calculate trajectory for each asset
+    trajectories = []
+    for asset_code, history in asset_data.items():
+        try:
+            traj = calculate_phase_space_trajectory(history, t0_date, t1_date)
+            traj["asset_code"] = asset_code
+            trajectories.append(traj)
+        except ValueError as e:
+            # Skip assets with insufficient data
+            continue
+    
+    # Build ECharts-compatible response
+    echarts_data = build_echarts_trajectory_data(trajectories)
+    
+    return TrajectoryResponse(**echarts_data)
+
+
+@router.get("/rotation-vector-legacy")
+async def get_rotation_vectors_legacy(
     t0_date: str = Query(..., description="起始日期"),
     t1_date: str = Query(..., description="结束日期"),
     category: str = Query("sector", description="sector/index/style"),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    相空间旋转轨迹向量图 - 行业轮动向量提取.
-    Returns T0→T1 trajectory vectors for visualization.
+    Legacy endpoint for backward compatibility.
+    Returns basic rotation vectors without advanced calculations.
     """
     result = await db.execute(
         select(MarketCrowdingValuationHistory)

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { getCrowdingAnalysis } from '@/api/analytics'
+import { getCrowdingAnalysis, getRotationVectors } from '@/api/analytics'
 
 // Crowding data type
 interface CrowdingData {
@@ -14,22 +14,46 @@ interface CrowdingData {
   close_price: number | null
 }
 
+// Rotation vector type
+interface RotationVector {
+  asset_code: string
+  asset_name: string
+  t0_date: string
+  t1_date: string
+  t0_crowding: number
+  t1_crowding: number
+  t0_pe_percentile: number
+  t1_pe_percentile: number
+}
+
 // Reactive state
 const loading = ref(false)
 const crowdingData = ref<CrowdingData[]>([])
 const selectedCategory = ref('sector')
+
+// Trajectory state
+const trajectoryData = ref<RotationVector[]>([])
+const trajectoryLoading = ref(false)
+const t0Date = ref('')
+const t1Date = ref('')
+const isPlaying = ref(false)
+const animationProgress = ref(0)
+const animationSpeed = ref(1)
+let animationInterval: ReturnType<typeof setInterval> | null = null
 
 // Chart refs
 const gaugeChart = ref<echarts.ECharts | null>(null)
 const heatmapChart = ref<echarts.ECharts | null>(null)
 const barChart = ref<echarts.ECharts | null>(null)
 const trendChart = ref<echarts.ECharts | null>(null)
+const trajectoryChart = ref<echarts.ECharts | null>(null)
 
 // Chart DOM refs
 const gaugeChartRef = ref<HTMLElement | null>(null)
 const heatmapChartRef = ref<HTMLElement | null>(null)
 const barChartRef = ref<HTMLElement | null>(null)
 const trendChartRef = ref<HTMLElement | null>(null)
+const trajectoryChartRef = ref<HTMLElement | null>(null)
 
 // Category options
 const categoryOptions = [
@@ -547,6 +571,370 @@ const initTrendChart = () => {
   trendChart.value.setOption(option)
 }
 
+// Initialize trajectory chart (phase space visualization)
+const initTrajectoryChart = () => {
+  if (!trajectoryChartRef.value) return
+
+  if (trajectoryChart.value) {
+    trajectoryChart.value.dispose()
+  }
+
+  trajectoryChart.value = echarts.init(trajectoryChartRef.value)
+
+  // Build lines data from rotation vectors
+  const linesData: Array<{
+    coords: [[number, number], [number, number]]
+    lineStyle?: { color: string; width: number }
+  }> = trajectoryData.value.map((vector) => ({
+    coords: [
+      [vector.t0_crowding, vector.t0_pe_percentile],
+      [vector.t1_crowding, vector.t1_pe_percentile],
+    ] as [[number, number], [number, number]],
+    lineStyle: {
+      color: getCrowdingColor(vector.t1_crowding),
+      width: 2,
+    },
+  }))
+
+  // Build scatter data for start points (blue) and end points (red with glow)
+  const startPoints = trajectoryData.value.map(vector => ({
+    value: [vector.t0_crowding, vector.t0_pe_percentile, vector.asset_name],
+    itemStyle: {
+      color: '#3B82F6',
+    },
+  }))
+
+  const endPoints = trajectoryData.value.map(vector => ({
+    value: [vector.t1_crowding, vector.t1_pe_percentile, vector.asset_name],
+    itemStyle: {
+      color: '#E63935',
+      shadowBlur: 10,
+      shadowColor: 'rgba(230, 57, 53, 0.5)',
+    },
+  }))
+
+  const option: echarts.EChartsOption = {
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: '#E5E8ED',
+      borderWidth: 1,
+      textStyle: {
+        color: '#1A1A1A',
+      },
+      formatter: (params: unknown) => {
+        const p = params as { data: { value: [number, number, string] }; seriesName: string }
+        if (!p || !p.data) return ''
+        const [crowding, pe, name] = p.data.value
+        return `
+          <div style="padding: 8px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">${name}</div>
+            <div>拥挤度: <strong>${crowding.toFixed(1)}</strong></div>
+            <div>PE分位: <strong>${pe.toFixed(1)}%</strong></div>
+            <div style="color: ${getCrowdingColor(crowding)};">${getCrowdingLabel(crowding)}</div>
+          </div>
+        `
+      },
+    },
+    grid: {
+      left: '8%',
+      right: '4%',
+      bottom: '12%',
+      top: '8%',
+      containLabel: true,
+    },
+    xAxis: {
+      type: 'value',
+      name: '拥挤度',
+      nameLocation: 'middle',
+      nameGap: 30,
+      nameTextStyle: {
+        color: '#4A4A4A',
+        fontSize: 12,
+      },
+      min: 0,
+      max: 100,
+      axisLine: {
+        lineStyle: {
+          color: '#E5E8ED',
+        },
+      },
+      axisLabel: {
+        color: '#4A4A4A',
+        fontSize: 11,
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#E5E8ED',
+          type: 'dashed',
+        },
+      },
+    },
+    yAxis: {
+      type: 'value',
+      name: 'PE分位 (%)',
+      nameLocation: 'middle',
+      nameGap: 40,
+      nameTextStyle: {
+        color: '#4A4A4A',
+        fontSize: 12,
+      },
+      min: 0,
+      max: 100,
+      axisLine: {
+        lineStyle: {
+          color: '#E5E8ED',
+        },
+      },
+      axisLabel: {
+        color: '#4A4A4A',
+        fontSize: 11,
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#E5E8ED',
+          type: 'dashed',
+        },
+      },
+    },
+    series: [
+      // Four quadrant shading (using scatter with large symbol)
+      {
+        type: 'scatter',
+        data: [
+          // 低估+低拥挤 (bottom-left)
+          { value: [25, 25], symbol: 'rect', symbolSize: 1000, itemStyle: { color: 'rgba(46, 125, 50, 0.08)' } },
+          // 高估+低拥挤 (top-left)
+          { value: [25, 75], symbol: 'rect', symbolSize: 1000, itemStyle: { color: 'rgba(255, 192, 105, 0.08)' } },
+          // 低估+高拥挤 (bottom-right)
+          { value: [75, 25], symbol: 'rect', symbolSize: 1000, itemStyle: { color: 'rgba(11, 60, 195, 0.08)' } },
+          // 高估+高拥挤 (top-right)
+          { value: [75, 75], symbol: 'rect', symbolSize: 1000, itemStyle: { color: 'rgba(230, 57, 53, 0.08)' } },
+        ] as any,
+        silent: true,
+      },
+      // Quadrant divider lines
+      {
+        type: 'line',
+        data: [
+          { coord: [50, 0] },
+          { coord: [50, 100] },
+        ] as any,
+        lineStyle: {
+          color: '#999999',
+          width: 1,
+          type: 'dashed',
+        },
+        silent: true,
+      },
+      {
+        type: 'line',
+        data: [
+          { coord: [0, 50] },
+          { coord: [100, 50] },
+        ] as any,
+        lineStyle: {
+          color: '#999999',
+          width: 1,
+          type: 'dashed',
+        },
+        silent: true,
+      },
+      // Quadrant labels
+      {
+        type: 'scatter',
+        data: [
+          { value: [15, 15], label: { show: true, formatter: '低估+低拥挤', color: '#2E7D32', fontSize: 11 } },
+          { value: [15, 85], label: { show: true, formatter: '高估+低拥挤', color: '#FF9800', fontSize: 11 } },
+          { value: [85, 15], label: { show: true, formatter: '低估+高拥挤', color: '#0B3CC3', fontSize: 11 } },
+          { value: [85, 85], label: { show: true, formatter: '高估+高拥挤', color: '#E63935', fontSize: 11 } },
+        ],
+        symbol: 'none',
+        z: 10,
+      },
+      // Trajectory lines with arrows
+      {
+        type: 'lines',
+        name: 'trajectory',
+        coordinateSystem: 'cartesian2d',
+        data: linesData,
+        symbol: ['none', 'arrow'],
+        symbolSize: [0, 8],
+        lineStyle: {
+          curveness: 0,
+        },
+        z: 5,
+      },
+      // Start points (blue)
+      {
+        type: 'scatter',
+        name: 'start',
+        data: startPoints,
+        symbol: 'circle',
+        symbolSize: 8,
+        z: 6,
+      },
+      // End points (red with glow)
+      {
+        type: 'scatter',
+        name: 'end',
+        data: endPoints as any,
+        symbol: 'circle',
+        symbolSize: 10,
+      },
+    ] as any,
+    graphic: [
+      // Vertical line at x=50
+      {
+        type: 'line',
+        z: 2,
+        left: 'center',
+        shape: {
+          x1: trajectoryChartRef.value.offsetWidth / 2,
+          y1: 40,
+          x2: trajectoryChartRef.value.offsetWidth / 2,
+          y2: trajectoryChartRef.value.offsetHeight - 40,
+        },
+        style: {
+          stroke: '#999999',
+          lineWidth: 1,
+          lineDash: [5, 5],
+        },
+        silent: true,
+      },
+      // Horizontal line at y=50
+      {
+        type: 'line',
+        z: 2,
+        left: 'center',
+        shape: {
+          x1: 60,
+          y1: trajectoryChartRef.value.offsetHeight / 2,
+          x2: trajectoryChartRef.value.offsetWidth - 40,
+          y2: trajectoryChartRef.value.offsetHeight / 2,
+        },
+        style: {
+          stroke: '#999999',
+          lineWidth: 1,
+          lineDash: [5, 5],
+        },
+        silent: true,
+      },
+    ],
+  }
+
+  trajectoryChart.value.setOption(option)
+}
+
+// Fetch rotation vectors
+const fetchRotationVectors = async () => {
+  if (!t0Date.value || !t1Date.value) {
+    // Set default dates if not set
+    if (uniqueDates.value.length >= 2) {
+      t0Date.value = uniqueDates.value[uniqueDates.value.length - 2]
+      t1Date.value = uniqueDates.value[uniqueDates.value.length - 1]
+    } else {
+      return
+    }
+  }
+
+  trajectoryLoading.value = true
+  try {
+    const response = await getRotationVectors(t0Date.value, t1Date.value, selectedCategory.value)
+    trajectoryData.value = response
+    
+    setTimeout(() => {
+      initTrajectoryChart()
+    }, 100)
+  } catch (error) {
+    ElMessage.error('获取轨迹向量数据失败')
+    console.error(error)
+  } finally {
+    trajectoryLoading.value = false
+  }
+}
+
+// Animation controls
+const togglePlay = () => {
+  isPlaying.value = !isPlaying.value
+  if (isPlaying.value) {
+    startAnimation()
+  } else {
+    stopAnimation()
+  }
+}
+
+const startAnimation = () => {
+  if (animationInterval) {
+    clearInterval(animationInterval)
+  }
+  
+  const step = animationSpeed.value * 2
+  animationInterval = setInterval(() => {
+    animationProgress.value += step
+    if (animationProgress.value >= 100) {
+      animationProgress.value = 0
+    }
+    updateTrajectoryAnimation()
+  }, 50)
+}
+
+const stopAnimation = () => {
+  if (animationInterval) {
+    clearInterval(animationInterval)
+    animationInterval = null
+  }
+}
+
+const updateTrajectoryAnimation = () => {
+  if (!trajectoryChart.value || trajectoryData.value.length === 0) return
+  
+  const progress = animationProgress.value / 100
+  
+  // Interpolate positions based on progress
+  const animatedLinesData = trajectoryData.value.map(vector => {
+    const currentCrowding = vector.t0_crowding + (vector.t1_crowding - vector.t0_crowding) * progress
+    const currentPe = vector.t0_pe_percentile + (vector.t1_pe_percentile - vector.t0_pe_percentile) * progress
+    
+    return {
+      coords: [
+        [vector.t0_crowding, vector.t0_pe_percentile],
+        [currentCrowding, currentPe],
+      ] as [[number, number], [number, number]],
+      lineStyle: {
+        color: getCrowdingColor(currentCrowding),
+        width: 2,
+      },
+    }
+  })
+  
+  trajectoryChart.value.setOption({
+    series: [
+      { type: 'lines', data: animatedLinesData },
+    ],
+  })
+}
+
+const handleSpeedChange = (speed: number) => {
+  animationSpeed.value = speed
+  if (isPlaying.value) {
+    stopAnimation()
+    startAnimation()
+  }
+}
+
+const handleProgressChange = (progress: number) => {
+  animationProgress.value = progress
+  updateTrajectoryAnimation()
+}
+
+// Watch date changes
+watch([t0Date, t1Date], () => {
+  if (t0Date.value && t1Date.value) {
+    fetchRotationVectors()
+  }
+})
+
 // Fetch data from API
 const fetchData = async () => {
   loading.value = true
@@ -562,6 +950,8 @@ const fetchData = async () => {
       initHeatmapChart()
       initBarChart()
       initTrendChart()
+      // Fetch rotation vectors after crowding data is loaded
+      fetchRotationVectors()
     }, 100)
   } catch (error) {
     ElMessage.error('获取市场拥挤度数据失败')
@@ -582,6 +972,7 @@ const handleResize = () => {
   heatmapChart.value?.resize()
   barChart.value?.resize()
   trendChart.value?.resize()
+  trajectoryChart.value?.resize()
 }
 
 // Latest date
@@ -601,6 +992,8 @@ onUnmounted(() => {
   heatmapChart.value?.dispose()
   barChart.value?.dispose()
   trendChart.value?.dispose()
+  trajectoryChart.value?.dispose()
+  stopAnimation()
 })
 </script>
 
@@ -704,6 +1097,78 @@ onUnmounted(() => {
       <div class="trend-section card">
         <div class="card-title">历史拥挤度趋势</div>
         <div class="trend-container" ref="trendChartRef"></div>
+      </div>
+
+      <!-- Phase Space Trajectory -->
+      <div class="trajectory-section card">
+        <div class="card-title">
+          <span>相空间轨迹分析</span>
+          <div class="trajectory-controls">
+            <el-date-picker
+              v-model="t0Date"
+              type="date"
+              placeholder="起始日期"
+              format="YYYY-MM-DD"
+              value-format="YYYYMMDD"
+              size="small"
+              style="width: 130px;"
+              :disabled-date="(date: Date) => date > new Date()"
+            />
+            <span class="date-separator">→</span>
+            <el-date-picker
+              v-model="t1Date"
+              type="date"
+              placeholder="结束日期"
+              format="YYYY-MM-DD"
+              value-format="YYYYMMDD"
+              size="small"
+              style="width: 130px;"
+              :disabled-date="(date: Date) => date > new Date()"
+            />
+            <el-button
+              :type="isPlaying ? 'danger' : 'primary'"
+              size="small"
+              @click="togglePlay"
+              :icon="isPlaying ? 'VideoPause' : 'VideoPlay'"
+            >
+              {{ isPlaying ? '暂停' : '播放' }}
+            </el-button>
+            <el-select
+              v-model="animationSpeed"
+              size="small"
+              style="width: 80px;"
+              @change="handleSpeedChange"
+            >
+              <el-option label="0.5x" :value="0.5" />
+              <el-option label="1x" :value="1" />
+              <el-option label="2x" :value="2" />
+            </el-select>
+          </div>
+        </div>
+        <div class="trajectory-container" ref="trajectoryChartRef" v-loading="trajectoryLoading"></div>
+        <div class="trajectory-progress" v-if="isPlaying">
+          <el-slider
+            v-model="animationProgress"
+            :min="0"
+            :max="100"
+            :format-tooltip="(val: number) => `${val}%`"
+            @change="handleProgressChange"
+          />
+        </div>
+        <div class="trajectory-legend">
+          <div class="legend-item">
+            <span class="legend-dot" style="background: #3B82F6;"></span>
+            <span>起始点 (T₀)</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot" style="background: #E63935; box-shadow: 0 0 8px rgba(230, 57, 53, 0.5);"></span>
+            <span>终点 (T₁)</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-arrow">→</span>
+            <span>旋转方向</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -897,6 +1362,57 @@ onUnmounted(() => {
 .trend-container {
   width: 100%;
   height: 280px;
+}
+
+/* Trajectory */
+.trajectory-section {
+  grid-column: 1 / -1;
+}
+
+.trajectory-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.date-separator {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.trajectory-container {
+  width: 100%;
+  height: 400px;
+}
+
+.trajectory-progress {
+  padding: 8px 0;
+  margin-top: 12px;
+  border-top: 1px solid var(--border-line);
+}
+
+.trajectory-legend {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-line);
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.legend-arrow {
+  color: var(--brand-navy-dark);
+  font-weight: bold;
+  margin-right: 4px;
 }
 
 /* Empty state */

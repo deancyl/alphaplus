@@ -56,7 +56,21 @@ const expandedMobileMenu = ref<string | null>(null)
 const hoverTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const leaveTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
+// Detect touch device - skip debounce on touch devices
+const isTouchDevice = ref(false)
+
+// Check for touch capability on mount
+if (typeof window !== 'undefined') {
+  isTouchDevice.value = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+}
+
 const handleMouseEnter = (menu: string) => {
+  // Skip debounce on touch devices for immediate response
+  if (isTouchDevice.value) {
+    activeMenu.value = menu
+    return
+  }
+  
   if (leaveTimer.value) {
     clearTimeout(leaveTimer.value)
     leaveTimer.value = null
@@ -67,6 +81,12 @@ const handleMouseEnter = (menu: string) => {
 }
 
 const handleMouseLeave = () => {
+  // Skip debounce on touch devices
+  if (isTouchDevice.value) {
+    activeMenu.value = null
+    return
+  }
+  
   if (hoverTimer.value) {
     clearTimeout(hoverTimer.value)
     hoverTimer.value = null

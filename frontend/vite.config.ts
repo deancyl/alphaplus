@@ -4,6 +4,9 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [vue()],
+  css: {
+    postcss: './postcss.config.js',
+  },
   base: './',  // Relative path for portable deployment
   resolve: {
     alias: {

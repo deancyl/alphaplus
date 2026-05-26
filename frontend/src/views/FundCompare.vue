@@ -14,6 +14,14 @@ interface RadarData {
   value: number[]
 }
 
+interface CorrelationStats {
+  average: number
+  highestPair: { i: number; j: number; value: number }
+  lowestPair: { i: number; j: number; value: number }
+  sampleSize: number
+  calculationDate: string
+}
+
 // State
 const searchQuery = ref('')
 const searchResults = ref<CompareFund[]>([])
@@ -22,6 +30,14 @@ const loading = ref(false)
 const compareLoading = ref(false)
 const correlationMatrix = ref<number[][]>([])
 const radarData = ref<RadarData[]>([])
+const correlationStats = ref<CorrelationStats | null>(null)
+
+// Drag and drop state
+const draggedIndex = ref<number | null>(null)
+const dragOverIndex = ref<number | null>(null)
+
+// Debounce timer
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // Chart refs
 const correlationChartRef = ref<HTMLElement | null>(null)
@@ -31,6 +47,7 @@ let radarChart: echarts.ECharts | null = null
 
 // Constants
 const MAX_COMPARE = 15
+const DEBOUNCE_DELAY = 300
 const RADAR_INDICATORS = [
   { name: '收益能力', max: 100 },
   { name: '稳定性', max: 100 },
@@ -44,6 +61,18 @@ const RADAR_INDICATORS = [
 const canAddMore = computed(() => selectedFunds.value.length < MAX_COMPARE)
 const hasSelection = computed(() => selectedFunds.value.length > 0)
 const hasEnoughForCorrelation = computed(() => selectedFunds.value.length >= 2)
+const isAtLimit = computed(() => selectedFunds.value.length >= MAX_COMPARE)
+
+// Debounced search funds
+const debouncedSearch = () => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+  }
+  
+  searchDebounceTimer = setTimeout(() => {
+    handleSearch()
+  }, DEBOUNCE_DELAY)
+}
 
 // Search funds
 const handleSearch = async () => {
@@ -84,7 +113,7 @@ const handleSearch = async () => {
 // Add fund to comparison
 const addToComparison = (fund: CompareFund) => {
   if (!canAddMore.value) {
-    ElMessage.warning(`最多只能对比 ${MAX_COMPARE} 只基金`)
+    ElMessage.warning(`最多只能对比 ${MAX_COMPARE} 只基金，请先移除部分基金`)
     return
   }
   
@@ -121,7 +150,45 @@ const clearSelection = () => {
   searchResults.value.forEach(f => f.selected = false)
   correlationMatrix.value = []
   radarData.value = []
+  correlationStats.value = null
   ElMessage.info('已清空对比列表')
+}
+
+// Calculate correlation statistics
+const calculateCorrelationStats = (): CorrelationStats | null => {
+  if (!correlationMatrix.value.length || correlationMatrix.value.length < 2) {
+    return null
+  }
+  
+  const n = correlationMatrix.value.length
+  let sum = 0
+  let count = 0
+  let highest = { i: 0, j: 1, value: -Infinity }
+  let lowest = { i: 0, j: 1, value: Infinity }
+  
+  // Only consider upper triangle (excluding diagonal)
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const value = correlationMatrix.value[i][j]
+      sum += value
+      count++
+      
+      if (value > highest.value) {
+        highest = { i, j, value }
+      }
+      if (value < lowest.value) {
+        lowest = { i, j, value }
+      }
+    }
+  }
+  
+  return {
+    average: count > 0 ? sum / count : 0,
+    highestPair: highest,
+    lowestPair: lowest,
+    sampleSize: count,
+    calculationDate: new Date().toLocaleDateString('zh-CN')
+  }
 }
 
 // Fetch comparison data
@@ -129,6 +196,7 @@ const fetchComparisonData = async () => {
   if (!hasEnoughForCorrelation.value) {
     correlationMatrix.value = []
     radarData.value = []
+    correlationStats.value = null
     return
   }
   
@@ -137,6 +205,9 @@ const fetchComparisonData = async () => {
     const fundCodes = selectedFunds.value.map(f => f.fund_code)
     const response = await compareFunds(fundCodes)
     correlationMatrix.value = response.correlation_matrix
+    
+    // Calculate statistics
+    correlationStats.value = calculateCorrelationStats()
     
     // Generate radar data
     radarData.value = selectedFunds.value.map(fund => ({
@@ -179,7 +250,7 @@ const normalizeRadarValues = (fund: FundItem): number[] => {
   ]
 }
 
-// Render correlation heatmap
+// Render correlation heatmap (triangular)
 const renderCorrelationChart = () => {
   if (!correlationChartRef.value || !hasEnoughForCorrelation.value) return
   
@@ -191,19 +262,27 @@ const renderCorrelationChart = () => {
     f.fund_name.length > 6 ? f.fund_name.slice(0, 6) + '...' : f.fund_name
   )
   
+  // Build triangular data (upper triangle including diagonal)
+  const heatmapData: number[][] = []
+  for (let i = 0; i < correlationMatrix.value.length; i++) {
+    for (let j = i; j < correlationMatrix.value[i].length; j++) {
+      heatmapData.push([j, i, correlationMatrix.value[i][j]])
+    }
+  }
+  
   const option: echarts.EChartsOption = {
     tooltip: {
       position: 'top',
       formatter: (params: unknown) => {
         const p = params as { data: number[] }
-        const [i, j, value] = p.data
-        return `${fundNames[i]} vs ${fundNames[j]}<br/>相关系数: ${value.toFixed(2)}`
+        const [j, i, value] = p.data
+        return `${fundNames[i]} vs ${fundNames[j]}<br/>相关系数: ${value.toFixed(3)}`
       }
     },
     grid: {
       top: 40,
-      left: 80,
-      right: 20,
+      left: 100,
+      right: 40,
       bottom: 60
     },
     xAxis: {
@@ -212,39 +291,59 @@ const renderCorrelationChart = () => {
       axisLabel: {
         rotate: 45,
         fontSize: 11,
-        color: '#4A4A4A'
+        color: 'var(--text-regular)'
       },
-      splitArea: { show: true }
+      splitArea: { 
+        show: true,
+        areaStyle: {
+          color: ['rgba(0,0,0,0.02)', 'rgba(0,0,0,0.04)']
+        }
+      },
+      axisLine: {
+        lineStyle: { color: 'var(--border-line)' }
+      }
     },
     yAxis: {
       type: 'category',
       data: fundNames,
       axisLabel: {
         fontSize: 11,
-        color: '#4A4A4A'
+        color: 'var(--text-regular)'
       },
-      splitArea: { show: true }
+      splitArea: { 
+        show: true,
+        areaStyle: {
+          color: ['rgba(0,0,0,0.02)', 'rgba(0,0,0,0.04)']
+        }
+      },
+      axisLine: {
+        lineStyle: { color: 'var(--border-line)' }
+      }
     },
     visualMap: {
-      min: 0,
+      min: -1,
       max: 1,
       calculable: true,
       orient: 'horizontal',
       left: 'center',
       bottom: 0,
+      text: ['高相关', '低相关'],
+      textStyle: {
+        color: 'var(--text-muted)',
+        fontSize: 11
+      },
       inRange: {
-        color: ['#E6F7FF', '#1890FF', '#0050B3']
+        color: ['#E63935', '#FFB74D', '#FFE082', '#C5E1A5', '#2E7D32']
       }
     },
     series: [{
       name: '相关系数',
       type: 'heatmap',
-      data: correlationMatrix.value.flatMap((row, i) => 
-        row.map((value, j) => [i, j, value])
-      ),
+      data: heatmapData,
       label: {
         show: true,
         fontSize: 10,
+        color: 'var(--text-primary)',
         formatter: (params: unknown) => {
           const p = params as { data: number[] }
           return p.data[2].toFixed(2)
@@ -253,8 +352,14 @@ const renderCorrelationChart = () => {
       emphasis: {
         itemStyle: {
           shadowBlur: 10,
-          shadowColor: 'rgba(0, 0, 0, 0.5)'
+          shadowColor: 'rgba(0, 0, 0, 0.3)',
+          borderColor: '#333',
+          borderWidth: 1
         }
+      },
+      itemStyle: {
+        borderColor: 'var(--border-line)',
+        borderWidth: 1
       }
     }]
   }
@@ -284,7 +389,7 @@ const renderRadarChart = () => {
       bottom: 0,
       textStyle: {
         fontSize: 11,
-        color: '#4A4A4A'
+        color: 'var(--text-regular)'
       }
     },
     radar: {
@@ -292,7 +397,7 @@ const renderRadarChart = () => {
       center: ['50%', '45%'],
       radius: '60%',
       axisName: {
-        color: '#1A1A1A',
+        color: 'var(--text-primary)',
         fontSize: 12
       },
       splitArea: {
@@ -302,12 +407,12 @@ const renderRadarChart = () => {
       },
       axisLine: {
         lineStyle: {
-          color: '#E5E8ED'
+          color: 'var(--border-line)'
         }
       },
       splitLine: {
         lineStyle: {
-          color: '#E5E8ED'
+          color: 'var(--border-line)'
         }
       }
     },
@@ -352,10 +457,37 @@ const getValueClass = (val: number | null): string => {
   return val >= 0 ? 'text-up' : 'text-down'
 }
 
+// Drag and drop handlers
+const handleDragStart = (index: number) => {
+  draggedIndex.value = index
+}
+
+const handleDragOver = (e: DragEvent, index: number) => {
+  e.preventDefault()
+  dragOverIndex.value = index
+}
+
+const handleDragEnd = () => {
+  if (draggedIndex.value !== null && dragOverIndex.value !== null && draggedIndex.value !== dragOverIndex.value) {
+    const items = [...selectedFunds.value]
+    const draggedItem = items[draggedIndex.value]
+    items.splice(draggedIndex.value, 1)
+    items.splice(dragOverIndex.value, 0, draggedItem)
+    selectedFunds.value = items
+  }
+  draggedIndex.value = null
+  dragOverIndex.value = null
+}
+
 // Watch for selection changes
 watch(selectedFunds, () => {
   fetchComparisonData()
 }, { deep: true })
+
+// Watch for search query changes
+watch(searchQuery, () => {
+  debouncedSearch()
+})
 
 // Handle window resize
 const handleResize = () => {
@@ -371,6 +503,9 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   correlationChart?.dispose()
   radarChart?.dispose()
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+  }
 })
 </script>
 
@@ -381,22 +516,28 @@ onUnmounted(() => {
       <div class="search-panel">
         <div class="panel-header">
           <h3>基金搜索</h3>
-          <span class="hint">已选 {{ selectedFunds.length }}/{{ MAX_COMPARE }} 只</span>
+          <span class="hint" :class="{ 'limit-warning': isAtLimit }">
+            已选 {{ selectedFunds.length }}/{{ MAX_COMPARE }} 只
+          </span>
         </div>
         
         <div class="search-box">
           <el-input
             v-model="searchQuery"
-            placeholder="输入基金代码或名称搜索"
+            placeholder="输入基金代码或名称搜索（自动搜索）"
             clearable
-            @keyup.enter="handleSearch"
+            @clear="searchResults = []"
           >
-            <template #append>
-              <el-button @click="handleSearch" :loading="loading">
-                搜索
-              </el-button>
+            <template #prefix>
+              <el-icon><i-ep-search /></el-icon>
             </template>
           </el-input>
+        </div>
+        
+        <!-- Limit warning -->
+        <div v-if="isAtLimit" class="limit-warning-box">
+          <el-icon><i-ep-warning-filled /></el-icon>
+          <span>已达上限 {{ MAX_COMPARE }} 只，请移除后继续添加</span>
         </div>
         
         <!-- 搜索结果 -->
@@ -442,7 +583,7 @@ onUnmounted(() => {
         <!-- 已选基金列表 -->
         <div class="selected-panel">
           <div class="panel-header">
-            <h3>对比列表</h3>
+            <h3>对比列表 <span class="drag-hint" v-if="hasSelection">(拖拽排序)</span></h3>
             <el-button
               v-if="hasSelection"
               type="danger"
@@ -457,16 +598,38 @@ onUnmounted(() => {
             <p>请从左侧搜索并添加基金进行对比</p>
           </div>
           
-          <div v-else class="selected-tags">
-            <el-tag
-              v-for="fund in selectedFunds"
+          <div v-else class="selected-funds-grid">
+            <div
+              v-for="(fund, index) in selectedFunds"
               :key="fund.fund_code"
-              closable
-              type="primary"
-              @close="removeFromComparison(fund.fund_code)"
+              class="selected-fund-card"
+              :class="{ 
+                'dragging': draggedIndex === index,
+                'drag-over': dragOverIndex === index 
+              }"
+              draggable="true"
+              @dragstart="handleDragStart(index)"
+              @dragover="handleDragOver($event, index)"
+              @dragend="handleDragEnd"
             >
-              {{ fund.fund_code }} {{ fund.fund_name.slice(0, 6) }}
-            </el-tag>
+              <div class="card-header">
+                <span class="fund-index">{{ index + 1 }}</span>
+                <span class="fund-code">{{ fund.fund_code }}</span>
+                <el-button
+                  type="danger"
+                  size="small"
+                  circle
+                  class="remove-btn"
+                  @click="removeFromComparison(fund.fund_code)"
+                >
+                  <el-icon><i-ep-close /></el-icon>
+                </el-button>
+              </div>
+              <div class="card-body">
+                <div class="fund-name">{{ fund.fund_name }}</div>
+                <div class="fund-type">{{ fund.fund_type }}</div>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -559,13 +722,48 @@ onUnmounted(() => {
         <!-- 图表区域 -->
         <div class="charts-area" v-if="hasSelection">
           <!-- 相关性矩阵 -->
-          <div class="chart-panel" v-if="hasEnoughForCorrelation">
+          <div class="chart-panel correlation-panel" v-if="hasEnoughForCorrelation">
             <div class="panel-header">
-              <h3>相关性矩阵</h3>
+              <h3>相关性矩阵（Pearson系数）</h3>
             </div>
+            
+            <!-- Correlation Statistics -->
+            <div v-if="correlationStats" class="correlation-stats">
+              <div class="stat-item">
+                <span class="stat-label">平均相关系数</span>
+                <span class="stat-value" :class="correlationStats.average >= 0 ? 'positive' : 'negative'">
+                  {{ correlationStats.average.toFixed(3) }}
+                </span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">最高相关</span>
+                <span class="stat-value positive">
+                  {{ selectedFunds[correlationStats.highestPair.i]?.fund_name?.slice(0, 4) }} ↔ 
+                  {{ selectedFunds[correlationStats.highestPair.j]?.fund_name?.slice(0, 4) }}:
+                  {{ correlationStats.highestPair.value.toFixed(3) }}
+                </span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">最低相关</span>
+                <span class="stat-value negative">
+                  {{ selectedFunds[correlationStats.lowestPair.i]?.fund_name?.slice(0, 4) }} ↔ 
+                  {{ selectedFunds[correlationStats.lowestPair.j]?.fund_name?.slice(0, 4) }}:
+                  {{ correlationStats.lowestPair.value.toFixed(3) }}
+                </span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">样本数</span>
+                <span class="stat-value">{{ correlationStats.sampleSize }} 对</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">计算日期</span>
+                <span class="stat-value">{{ correlationStats.calculationDate }}</span>
+              </div>
+            </div>
+            
             <div
               ref="correlationChartRef"
-              class="chart-container"
+              class="chart-container correlation-chart"
               v-loading="compareLoading"
             />
           </div>
@@ -594,7 +792,7 @@ onUnmounted(() => {
 
 .compare-container {
   display: flex;
-  gap: 16px;
+  gap: var(--spacing-md);
   height: 100%;
 }
 
@@ -604,13 +802,25 @@ onUnmounted(() => {
   flex-shrink: 0;
   background: var(--bg-card);
   border-radius: 4px;
-  padding: 16px;
+  padding: var(--spacing-md);
   display: flex;
   flex-direction: column;
 }
 
 .search-box {
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-md);
+}
+
+.limit-warning-box {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(230, 57, 53, 0.08);
+  border-radius: 4px;
+  margin-bottom: var(--spacing-md);
+  color: var(--market-up);
+  font-size: 12px;
 }
 
 .search-results {
@@ -675,14 +885,14 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--spacing-md);
   overflow-y: auto;
 }
 
 .selected-panel {
   background: var(--bg-card);
   border-radius: 4px;
-  padding: 16px;
+  padding: var(--spacing-md);
 }
 
 .empty-state {
@@ -694,29 +904,144 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.selected-tags {
+.selected-funds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.selected-fund-card {
+  background: var(--bg-system);
+  border: 1px solid var(--border-line);
+  border-radius: 6px;
+  padding: var(--spacing-sm);
+  cursor: grab;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.selected-fund-card:hover {
+  border-color: var(--brand-navy-active);
+  box-shadow: 0 2px 8px rgba(0, 51, 153, 0.1);
+}
+
+.selected-fund-card.dragging {
+  opacity: 0.5;
+  transform: scale(0.95);
+}
+
+.selected-fund-card.drag-over {
+  border-color: var(--brand-navy-active);
+  border-style: dashed;
+  background: rgba(0, 102, 204, 0.05);
+}
+
+.card-header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-xs);
+}
+
+.fund-index {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: var(--brand-navy-dark);
+  color: white;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.card-header .fund-code {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.remove-btn {
+  padding: 2px;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card-body .fund-name {
+  font-size: 12px;
+  color: var(--text-regular);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-body .fund-type {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .compare-table-panel {
   background: var(--bg-card);
   border-radius: 4px;
-  padding: 16px;
+  padding: var(--spacing-md);
 }
 
 .charts-area {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: var(--spacing-md);
 }
 
 .chart-panel {
   background: var(--bg-card);
   border-radius: 4px;
-  padding: 16px;
+  padding: var(--spacing-md);
   min-height: 350px;
+}
+
+.correlation-panel {
+  min-height: 450px;
+}
+
+.correlation-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: var(--bg-system);
+  border-radius: 4px;
+  margin-bottom: var(--spacing-md);
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stat-value.positive {
+  color: var(--market-up);
+}
+
+.stat-value.negative {
+  color: var(--market-down);
 }
 
 .chart-container {
@@ -724,12 +1049,16 @@ onUnmounted(() => {
   height: 280px;
 }
 
+.correlation-chart {
+  height: 320px;
+}
+
 /* 通用面板头部 */
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-md);
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-line);
 }
@@ -740,9 +1069,21 @@ onUnmounted(() => {
   color: var(--text-primary);
 }
 
+.drag-hint {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--text-muted);
+  margin-left: var(--spacing-xs);
+}
+
 .hint {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.hint.limit-warning {
+  color: var(--market-up);
+  font-weight: 600;
 }
 
 /* 响应式 */
@@ -760,6 +1101,10 @@ onUnmounted(() => {
   .search-panel {
     width: 100%;
     max-height: 300px;
+  }
+  
+  .selected-funds-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 }
 </style>

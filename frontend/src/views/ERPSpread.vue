@@ -17,10 +17,23 @@ interface ERPDataItem {
   index_close_price: number | null
 }
 
+// 分析模式类型
+type AnalysisMode = 'sd' | 'percentile'
+
 // 响应式数据
 const erpData = ref<ERPDataItem[]>([])
 const loading = ref(false)
 const selectedIndex = ref('000300')
+
+// 分析模式 - 从 localStorage 恢复
+const analysisMode = ref<AnalysisMode>(
+  (localStorage.getItem('erp-analysis-mode') as AnalysisMode) || 'sd'
+)
+
+// 监听模式变化，保存到 localStorage
+watch(analysisMode, (newMode) => {
+  localStorage.setItem('erp-analysis-mode', newMode)
+})
 
 // 指数选项
 const indexOptions = [
@@ -39,6 +52,39 @@ const currentERP = computed(() => {
 // 历史数据（最近500天）
 const historicalData = computed(() => {
   return erpData.value.slice(-500)
+})
+
+// 计算统计数据
+const statistics = computed(() => {
+  const data = historicalData.value
+  if (data.length === 0) return { mean: 0, std: 0, p25: 0, p50: 0, p75: 0 }
+  
+  const erpValues = data.map(d => d.erp_spread).sort((a, b) => a - b)
+  const n = erpValues.length
+  
+  // 计算均值
+  const mean = erpValues.reduce((sum, v) => sum + v, 0) / n
+  
+  // 计算标准差
+  const variance = erpValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / n
+  const std = Math.sqrt(variance)
+  
+  // 计算百分位数
+  const percentile = (p: number) => {
+    const idx = (p / 100) * (n - 1)
+    const lower = Math.floor(idx)
+    const upper = Math.ceil(idx)
+    if (lower === upper) return erpValues[lower]
+    return erpValues[lower] + (erpValues[upper] - erpValues[lower]) * (idx - lower)
+  }
+  
+  return {
+    mean,
+    std,
+    p25: percentile(25),
+    p50: percentile(50),
+    p75: percentile(75),
+  }
 })
 
 // ERP区域分类
@@ -67,16 +113,62 @@ const lineChartOption = computed<EChartsOption>(() => {
   const dates = historicalData.value.map(d => d.trade_date)
   const erpValues = historicalData.value.map(d => d.erp_spread)
   const indexPrices = historicalData.value.map(d => d.index_close_price ?? 0)
+  
+  const { mean, std, p25, p50, p75 } = statistics.value
+  const isSDMode = analysisMode.value === 'sd'
+  
+  // SD 模式的参考线
+  const sdMarkLines = [
+    { yAxis: mean, lineStyle: { color: '#1A1A1A', type: 'solid', width: 2 }, label: { formatter: 'μ', position: 'end' } },
+    { yAxis: mean + std, lineStyle: { color: '#E63935', type: 'dashed' }, label: { formatter: '+1σ', position: 'end' } },
+    { yAxis: mean - std, lineStyle: { color: '#2E7D32', type: 'dashed' }, label: { formatter: '-1σ', position: 'end' } },
+    { yAxis: mean + 2 * std, lineStyle: { color: '#E63935', type: 'dotted' }, label: { formatter: '+2σ', position: 'end' } },
+    { yAxis: mean - 2 * std, lineStyle: { color: '#2E7D32', type: 'dotted' }, label: { formatter: '-2σ', position: 'end' } },
+  ]
+  
+  // 百分位模式的参考线
+  const percentileMarkLines = [
+    { yAxis: p25, lineStyle: { color: '#2E7D32', type: 'dashed' }, label: { formatter: '25th', position: 'end' } },
+    { yAxis: p50, lineStyle: { color: '#1A1A1A', type: 'solid', width: 2 }, label: { formatter: '50th (中位数)', position: 'end' } },
+    { yAxis: p75, lineStyle: { color: '#E63935', type: 'dashed' }, label: { formatter: '75th', position: 'end' } },
+  ]
+  
+  // markArea 区域着色
+  const sdMarkArea = [
+    // 低于 -1SD (低估区)
+    [
+      { yAxis: mean - std, itemStyle: { color: 'rgba(46, 125, 50, 0.12)' } },
+      { yAxis: mean - 2 * std - 1 },
+    ],
+    // 高于 +1SD (高估区)
+    [
+      { yAxis: mean + std, itemStyle: { color: 'rgba(230, 57, 53, 0.12)' } },
+      { yAxis: mean + 2 * std + 1 },
+    ],
+  ]
+  
+  const percentileMarkArea = [
+    // 低于 25th 百分位 (低估区)
+    [
+      { yAxis: p25, itemStyle: { color: 'rgba(46, 125, 50, 0.12)' } },
+      { yAxis: p25 - 5 },
+    ],
+    // 高于 75th 百分位 (高估区)
+    [
+      { yAxis: p75, itemStyle: { color: 'rgba(230, 57, 53, 0.12)' } },
+      { yAxis: p75 + 5 },
+    ],
+  ]
 
   return {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'cross' },
       formatter: (params: unknown) => {
-        const p = params as { axisValue: string; value: number }[]
+        const p = params as { axisValue: string; value: number; seriesName: string }[]
         const date = p[0]?.axisValue ?? ''
-        const erp = p[0]?.value?.toFixed(2) ?? '-'
-        const price = p[1]?.value?.toFixed(2) ?? '-'
+        const erp = p.find(item => item.seriesName === 'ERP收益差')?.value?.toFixed(2) ?? '-'
+        const price = p.find(item => item.seriesName === '指数价格')?.value?.toFixed(2) ?? '-'
         return `${date}<br/>ERP: ${erp}%<br/>指数: ${price}`
       },
     },
@@ -85,33 +177,18 @@ const lineChartOption = computed<EChartsOption>(() => {
       top: 10,
       textStyle: { color: '#4A4A4A' },
     },
-    grid: [
-      { left: '8%', right: '8%', top: '15%', height: '35%' },
-      { left: '8%', right: '8%', top: '58%', height: '30%' },
-    ],
-    xAxis: [
-      {
-        type: 'category',
-        data: dates,
-        gridIndex: 0,
-        axisLine: { lineStyle: { color: '#E5E8ED' } },
-        axisLabel: { color: '#999999', fontSize: 11 },
-        splitLine: { show: false },
-      },
-      {
-        type: 'category',
-        data: dates,
-        gridIndex: 1,
-        axisLine: { lineStyle: { color: '#E5E8ED' } },
-        axisLabel: { color: '#999999', fontSize: 11 },
-        splitLine: { show: false },
-      },
-    ],
+    grid: { left: '8%', right: '10%', top: '15%', bottom: '12%' },
+    xAxis: {
+      type: 'category',
+      data: dates,
+      axisLine: { lineStyle: { color: '#E5E8ED' } },
+      axisLabel: { color: '#999999', fontSize: 11 },
+      splitLine: { show: false },
+    },
     yAxis: [
       {
         type: 'value',
         name: 'ERP (%)',
-        gridIndex: 0,
         nameTextStyle: { color: '#4A4A4A' },
         axisLine: { show: false },
         axisLabel: { color: '#999999' },
@@ -120,42 +197,16 @@ const lineChartOption = computed<EChartsOption>(() => {
       {
         type: 'value',
         name: '指数价格',
-        gridIndex: 1,
         nameTextStyle: { color: '#4A4A4A' },
         axisLine: { show: false },
-        axisLabel: { color: '#999999' },
-        splitLine: { lineStyle: { color: '#E5E8ED', type: 'dashed' } },
+        axisLabel: { color: '#999999', opacity: 0.5 },
+        splitLine: { show: false },
       },
     ],
-    visualMap: {
-      show: false,
-      seriesIndex: 0,
-      pieces: [
-        { lte: -2, color: '#2E7D32' },
-        { gt: -2, lte: 0, color: '#0B3CC3' },
-        { gt: 0, lte: 2, color: '#999999' },
-        { gt: 2, lte: 4, color: '#FF9800' },
-        { gt: 4, color: '#E63935' },
-      ],
-    },
-    markArea: {
-      silent: true,
-      data: [
-        [
-          { yAxis: -2, itemStyle: { color: 'rgba(46, 125, 50, 0.08)' } },
-          { yAxis: -10 },
-        ],
-        [
-          { yAxis: 4, itemStyle: { color: 'rgba(230, 57, 53, 0.08)' } },
-          { yAxis: 10 },
-        ],
-      ],
-    },
     series: [
       {
         name: 'ERP收益差',
         type: 'line',
-        xAxisIndex: 0,
         yAxisIndex: 0,
         data: erpValues,
         smooth: true,
@@ -164,27 +215,25 @@ const lineChartOption = computed<EChartsOption>(() => {
         markLine: {
           silent: true,
           symbol: 'none',
-          data: [
-            { yAxis: -2, lineStyle: { color: '#2E7D32', type: 'dashed' }, label: { formatter: '-2%' } },
-            { yAxis: 0, lineStyle: { color: '#999999', type: 'dashed' }, label: { formatter: '0%' } },
-            { yAxis: 2, lineStyle: { color: '#FF9800', type: 'dashed' }, label: { formatter: '2%' } },
-            { yAxis: 4, lineStyle: { color: '#E63935', type: 'dashed' }, label: { formatter: '4%' } },
-          ],
+          data: isSDMode ? sdMarkLines : percentileMarkLines,
+        },
+        markArea: {
+          silent: true,
+          data: isSDMode ? sdMarkArea : percentileMarkArea,
         },
       },
       {
         name: '指数价格',
         type: 'line',
-        xAxisIndex: 1,
         yAxisIndex: 1,
         data: indexPrices,
         smooth: true,
         symbol: 'none',
-        lineStyle: { color: '#003399', width: 1.5 },
-        areaStyle: { color: 'rgba(0, 51, 153, 0.05)' },
+        lineStyle: { color: '#003399', width: 1.5, opacity: 0.5 },
+        areaStyle: { color: 'rgba(0, 51, 153, 0.03)' },
       },
     ],
-  }
+  } as EChartsOption
 })
 
 // 仪表盘配置
@@ -371,7 +420,7 @@ onMounted(() => {
       <p class="subtitle">标准差视角与百分位分级带状着色视角</p>
     </div>
 
-    <!-- 指数选择器 -->
+    <!-- 指数选择器与分析模式切换 -->
     <div class="index-selector">
       <span class="label">选择指数：</span>
       <el-select v-model="selectedIndex" placeholder="请选择指数" style="width: 160px">
@@ -382,6 +431,35 @@ onMounted(() => {
           :value="item.value"
         />
       </el-select>
+      
+      <div class="mode-toggle">
+        <span class="label">分析视角：</span>
+        <el-radio-group v-model="analysisMode" size="small">
+          <el-radio-button value="sd">标准差视角</el-radio-button>
+          <el-radio-button value="percentile">百分位视角</el-radio-button>
+        </el-radio-group>
+      </div>
+    </div>
+    
+    <!-- 统计数据展示 -->
+    <div class="stats-row" v-if="historicalData.length > 0">
+      <div class="stats-card" v-if="analysisMode === 'sd'">
+        <div class="stats-title">标准差统计</div>
+        <div class="stats-values">
+          <span>均值 (μ): {{ statistics.mean.toFixed(2) }}%</span>
+          <span>标准差 (σ): {{ statistics.std.toFixed(2) }}%</span>
+          <span>+1σ: {{ (statistics.mean + statistics.std).toFixed(2) }}%</span>
+          <span>-1σ: {{ (statistics.mean - statistics.std).toFixed(2) }}%</span>
+        </div>
+      </div>
+      <div class="stats-card" v-else>
+        <div class="stats-title">百分位统计</div>
+        <div class="stats-values">
+          <span>25th: {{ statistics.p25.toFixed(2) }}%</span>
+          <span>50th (中位数): {{ statistics.p50.toFixed(2) }}%</span>
+          <span>75th: {{ statistics.p75.toFixed(2) }}%</span>
+        </div>
+      </div>
     </div>
 
     <!-- 核心指标卡片 -->
@@ -432,13 +510,16 @@ onMounted(() => {
       <!-- 历史ERP折线图 -->
       <div class="chart-card full-width">
         <div class="chart-header">
-          <h3>ERP历史走势 (近500天)</h3>
-          <div class="legend-items">
-            <span class="legend-item"><i class="dot" style="background: #2E7D32"></i>极度低估</span>
-            <span class="legend-item"><i class="dot" style="background: #0B3CC3"></i>低估</span>
-            <span class="legend-item"><i class="dot" style="background: #999999"></i>中性</span>
-            <span class="legend-item"><i class="dot" style="background: #FF9800"></i>高估</span>
-            <span class="legend-item"><i class="dot" style="background: #E63935"></i>极度高估</span>
+          <h3>ERP历史走势 (近500天) - {{ analysisMode === 'sd' ? '标准差视角' : '百分位视角' }}</h3>
+          <div class="legend-items" v-if="analysisMode === 'sd'">
+            <span class="legend-item"><i class="dot" style="background: #2E7D32"></i>低于-1σ (低估区)</span>
+            <span class="legend-item"><i class="dot" style="background: #1A1A1A"></i>均值 μ</span>
+            <span class="legend-item"><i class="dot" style="background: #E63935"></i>高于+1σ (高估区)</span>
+          </div>
+          <div class="legend-items" v-else>
+            <span class="legend-item"><i class="dot" style="background: #2E7D32"></i>低于25th (低估区)</span>
+            <span class="legend-item"><i class="dot" style="background: #1A1A1A"></i>50th 中位数</span>
+            <span class="legend-item"><i class="dot" style="background: #E63935"></i>高于75th (高估区)</span>
           </div>
         </div>
         <EChartsWrapper
@@ -481,37 +562,45 @@ onMounted(() => {
 
     <!-- ERP区间说明 -->
     <div class="zone-legend">
-      <h3>ERP区间定义</h3>
-      <div class="zone-items">
+      <h3>{{ analysisMode === 'sd' ? '标准差区间定义' : '百分位区间定义' }}</h3>
+      <div class="zone-items" v-if="analysisMode === 'sd'">
         <div class="zone-item">
-          <span class="zone-color" style="background: #2E7D32"></span>
-          <span class="zone-label">ERP &lt; -2%</span>
-          <span class="zone-meaning">极度低估</span>
-          <span class="zone-signal">强烈买入信号</span>
+          <span class="zone-color" style="background: rgba(46, 125, 50, 0.3)"></span>
+          <span class="zone-label">ERP &lt; μ - 1σ</span>
+          <span class="zone-meaning">低估区</span>
+          <span class="zone-signal">ERP低于历史均值1个标准差，买入信号</span>
         </div>
         <div class="zone-item">
-          <span class="zone-color" style="background: #0B3CC3"></span>
-          <span class="zone-label">-2% ~ 0%</span>
-          <span class="zone-meaning">低估</span>
-          <span class="zone-signal">买入信号</span>
+          <span class="zone-color" style="background: #F4F6F9"></span>
+          <span class="zone-label">μ - 1σ ~ μ + 1σ</span>
+          <span class="zone-meaning">正常区间</span>
+          <span class="zone-signal">ERP处于历史正常波动范围</span>
         </div>
         <div class="zone-item">
-          <span class="zone-color" style="background: #999999"></span>
-          <span class="zone-label">0% ~ 2%</span>
-          <span class="zone-meaning">中性</span>
-          <span class="zone-signal">持有</span>
+          <span class="zone-color" style="background: rgba(230, 57, 53, 0.3)"></span>
+          <span class="zone-label">ERP &gt; μ + 1σ</span>
+          <span class="zone-meaning">高估区</span>
+          <span class="zone-signal">ERP高于历史均值1个标准差，卖出信号</span>
+        </div>
+      </div>
+      <div class="zone-items" v-else>
+        <div class="zone-item">
+          <span class="zone-color" style="background: rgba(46, 125, 50, 0.3)"></span>
+          <span class="zone-label">ERP &lt; 25th</span>
+          <span class="zone-meaning">低估区</span>
+          <span class="zone-signal">ERP低于历史25%分位，买入信号</span>
         </div>
         <div class="zone-item">
-          <span class="zone-color" style="background: #FF9800"></span>
-          <span class="zone-label">2% ~ 4%</span>
-          <span class="zone-meaning">高估</span>
-          <span class="zone-signal">卖出信号</span>
+          <span class="zone-color" style="background: #F4F6F9"></span>
+          <span class="zone-label">25th ~ 75th</span>
+          <span class="zone-meaning">正常区间</span>
+          <span class="zone-signal">ERP处于历史中间50%范围</span>
         </div>
         <div class="zone-item">
-          <span class="zone-color" style="background: #E63935"></span>
-          <span class="zone-label">ERP &gt; 4%</span>
-          <span class="zone-meaning">极度高估</span>
-          <span class="zone-signal">强烈卖出信号</span>
+          <span class="zone-color" style="background: rgba(230, 57, 53, 0.3)"></span>
+          <span class="zone-label">ERP &gt; 75th</span>
+          <span class="zone-meaning">高估区</span>
+          <span class="zone-signal">ERP高于历史75%分位，卖出信号</span>
         </div>
       </div>
     </div>
@@ -545,12 +634,51 @@ onMounted(() => {
   margin-bottom: 20px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 24px;
+  flex-wrap: wrap;
 }
 
 .index-selector .label {
   font-size: 14px;
   color: var(--text-regular);
+}
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stats-row {
+  margin-bottom: 20px;
+}
+
+.stats-card {
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.stats-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.stats-values {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-regular);
+  flex-wrap: wrap;
+}
+
+.stats-values span {
+  padding: 2px 8px;
+  background: var(--bg-system);
+  border-radius: 2px;
 }
 
 .metrics-row {
@@ -688,7 +816,7 @@ onMounted(() => {
 
 .zone-items {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
 
@@ -743,7 +871,7 @@ onMounted(() => {
   }
 
   .zone-items {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
 
   .legend-items {
