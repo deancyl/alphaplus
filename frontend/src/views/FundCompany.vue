@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
-import { getFundCompanies } from '@/api/fund'
+import { getFundCompanies, getCompanyDistribution } from '@/api/fund'
 
 // Types
 interface CompanyItem {
@@ -42,6 +42,8 @@ const ASSET_CLASS_COLORS: Record<string, string> = {
 const companies = ref<CompanyItem[]>([])
 const filteredCompanies = ref<CompanyItem[]>([])
 const loading = ref(false)
+const chartLoading = ref(false)
+const isDataSimulated = ref(false)
 const selectedCompany = ref<CompanyItem | null>(null)
 const selectedNavCompany = ref<string | null>(null)
 const showDetailDialog = ref(false)
@@ -235,7 +237,7 @@ const fetchData = async () => {
 }
 
 // Apply filters and sorting
-const applyFilters = () => {
+const applyFilters = async () => {
   let result = [...companies.value]
 
   // Scale filter
@@ -264,11 +266,11 @@ const applyFilters = () => {
   })
 
   filteredCompanies.value = result
-  updateCharts()
+  await updateCharts()
 }
 
 // Update charts
-const updateCharts = () => {
+const updateCharts = async () => {
   const data = filteredCompanies.value
 
   // Pie chart - top 10 by scale
@@ -278,7 +280,6 @@ const updateCharts = () => {
     value: c.total_scale || 0,
   }))
   
-  // Add "其他" category if more than 10
   if (data.length > 10) {
     const otherScale = data.slice(10).reduce((sum, c) => sum + (c.total_scale || 0), 0)
     pieData.push({ name: '其他', value: otherScale })
@@ -358,15 +359,21 @@ const updateCharts = () => {
     }],
   }
 
-  // Treemap - asset distribution simulation based on company scale
-  // Group companies by scale tiers to simulate asset class distribution
-  const treemapData = generateTreemapData(data)
-  treemapChartOption.value = {
-    ...treemapChartOption.value,
-    series: [{
-      ...treemapChartOption.value.series![0],
-      data: treemapData,
-    }],
+  // Treemap - fetch real asset distribution from API
+  chartLoading.value = true
+  try {
+    const treemapData = await generateTreemapData(data)
+    treemapChartOption.value = {
+      ...treemapChartOption.value,
+      series: [{
+        ...treemapChartOption.value.series![0],
+        data: treemapData,
+      }],
+    }
+  } catch (error) {
+    console.error('Failed to update treemap:', error)
+  } finally {
+    chartLoading.value = false
   }
 
   // Bubble scatter - manager performance analysis
@@ -395,20 +402,18 @@ const updateCharts = () => {
       type: 'scatter',
       symbolSize: (val: number[]) => {
         const scale = val[2] || 1
-        // Bubble size: min 10px, max 60px, scaled by sqrt
         return Math.max(10, Math.min(60, Math.sqrt(scale) * 4))
       },
       data: bubbleData,
       itemStyle: { 
         opacity: 0.7,
         color: (params: any) => {
-          // Color by performance quadrant
           const funds = params.data[0]
           const ret = params.data[1]
-          if (funds >= medianFunds && ret >= medianReturn) return '#2E7D32' // Stars - green
-          if (funds < medianFunds && ret < medianReturn) return '#E63935' // Laggards - red
-          if (funds >= medianFunds && ret < medianReturn) return '#FF8C00' // Scale-heavy - orange
-          return '#003399' // Potential - navy
+          if (funds >= medianFunds && ret >= medianReturn) return '#2E7D32'
+          if (funds < medianFunds && ret < medianReturn) return '#E63935'
+          if (funds >= medianFunds && ret < medianReturn) return '#FF8C00'
+          return '#003399'
         },
       },
       emphasis: {
@@ -432,9 +437,8 @@ const updateCharts = () => {
   }
 }
 
-// Generate treemap data - simulates asset distribution
-const generateTreemapData = (companies: CompanyItem[]) => {
-  // Create simulated asset class distribution based on company characteristics
+// Generate treemap data - fetch from API or use simulated fallback
+const generateTreemapData = async (companies: CompanyItem[]) => {
   const assetClasses = [
     { name: '股票型', scale: 0, color: ASSET_CLASS_COLORS['股票型'] },
     { name: '混合型', scale: 0, color: ASSET_CLASS_COLORS['混合型'] },
@@ -444,10 +448,28 @@ const generateTreemapData = (companies: CompanyItem[]) => {
     { name: '其他', scale: 0, color: ASSET_CLASS_COLORS['其他'] },
   ]
   
-  // Simulate distribution based on total scale
   const totalScale = companies.reduce((sum, c) => sum + (c.total_scale || 0), 0)
   
-  // Estimated market distribution (rough approximation)
+  // Try to fetch real distribution data from the first company
+  if (companies.length > 0 && companies[0].company_id) {
+    try {
+      const response = await getCompanyDistribution(companies[0].company_id, 'asset_class')
+      if (!response.is_simulated && response.items.length > 0) {
+        isDataSimulated.value = false
+        return response.items.map((item, idx) => ({
+          name: item.item_name,
+          value: totalScale * (item.weight / 100),
+          itemStyle: { color: assetClasses[idx]?.color || '#607D8B' },
+          children: generateCompanyChildren(companies, item.item_name, item.weight / 100),
+        }))
+      }
+    } catch (error) {
+      console.warn('Failed to fetch company distribution, using simulated data:', error)
+    }
+  }
+  
+  // Fallback to simulated data
+  isDataSimulated.value = true
   const distributionWeights = [0.15, 0.25, 0.35, 0.12, 0.08, 0.05]
   
   return assetClasses.map((cls, idx) => ({
@@ -669,14 +691,18 @@ onMounted(() => {
         <div class="chart-card chart-large">
           <div class="panel-header">
             <h3>资产配置分布 (Treemap)</h3>
+            <span v-if="isDataSimulated" class="simulated-badge">模拟数据</span>
             <span class="chart-hint">点击矩形查看公司详情</span>
           </div>
           <EChartsWrapper
             :option="treemapChartOption"
-            :loading="loading"
+            :loading="chartLoading"
             height="320px"
             @click="handleTreemapClick"
           />
+          <div v-if="chartLoading" class="chart-skeleton">
+            <div class="skeleton-block"></div>
+          </div>
           <div class="chart-legend">
             <div class="legend-item">
               <span class="legend-dot" style="background: #E63935"></span>
@@ -1135,6 +1161,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  position: relative;
 }
 
 .panel-header {
@@ -1155,6 +1182,41 @@ onMounted(() => {
 .chart-hint {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.simulated-badge {
+  font-size: 11px;
+  color: #FF8C00;
+  background: rgba(255, 140, 0, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: 8px;
+}
+
+.chart-skeleton {
+  position: absolute;
+  top: 50px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.skeleton-block {
+  width: 80%;
+  height: 200px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .filter-section {

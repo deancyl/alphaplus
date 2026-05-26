@@ -16,6 +16,8 @@ from backend.models.fund import (
     IndexValuationHistory,
     MarketCrowdingValuationHistory,
     BacktestStatsMacroStrategies,
+    FundNavHistory,
+    MarketCalendar,
 )
 
 __all__ = [
@@ -33,4 +35,6 @@ __all__ = [
     "IndexValuationHistory",
     "MarketCrowdingValuationHistory",
     "BacktestStatsMacroStrategies",
+    "FundNavHistory",
+    "MarketCalendar",
 ]

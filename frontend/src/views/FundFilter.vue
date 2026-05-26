@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { filterFunds, type FundFilterParams, type FundItem } from '@/api/fund'
+import { filterFunds, getFundNavTrend, type FundFilterParams, type FundItem } from '@/api/fund'
 import SplitPanel from '@/components/SplitPanel.vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
@@ -35,6 +35,10 @@ const total = ref(0)
 const loading = ref(false)
 const filterTimeMs = ref<number | null>(null)
 const splitPanelRef = ref<InstanceType<typeof SplitPanel> | null>(null)
+
+// Sparkline cache and loading states
+const sparklineCache = ref<Map<string, { option: EChartsOption; isSimulated: boolean }>>(new Map())
+const sparklineLoading = ref<Set<string>>(new Set())
 
 // Debounce timer for filter
 let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -113,38 +117,114 @@ const getValueClass = (val: number | null): string => {
 }
 
 // Generate sparkline option for fund return trend
-const getSparklineOption = (fund: FundItem): EChartsOption => {
-  // Generate mock 30-day return trend data
-  // In production, this would come from API
-  const baseReturn = fund.return_1y || 0
-  const data: number[] = []
-  for (let i = 0; i < 30; i++) {
-    const variation = (Math.random() - 0.5) * 2
-    data.push(baseReturn + variation * (i / 30))
+const getSparklineOption = (fund: FundItem): EChartsOption | null => {
+  // Check cache first
+  const cached = sparklineCache.value.get(fund.fund_code)
+  if (cached) {
+    return cached.option
   }
   
-  const isPositive = data[data.length - 1] >= data[0]
-  const lineColor = isPositive ? '#2E7D32' : '#E63935'
+  // If loading, return null (will show skeleton)
+  if (sparklineLoading.value.has(fund.fund_code)) {
+    return null
+  }
+  
+  // Fetch data in background
+  fetchSparklineData(fund.fund_code)
+  
+  // Return null to show loading state
+  return null
+}
+
+// Fetch sparkline data from API
+const fetchSparklineData = async (fundCode: string) => {
+  if (sparklineLoading.value.has(fundCode) || sparklineCache.value.has(fundCode)) {
+    return
+  }
+  
+  sparklineLoading.value.add(fundCode)
+  
+  try {
+    const response = await getFundNavTrend(fundCode, 30)
+    
+    if (response.nav_values.length > 0) {
+      const firstValue = response.nav_values[0]
+      const lastValue = response.nav_values[response.nav_values.length - 1]
+      const isUp = lastValue >= firstValue
+      const lineColor = isUp ? '#2E7D32' : '#E63935'
+      
+      const option: EChartsOption = {
+        xAxis: { type: 'category' as const, show: false },
+        yAxis: { type: 'value' as const, show: false },
+        grid: { left: 0, right: 0, top: 0, bottom: 0 },
+        series: [{
+          type: 'line' as const,
+          data: response.nav_values,
+          lineStyle: { color: lineColor, width: 1.5 },
+          areaStyle: {
+            color: {
+              type: 'linear' as const,
+              x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: isUp ? 'rgba(46, 125, 50, 0.3)' : 'rgba(230, 57, 53, 0.3)' },
+                { offset: 1, color: 'rgba(255, 255, 255, 0)' }
+              ]
+            }
+          },
+          symbol: 'none',
+        }]
+      }
+      
+      sparklineCache.value.set(fundCode, { option, isSimulated: response.is_simulated })
+    } else {
+      // Fallback to simulated data
+      const fallbackOption = createFallbackSparkline(fundCode)
+      sparklineCache.value.set(fundCode, { option: fallbackOption, isSimulated: true })
+    }
+  } catch (error) {
+    console.warn(`Failed to fetch NAV trend for ${fundCode}:`, error)
+    // Use fallback
+    const fallbackOption = createFallbackSparkline(fundCode)
+    sparklineCache.value.set(fundCode, { option: fallbackOption, isSimulated: true })
+  } finally {
+    sparklineLoading.value.delete(fundCode)
+  }
+}
+
+// Create fallback sparkline when API fails
+const createFallbackSparkline = (fundCode: string): EChartsOption => {
+  const data: number[] = []
+  for (let i = 0; i < 30; i++) {
+    data.push(1 + (Math.random() - 0.5) * 0.1)
+  }
   
   return {
-    xAxis: { type: 'category' as const },
-    yAxis: { type: 'value' as const },
+    xAxis: { type: 'category' as const, show: false },
+    yAxis: { type: 'value' as const, show: false },
+    grid: { left: 0, right: 0, top: 0, bottom: 0 },
     series: [{
       type: 'line' as const,
       data,
-      lineStyle: { color: lineColor, width: 1.5 },
+      lineStyle: { color: '#999', width: 1 },
       areaStyle: {
         color: {
           type: 'linear' as const,
           x: 0, y: 0, x2: 0, y2: 1,
           colorStops: [
-            { offset: 0, color: isPositive ? 'rgba(46, 125, 50, 0.3)' : 'rgba(230, 57, 53, 0.3)' },
+            { offset: 0, color: 'rgba(150, 150, 150, 0.2)' },
             { offset: 1, color: 'rgba(255, 255, 255, 0)' }
           ]
         }
-      }
+      },
+      symbol: 'none',
     }]
   }
+}
+
+// Check if sparkline is simulated
+const isSparklineSimulated = (fundCode: string): boolean => {
+  const cached = sparklineCache.value.get(fundCode)
+  return cached?.isSimulated ?? false
 }
 
 // Watch filter params for auto-filter with debounce
@@ -346,14 +426,19 @@ onMounted(() => {
             </el-table-column>
             <el-table-column
               label="收益趋势"
-              width="100"
+              width="120"
             >
               <template #default="{ row }">
-                <EChartsWrapper
-                  :option="getSparklineOption(row)"
-                  :is-sparkline="true"
-                  height="40px"
-                />
+                <div class="sparkline-cell">
+                  <EChartsWrapper
+                    v-if="getSparklineOption(row)"
+                    :option="getSparklineOption(row)!"
+                    :is-sparkline="true"
+                    height="40px"
+                  />
+                  <div v-else class="sparkline-skeleton"></div>
+                  <span v-if="isSparklineSimulated(row.fund_code)" class="simulated-badge-mini">模拟</span>
+                </div>
               </template>
             </el-table-column>
             <el-table-column
@@ -512,6 +597,35 @@ onMounted(() => {
 
 .range-input span {
   color: var(--text-muted);
+}
+
+.sparkline-cell {
+  position: relative;
+}
+
+.sparkline-skeleton {
+  width: 80px;
+  height: 40px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 2px;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.simulated-badge-mini {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 9px;
+  color: #FF8C00;
+  background: rgba(255, 140, 0, 0.1);
+  padding: 1px 3px;
+  border-radius: 2px;
 }
 
 .filter-actions {

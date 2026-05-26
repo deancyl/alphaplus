@@ -95,3 +95,30 @@ export const getFundCompanies = async (): Promise<Array<{
 }>> => {
   return api.get('/fund/company')
 }
+
+// Get company distribution for treemap/bubble
+export const getCompanyDistribution = async (
+  companyId: string,
+  distType: string = 'asset_class'
+): Promise<{
+  items: Array<{ item_name: string; weight: number }>
+  is_simulated: boolean
+}> => {
+  return api.get(`/fund/company/${companyId}/distribution`, {
+    params: { dist_type: distType }
+  })
+}
+
+// Get fund NAV trend for sparkline
+export const getFundNavTrend = async (
+  fundCode: string,
+  days: number = 30
+): Promise<{
+  nav_values: number[]
+  dates: string[]
+  is_simulated: boolean
+}> => {
+  return api.get(`/fund/${fundCode}/nav-trend`, {
+    params: { days }
+  })
+}

@@ -9,6 +9,9 @@ from typing import Optional
 
 import akshare as ak
 
+from backend.services.rate_limiter import RateLimiter
+from backend.services.resilience import RetryConfig, retry_with_backoff
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,18 +30,16 @@ class AkShareDataService:
         self._rate_limit_delay = rate_limit_delay
         self._last_call_time: float = 0
         self._lock = asyncio.Lock()
+        self._rate_limiter = RateLimiter(rate=2.0, capacity=3)
+        self._retry_config = RetryConfig(max_retries=5, base_delay=1.0)
 
     async def _rate_limit(self) -> None:
         """Enforce rate limiting between API calls."""
-        async with self._lock:
-            now = asyncio.get_event_loop().time()
-            elapsed = now - self._last_call_time
-            if elapsed < self._rate_limit_delay:
-                await asyncio.sleep(self._rate_limit_delay - elapsed)
-            self._last_call_time = asyncio.get_event_loop().time()
+        await self._rate_limiter.acquire()
 
+    @retry_with_backoff()
     async def _run_sync(self, func, *args, **kwargs):
-        """Run synchronous AkShare function in thread pool."""
+        """Run synchronous AkShare function in thread pool with retry."""
         await self._rate_limit()
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: func(*args, **kwargs))

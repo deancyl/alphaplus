@@ -2,8 +2,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { getBondYieldCurve, getMoneyMarketRates } from '@/api/market'
+import { getBondYieldCurve, getMoneyMarketRates, getRateHistory } from '@/api/market'
 import api from '@/api/index'
+import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import type { EChartsOption } from 'echarts'
 
 // ==================== Types ====================
 interface YieldCurvePoint {
@@ -20,6 +22,8 @@ interface MoneyRateItem {
   trade_date: string
   rate_value: number
   sparkline_data: string | null
+  sparklineOption?: EChartsOption
+  isSimulated?: boolean
 }
 
 interface CreditSpreadItem {
@@ -167,9 +171,52 @@ const fetchMoneyRates = async () => {
   try {
     const response = await getMoneyMarketRates()
     moneyRates.value = response
+    
+    // Fetch sparkline data for each rate
+    for (const rate of moneyRates.value) {
+      try {
+        const historyResponse = await getRateHistory(rate.rate_code, 30)
+        if (historyResponse.values.length > 0) {
+          rate.isSimulated = historyResponse.is_simulated
+          rate.sparklineOption = createSparklineOption(historyResponse.values)
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch sparkline for ${rate.rate_code}:`, error)
+      }
+    }
   } catch (error) {
     console.error('Failed to fetch money rates:', error)
     moneyRates.value = []
+  }
+}
+
+// Create sparkline option from rate values
+const createSparklineOption = (values: number[]): EChartsOption => {
+  const firstValue = values[0]
+  const lastValue = values[values.length - 1]
+  const isUp = lastValue >= firstValue
+  const lineColor = isUp ? '#2E7D32' : '#E63935'
+  
+  return {
+    xAxis: { type: 'category' as const, show: false },
+    yAxis: { type: 'value' as const, show: false },
+    grid: { left: 0, right: 0, top: 0, bottom: 0 },
+    series: [{
+      type: 'line' as const,
+      data: values,
+      lineStyle: { color: lineColor, width: 1.5 },
+      areaStyle: {
+        color: {
+          type: 'linear' as const,
+          x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [
+            { offset: 0, color: isUp ? 'rgba(46, 125, 50, 0.3)' : 'rgba(230, 57, 53, 0.3)' },
+            { offset: 1, color: 'rgba(255, 255, 255, 0)' }
+          ]
+        }
+      },
+      symbol: 'none',
+    }]
   }
 }
 
@@ -566,11 +613,17 @@ onUnmounted(() => {
             </el-table-column>
             <el-table-column label="走势" min-width="200">
               <template #default="{ row }">
-                <div v-if="row.sparkline_data" class="sparkline">
-                  <!-- Sparkline would be rendered here -->
-                  <span class="sparkline-placeholder">—</span>
+                <div class="sparkline">
+                  <EChartsWrapper
+                    v-if="row.sparklineOption"
+                    :option="row.sparklineOption"
+                    :is-sparkline="true"
+                    height="30px"
+                  />
+                  <span v-else-if="row.isSimulated" class="sparkline-placeholder">加载中...</span>
+                  <span v-else class="text-muted">暂无数据</span>
                 </div>
-                <span v-else class="text-muted">暂无数据</span>
+                <span v-if="row.isSimulated && row.sparklineOption" class="simulated-badge-mini">模拟</span>
               </template>
             </el-table-column>
           </el-table>
@@ -713,6 +766,15 @@ onUnmounted(() => {
 .sparkline-placeholder {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.simulated-badge-mini {
+  font-size: 10px;
+  color: #FF8C00;
+  background: rgba(255, 140, 0, 0.1);
+  padding: 1px 4px;
+  border-radius: 2px;
+  margin-left: 4px;
 }
 
 .summary-section {

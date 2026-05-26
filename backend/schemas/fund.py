@@ -224,3 +224,46 @@ class HeatmapMatrixResponse(BaseModel):
     rows: List[str]
     cols: List[str]
     cells: List[HeatmapCell]
+
+
+# ==================== Dashboard Aggregation Schemas ====================
+
+class DashboardDataQuality(BaseModel):
+    """Dashboard data quality indicator."""
+    partial: bool = Field(..., description="Whether any sub-call failed")
+    errors: Optional[dict] = Field(default=None, description="Error messages per metric")
+
+
+class DashboardResponse(BaseModel):
+    """首页看板聚合响应 - 恐惧贪婪、ERP、风格强度、拥挤度."""
+    fear_greed: List[dict] = Field(default_factory=list, description="恐惧贪婪指数历史")
+    erp: List[dict] = Field(default_factory=list, description="股债ERP历史")
+    style_strength: List[dict] = Field(default_factory=list, description="风格强度历史")
+    crowding: List[dict] = Field(default_factory=list, description="拥挤度分析历史")
+    timestamp: str = Field(..., description="响应时间戳")
+    data_quality: DashboardDataQuality = Field(..., description="数据质量信息")
+
+
+# ==================== Fund Similarity Schemas ====================
+
+class SimilarFund(BaseModel):
+    """相似基金."""
+    fund_code: str
+    fund_name: str
+    similarity: float = Field(..., description="Similarity score (0-1, higher is more similar)")
+
+
+class FactorExposureItem(BaseModel):
+    """因子暴露项."""
+    factor_name: str
+    factor_type: str = Field(..., description="style or sector")
+    weight: float
+
+
+class FundSimilarityResponse(BaseModel):
+    """基金相似度响应."""
+    fund_code: str
+    similar_funds: List[SimilarFund] = Field(..., description="Top N similar funds")
+    factor_exposure: List[FactorExposureItem] = Field(..., description="Factor exposure of input fund")
+    calculation_method: str = Field(default="euclidean", description="Distance calculation method")
+    elapsed_ms: Optional[float] = Field(None, description="Calculation time in milliseconds")

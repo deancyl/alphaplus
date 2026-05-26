@@ -215,3 +215,21 @@ class FundNavHistory(Base):
     __table_args__ = (
         Index("idx_fund_nav", "fund_code", "nav_date"),
     )
+
+
+class MarketCalendar(Base):
+    """多市场周历表 - Multi-market weekly calendar for fund issuance dashboard."""
+    __tablename__ = "market_calendar"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market_code: Mapped[str] = mapped_column(String(20), nullable=False)  # ASHARE, HK, US
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    is_trading_day: Mapped[bool] = mapped_column(default=True)
+    week_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # ISO week number
+    year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    market_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # A股, 港股, 美股
+    holiday_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # 春节, 国庆
+
+    __table_args__ = (
+        Index("idx_market_date", "market_code", "trade_date"),
+    )

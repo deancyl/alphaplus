@@ -1,6 +1,7 @@
 """
 Market API router - Overview, Indices, Bonds, Quotes.
 """
+import asyncio
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -15,6 +16,7 @@ from backend.models.fund import (
 )
 from backend.services.cache import realtime_cache
 from backend.services.akshare_data import akshare_data_service
+from backend.schemas.fund import DashboardResponse, DashboardDataQuality
 
 router = APIRouter()
 
@@ -117,6 +119,40 @@ async def get_money_market_rates(
         }
         for r in rates
     ]
+
+
+@router.get("/bond/rate-history")
+async def get_rate_history(
+    rate_code: str = Query(..., description="DR007, SHIBOR_1W, etc."),
+    days: int = Query(30, description="Number of days"),
+    db: AsyncSession = Depends(get_db),
+):
+    """货币利率历史趋势 - For sparkline rendering."""
+    from datetime import datetime, timedelta
+    
+    start_date = (datetime.now() - timedelta(days=days * 2)).strftime("%Y-%m-%d")
+    
+    result = await db.execute(
+        select(MoneyMarketRates)
+        .where(
+            MoneyMarketRates.rate_code == rate_code,
+            MoneyMarketRates.trade_date >= start_date
+        )
+        .order_by(MoneyMarketRates.trade_date.desc())
+        .limit(days)
+    )
+    history = result.scalars().all()
+    
+    if not history:
+        return {"values": [], "dates": [], "is_simulated": True}
+    
+    history = list(reversed(history))
+    
+    return {
+        "values": [h.rate_value for h in history],
+        "dates": [h.trade_date for h in history],
+        "is_simulated": False,
+    }
 
 
 @router.get("/heatmap")
@@ -225,3 +261,160 @@ async def get_domestic_market(
         },
         "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+async def get_dashboard_metrics(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    首页看板聚合端点 - 并行获取恐惧贪婪、ERP、风格强度、拥挤度.
+    
+    Performance: <150ms via asyncio.gather parallel calls.
+    Graceful degradation: Returns partial data if sub-calls fail.
+    """
+    async def fetch_fear_greed():
+        """Fetch fear-greed index data."""
+        try:
+            from backend.models.fund import MarketFearGreedSentimentHistory
+            result = await db.execute(
+                select(MarketFearGreedSentimentHistory)
+                .order_by(MarketFearGreedSentimentHistory.trade_date.desc())
+                .limit(30)
+            )
+            history = result.scalars().all()
+            return {
+                "data": [
+                    {
+                        "trade_date": h.trade_date,
+                        "composite_score": h.composite_score,
+                        "sentiment_status": h.sentiment_status,
+                        "factor_volatility": h.factor_volatility,
+                        "factor_safe_haven": h.factor_safe_haven,
+                        "factor_margin_ratio": h.factor_margin_ratio,
+                        "factor_volume_deviation": h.factor_volume_deviation,
+                        "factor_futures_basis": h.factor_futures_basis,
+                        "factor_stock_strength": h.factor_stock_strength,
+                    }
+                    for h in history
+                ],
+                "error": None,
+            }
+        except Exception as e:
+            return {"data": None, "error": str(e)}
+    
+    async def fetch_erp():
+        """Fetch ERP spread data."""
+        try:
+            from backend.models.fund import BondEquityYieldSpreadHistory
+            result = await db.execute(
+                select(BondEquityYieldSpreadHistory)
+                .where(BondEquityYieldSpreadHistory.index_code == "000300")
+                .order_by(BondEquityYieldSpreadHistory.trade_date.desc())
+                .limit(100)
+            )
+            history = result.scalars().all()
+            return {
+                "data": [
+                    {
+                        "index_code": h.index_code,
+                        "index_name": "沪深300",
+                        "trade_date": h.trade_date,
+                        "pe_ttm": h.pe_ttm,
+                        "treasury_yield_10y": h.treasury_yield_10y,
+                        "erp_spread": h.erp_spread,
+                        "percentile_rank_10y": h.percentile_rank_10y,
+                        "index_close_price": h.index_close_price,
+                    }
+                    for h in history
+                ],
+                "error": None,
+            }
+        except Exception as e:
+            return {"data": None, "error": str(e)}
+    
+    async def fetch_style_strength():
+        """Fetch style strength data."""
+        try:
+            from backend.models.fund import MarketStyleStrengthHistory
+            result = await db.execute(
+                select(MarketStyleStrengthHistory)
+                .order_by(MarketStyleStrengthHistory.trade_date.desc())
+                .limit(100)
+            )
+            history = result.scalars().all()
+            return {
+                "data": [
+                    {
+                        "trade_date": h.trade_date,
+                        "index_code_num": h.index_code_num,
+                        "index_code_den": h.index_code_den,
+                        "ratio_value": h.ratio_value,
+                        "percentile_rank_3y": h.percentile_rank_3y,
+                    }
+                    for h in history
+                ],
+                "error": None,
+            }
+        except Exception as e:
+            return {"data": None, "error": str(e)}
+    
+    async def fetch_crowding():
+        """Fetch crowding analysis data."""
+        try:
+            from backend.models.fund import MarketCrowdingValuationHistory
+            result = await db.execute(
+                select(MarketCrowdingValuationHistory)
+                .order_by(MarketCrowdingValuationHistory.trade_date.desc())
+                .limit(100)
+            )
+            history = result.scalars().all()
+            return {
+                "data": [
+                    {
+                        "asset_code": h.asset_code,
+                        "trade_date": h.trade_date,
+                        "category": h.category,
+                        "crowding_score": h.crowding_score,
+                        "pe_percentile": h.pe_percentile,
+                        "close_price": h.close_price,
+                    }
+                    for h in history
+                ],
+                "error": None,
+            }
+        except Exception as e:
+            return {"data": None, "error": str(e)}
+    
+    # Execute all 4 calls in parallel
+    fear_greed_result, erp_result, style_strength_result, crowding_result = await asyncio.gather(
+        fetch_fear_greed(),
+        fetch_erp(),
+        fetch_style_strength(),
+        fetch_crowding(),
+    )
+    
+    # Determine if any partial data
+    has_partial = any([
+        fear_greed_result["error"] is not None,
+        erp_result["error"] is not None,
+        style_strength_result["error"] is not None,
+        crowding_result["error"] is not None,
+    ])
+    
+    return DashboardResponse(
+        fear_greed=fear_greed_result["data"] if fear_greed_result["data"] is not None else [],
+        erp=erp_result["data"] if erp_result["data"] is not None else [],
+        style_strength=style_strength_result["data"] if style_strength_result["data"] is not None else [],
+        crowding=crowding_result["data"] if crowding_result["data"] is not None else [],
+        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        data_quality=DashboardDataQuality(
+            partial=has_partial,
+            errors={
+                "fear_greed": fear_greed_result["error"],
+                "erp": erp_result["error"],
+                "style_strength": style_strength_result["error"],
+                "crowding": crowding_result["error"],
+            },
+        ),
+    )

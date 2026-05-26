@@ -1,5 +1,5 @@
 """
-Real data ingestion from AkShare - Working version.
+Real data ingestion from AkShare - Working version with retry logic.
 Run: PYTHONPATH=. python3 scripts/fetch_real_data.py
 """
 import asyncio
@@ -25,13 +25,24 @@ from backend.models.fund import (
     MarketStyleStrengthHistory,
     MarketCrowdingValuationHistory,
 )
+from backend.services.resilience import RetryConfig, retry_with_backoff
+
+# Semaphore for max concurrent requests (V0.2 开发圣经: max 3)
+CONCURRENCY_LIMIT = asyncio.Semaphore(3)
+
+
+@retry_with_backoff(RetryConfig(max_retries=5, base_delay=1.0))
+async def _fetch_etf_funds_retry():
+    """Fetch ETF fund data with retry logic."""
+    async with CONCURRENCY_LIMIT:
+        return ak.fund_etf_spot_em()
 
 
 async def fetch_etf_funds():
     """Fetch ETF fund data."""
     print("\n[1/7] Fetching ETF funds...")
     try:
-        df = ak.fund_etf_spot_em()
+        df = await _fetch_etf_funds_retry()
         print(f"  Fetched {len(df)} ETF funds")
         
         async with AsyncSessionLocal() as session:
@@ -56,6 +67,13 @@ async def fetch_etf_funds():
         return 0
 
 
+@retry_with_backoff(RetryConfig(max_retries=5, base_delay=1.0))
+async def _fetch_index_daily_retry(symbol: str):
+    """Fetch index daily data with retry logic."""
+    async with CONCURRENCY_LIMIT:
+        return ak.stock_zh_index_daily(symbol=symbol)
+
+
 async def fetch_index_history():
     """Fetch index historical data."""
     print("\n[2/7] Fetching index history...")
@@ -69,8 +87,7 @@ async def fetch_index_history():
     total = 0
     for symbol, name, code in indices:
         try:
-            await asyncio.sleep(0.5)
-            df = ak.stock_zh_index_daily(symbol=symbol)
+            df = await _fetch_index_daily_retry(symbol)
             df = df.tail(500)
             print(f"  {name}: {len(df)} days")
             
@@ -96,6 +113,13 @@ async def fetch_index_history():
     return total
 
 
+@retry_with_backoff(RetryConfig(max_retries=5, base_delay=1.0))
+async def _fetch_stock_quotes_retry(symbol: str):
+    """Fetch stock quotes with retry logic."""
+    async with CONCURRENCY_LIMIT:
+        return ak.stock_zh_index_daily(symbol=symbol)
+
+
 async def fetch_stock_quotes():
     """Fetch stock quotes."""
     print("\n[3/7] Fetching stock quotes...")
@@ -103,7 +127,7 @@ async def fetch_stock_quotes():
     
     for symbol, code in indices:
         try:
-            df = ak.stock_zh_index_daily(symbol=symbol)
+            df = await _fetch_stock_quotes_retry(symbol)
             df = df.tail(30)
             print(f"  {code}: {len(df)} days")
             
@@ -129,11 +153,18 @@ async def fetch_stock_quotes():
     return True
 
 
+@retry_with_backoff(RetryConfig(max_retries=5, base_delay=1.0))
+async def _fetch_money_rates_retry():
+    """Fetch money market rates with retry logic."""
+    async with CONCURRENCY_LIMIT:
+        return ak.rate_interbank()
+
+
 async def fetch_money_rates():
     """Fetch money market rates."""
     print("\n[4/7] Fetching money rates...")
     try:
-        df = ak.rate_interbank()
+        df = await _fetch_money_rates_retry()
         df = df.tail(50)
         print(f"  Fetched {len(df)} records")
         
@@ -153,11 +184,18 @@ async def fetch_money_rates():
         return 0
 
 
+@retry_with_backoff(RetryConfig(max_retries=5, base_delay=1.0))
+async def _fetch_index_for_fear_greed_retry():
+    """Fetch index data for fear/greed calculation with retry logic."""
+    async with CONCURRENCY_LIMIT:
+        return ak.stock_zh_index_daily(symbol='sh000001')
+
+
 async def calculate_fear_greed():
     """Calculate fear/greed index."""
     print("\n[5/7] Calculating fear/greed...")
     try:
-        df = ak.stock_zh_index_daily(symbol='sh000001')
+        df = await _fetch_index_for_fear_greed_retry()
         df = df.tail(60)
         
         df['returns'] = df['close'].pct_change()
@@ -228,13 +266,20 @@ async def calculate_erp_spread():
     return len(valuations)
 
 
+@retry_with_backoff(RetryConfig(max_retries=5, base_delay=1.0))
+async def _fetch_style_strength_retry(symbol: str):
+    """Fetch index data for style strength calculation with retry logic."""
+    async with CONCURRENCY_LIMIT:
+        return ak.stock_zh_index_daily(symbol=symbol)
+
+
 async def calculate_style_strength():
     """Calculate style strength."""
     print("\n[7/7] Calculating style strength...")
     
     try:
-        df_large = ak.stock_zh_index_daily(symbol='sh000300')
-        df_small = ak.stock_zh_index_daily(symbol='sh000905')
+        df_large = await _fetch_style_strength_retry('sh000300')
+        df_small = await _fetch_style_strength_retry('sh000905')
         
         df_large = df_large.tail(100)
         df_small = df_small.tail(100)
@@ -271,14 +316,8 @@ async def main():
         await conn.run_sync(Base.metadata.create_all)
     
     await fetch_etf_funds()
-    await asyncio.sleep(1)
-    
     await fetch_index_history()
-    await asyncio.sleep(0.5)
-    
     await fetch_stock_quotes()
-    await asyncio.sleep(0.5)
-    
     await fetch_money_rates()
     await calculate_fear_greed()
     await calculate_erp_spread()

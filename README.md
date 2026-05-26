@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.1)
+[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.2)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -15,7 +15,7 @@
 |------|------|----------|
 | 首页宏观复盘 | 恐惧贪婪指数、ERP、风格强度、拥挤度 | AkShare |
 | 基金筛选 | 5维度穿透筛选，26,801只基金，毫秒级响应 | AkShare |
-| 基金对比 | 相关性热力矩阵，最多15只基金，实时计算 | 本地计算 |
+| 基金对比 | 相关性热力矩阵，最多15只基金，实时Pearson计算 | 本地计算 |
 | 相似度计算器 | 14因子暴露分析，SLSQP风格归因 | 本地计算 |
 | 基金发行看板 | 新发基金周历管线 | AkShare |
 | 基金公司透视 | Treemap资产分布 + 经理四象限气泡图 | AkShare |
@@ -38,8 +38,12 @@
   - Pandas 内存筛选，26,801只基金 ~7ms 响应
 - **量化引擎**:
   - 相空间轨迹计算 (位置、速度、加速度)
-  - SciPy SLSQP 多因子暴露分析
-  - 实时 Pearson 相关系数矩阵
+  - SciPy SLSQP 多因子暴露分析 (14因子)
+  - 实时 Pearson 相关系数矩阵 (~4ms)
+- **优雅降级架构**:
+  - GBM 几何布朗运动模拟器 (价格/收益率)
+  - O-U 均值回归模拟器 (恐惧贪婪/拥挤度)
+  - 指数退避重试 + 令牌桶限流
 - **高级可视化**:
   - ECharts markArea 估值区间着色
   - Sparkline 表格内嵌微图表
@@ -49,7 +53,7 @@
 
 ## 技术栈
 
-**后端**: FastAPI + SQLite (WAL) + APScheduler + AkShare + Pandas + SciPy  
+**后端**: FastAPI + SQLite (WAL) + APScheduler + AkShare + Pandas + SciPy + Numba  
 **前端**: Vue3 + TypeScript + Vite + ECharts + Element Plus + Tailwind CSS
 
 ## 快速开始
@@ -97,12 +101,17 @@ alphaplus/
 │   │   ├── market.py     # 市场行情 API
 │   │   └── analytics.py  # 分析指标 API
 │   ├── models/           # SQLAlchemy 模型
-│   │   └── fund.py       # 数据模型定义
+│   │   └── fund.py       # 数据模型定义 (16张表)
 │   ├── schemas/          # Pydantic 模式
 │   ├── services/         # 业务逻辑
-│   │   ├── akshare_data.py  # AkShare 数据服务
-│   │   ├── pandas_cache.py  # Pandas 内存缓存
-│   │   ├── quant_engine.py  # 量化计算引擎
+│   │   ├── akshare_data.py   # AkShare 数据服务
+│   │   ├── pandas_cache.py   # Pandas 内存缓存
+│   │   ├── quant_engine.py   # 量化计算引擎
+│   │   ├── simulators.py     # GBM/O-U 随机模拟器
+│   │   ├── correlation.py    # Pearson 相关性计算
+│   │   ├── factor_exposure.py # SLSQP 因子暴露
+│   │   ├── resilience.py     # 指数退避重试
+│   │   ├── rate_limiter.py   # 令牌桶限流器
 │   │   ├── cache.py      # 缓存服务
 │   │   └── ingestion.py  # 数据导入服务
 │   └── main.py           # 应用入口
@@ -133,9 +142,11 @@ alphaplus/
 |------|------|------|
 | `/api/v1/fund/filter` | POST | 基金筛选 (支持5维度过滤，毫秒级响应) |
 | `/api/v1/fund/{code}` | GET | 基金详情 |
-| `/api/v1/fund/compare` | POST | 基金对比 (实时相关性矩阵) |
+| `/api/v1/fund/compare` | POST | 基金对比 (实时Pearson相关性矩阵) |
 | `/api/v1/fund/issue` | GET | 基金发行日历 |
 | `/api/v1/fund/company` | GET | 基金公司列表 |
+| `/api/v1/fund/similarity/calc` | GET | 基金相似度计算 (因子暴露距离) |
+| `/api/v1/fund/company/{id}/distribution` | GET | 公司资产配置分布 |
 
 ### 市场模块
 
@@ -146,6 +157,7 @@ alphaplus/
 | `/api/v1/market/global` | GET | 全球市场总览 |
 | `/api/v1/market/domestic` | GET | A股市场总览 |
 | `/api/v1/market/heatmap` | GET | 热力矩阵 |
+| `/api/v1/market/dashboard` | GET | 首页看板聚合 (恐惧贪婪+ERP+风格+拥挤度) |
 
 ### 分析模块
 
@@ -156,7 +168,7 @@ alphaplus/
 | `/api/v1/analytics/style-strength` | GET | 风格强度 |
 | `/api/v1/analytics/crowding` | GET | 拥挤度分析 |
 | `/api/v1/analytics/rotation-vector` | GET | 相空间轨迹向量 |
-| `/api/v1/analytics/factor-exposure` | GET | 多因子暴露分析 |
+| `/api/v1/analytics/factor-exposure` | POST | 多因子暴露分析 (SLSQP) |
 
 ## 配置说明
 
@@ -191,6 +203,33 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.2 (2026-05-26)
+
+**优雅降级架构:**
+- GBM 几何布朗运动模拟器 (~10ms/1000路径)
+- O-U 均值回归模拟器 (~16ms/1000路径)
+- 指数退避重试装饰器 (5次重试, 2^n+jitter)
+- 令牌桶限流器 (最大并发3)
+
+**量化算法引擎:**
+- Pearson 相关性矩阵 (~4ms/15基金)
+- SLSQP 因子暴露分析 (~27ms, 14因子)
+- 相空间轨迹计算 (位置/速度/加速度)
+
+**API 增强:**
+- `/api/v1/market/dashboard` 首页聚合端点
+- `/api/v1/fund/similarity/calc` 相似度计算
+- `/api/v1/fund/company/{id}/distribution` 资产配置
+
+**前端降级 UI:**
+- FundCompany: Treemap/气泡真实数据 + 模拟数据标识
+- DomesticBondMarket: Sparkline真实渲染
+- FundFilter: Sparkline NAV趋势API
+
+**数据库模型:**
+- MarketCalendar 多市场周历表
+- FundNavHistory 导出修复
 
 ### v0.1.1 (2026-05-26)
 
@@ -257,3 +296,5 @@ MIT
 - [ECharts](https://echarts.apache.org/) - 可视化图表库
 - [Element Plus](https://element-plus.org/) - Vue 3 UI 组件库
 - [Tailwind CSS](https://tailwindcss.com/) - 实用优先的 CSS 框架
+- [Numba](https://numba.pydata.org/) - JIT 编译器
+- [SciPy](https://scipy.org/) - 科学计算库

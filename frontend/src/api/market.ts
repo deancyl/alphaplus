@@ -46,6 +46,20 @@ export const getMoneyMarketRates = async (): Promise<Array<{
   return api.get('/market/bond/money-rates')
 }
 
+// Get rate history for sparkline
+export const getRateHistory = async (
+  rateCode: string,
+  days: number = 30
+): Promise<{
+  values: number[]
+  dates: string[]
+  is_simulated: boolean
+}> => {
+  return api.get('/market/bond/rate-history', {
+    params: { rate_code: rateCode, days }
+  })
+}
+
 // Get market heatmap
 export const getMarketHeatmap = async (): Promise<{
   rows: string[]
