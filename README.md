@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.3)
+[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.4)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -9,7 +9,7 @@
 
 ## 功能特性
 
-### 核心模块 (16个功能视图)
+### 核心模块 (19个功能视图)
 
 | 模块 | 功能 | 数据来源 |
 |------|------|----------|
@@ -29,6 +29,9 @@
 | 市场风格强度 | 大小盘/成长价值风格切换 | AkShare |
 | 股债ERP | SD/百分位双视角，±1SD/±2SD参考线 | AkShare |
 | 市场拥挤度分析 | 相空间轨迹向量图，轮动动量可视化 | 本地计算 |
+| **指数估值** | 17核心指数PE/PB百分位，历史曲线+markArea | AkShare |
+| **定投计算器** | 周/双周/月定投收益计算，一次性对比 | 本地计算 |
+| **指数专区** | 5类指数标签页，对比抽屉 | AkShare |
 
 ### 技术亮点
 
@@ -170,6 +173,14 @@ alphaplus/
 | `/api/v1/analytics/rotation-vector` | GET | 相空间轨迹向量 |
 | `/api/v1/analytics/factor-exposure` | POST | 多因子暴露分析 (SLSQP) |
 
+### 指数模块
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/v1/market/index-valuation` | GET | 17核心指数PE/PB估值 |
+| `/api/v1/market/index-valuation/{code}/history` | GET | 单指数PE历史数据 |
+| `/api/v1/fund/aip-calculate` | POST | 定投收益计算 |
+
 ## 配置说明
 
 ### 环境变量
@@ -203,6 +214,43 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.4 (2026-05-27)
+
+**指数估值系统:**
+- 17 个核心指数 PE/PB 数据 (沪深300, 中证500, 创业板指等)
+- PE 百分位区间划分 (低估 0-25% / 正常 25-75% / 高估 75-100%)
+- 历史 PE 曲线 + ECharts markArea 可视化
+- 优雅降级: AkShare 失败时返回 GBM 模拟数据
+
+**定投计算器:**
+- 周/双周/月定投频率支持
+- 总投入、当前价值、收益率、最大回撤计算
+- 一次性投入对比分析
+- NAV 曲线 + 投资日期标记
+
+**指数专区:**
+- 5 类指数标签页 (宽基/策略/增强/跨境/行业)
+- 指数对比抽屉 (最多 5 个)
+- 链接到估值详情页
+
+**新增 API:**
+- `GET /api/v1/market/index-valuation` 17 指数估值
+- `GET /api/v1/market/index-valuation/{code}/history` PE 历史
+- `POST /api/v1/fund/aip-calculate` 定投计算
+
+**新增前端视图:**
+- IndexValuation.vue - PE 仪表盘 + 历史图表
+- FundCalcAIP.vue - 定投计算器表单 + 结果展示
+- IndexZone.vue - 指数分类 + 对比功能
+
+**测试覆盖:**
+- test_index_valuation.py: 8 tests (估值数据/历史/性能)
+- test_aip_calculator.py: 10 tests (计算/频率/验证)
+
+**文件统计:**
+- 17 files changed
+- 2502+ insertions
 
 ### v0.1.3 (2026-05-26)
 
