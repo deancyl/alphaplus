@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.8-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.8)
+[![Version](https://img.shields.io/badge/version-0.1.9-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.9)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -248,6 +248,56 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.9 (2026-05-27)
+
+**UI/UX深度审计 + DuckDB OLAP + 保险IRR鲁棒性增强:**
+
+**Phase 1: UI/UX深度审计**
+- useBreakpoint.ts扩展: 8断点(xs:320px→4k:3840px), isTouchDevice, devicePixelRatio, orientation
+- BottomSheet阻尼算法: Math.log(1+deltaY)*15触控阻尼 + overscroll-behavior: contain
+- inputmode属性: InsuranceCalculator/FundCalcAIP numeric键盘优化
+- FundCompare粘性列: sticky left-0 z-10, scroll indicators, Tailwind progressive hiding
+- ECharts渲染器选择: SVG(移动端) vs Canvas(桌面端) + devicePixelRatio
+
+**Phase 2: DuckDB OLAP优化**
+- 新增duckdb>=0.10.0, pyarrow>=15.0.0依赖
+- backend/core/duckdb_connection.py: DuckDB连接管理器
+- backend/services/duckdb_ingestion.py: OLAP数据摄入 + 反向持仓查询
+- backend/services/parquet_cache.py: Parquet缓存 + Hive分区 + 物理锁
+- idx_stock_reverse_query倒排索引
+
+**Phase 5: 保险IRR鲁棒性增强**
+- Descartes符号法则: count_sign_changes()检测多重IRR
+- IRRResult dataclass: irr, method, iterations, residual, sign_changes, warning
+- Bisection fallback: Newton→Brent→Bisection三级求解器
+- 80年投影测试 + 极端值测试
+
+**Phase 7: 内存泄漏测试升级**
+- 路由切换30→50次
+- ECHARTS_ROUTES 5→10条路由
+
+**新增文件:**
+- `backend/core/duckdb_connection.py` - DuckDB OLAP连接管理 (84行)
+- `backend/services/duckdb_ingestion.py` - OLAP数据摄入 (112行)
+- `backend/services/parquet_cache.py` - Parquet缓存服务 (180行)
+
+**修改文件:**
+- frontend/src/composables/useBreakpoint.ts - 8断点扩展
+- frontend/src/components/BottomSheet.vue - 阻尼算法
+- frontend/src/components/EChartsWrapper.vue - SVG/Canvas渲染器
+- frontend/src/views/FundCompare.vue - 粘性列+渐进隐藏
+- frontend/src/views/InsuranceCalculator.vue - inputmode
+- frontend/src/views/FundCalcAIP.vue - inputmode
+- backend/services/insurance_calculator.py - Descartes法则+Bisection
+- backend/services/scheduler.py - 季度调度器
+- backend/tests/audit_memory_leak.py - 50次路由测试
+- tests/test_insurance_xirr.py - 80年测试
+
+**文件统计:**
+- 12 files changed
+- 569 insertions, 156 deletions
+- 3 new files
 
 ### v0.1.8 (2026-05-27)
 

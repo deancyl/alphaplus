@@ -366,6 +366,9 @@ onUnmounted(() => {
                 v-model="searchQuery"
                 placeholder="输入基金代码或名称搜索"
                 clearable
+                inputmode="search"
+                autocomplete="off"
+                enterkeyhint="next"
                 @focus="handleInputFocus"
               >
                 <template #prefix>
@@ -408,6 +411,9 @@ onUnmounted(() => {
               :step="100"
               :precision="0"
               controls-position="right"
+              inputmode="numeric"
+              autocomplete="off"
+              enterkeyhint="next"
             />
           </el-form-item>
 
@@ -430,6 +436,7 @@ onUnmounted(() => {
               placeholder="默认今天"
               value-format="YYYY-MM-DD"
               :disabled-date="(time: Date) => time.getTime() > Date.now()"
+              enterkeyhint="done"
             />
           </el-form-item>
 

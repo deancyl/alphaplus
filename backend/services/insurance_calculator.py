@@ -2,13 +2,98 @@
 Insurance product calculation services.
 IRR (Internal Rate of Return) for cash value projection.
 """
+import logging
 import numpy as np
-from typing import List, Optional, Literal, Tuple
+from typing import List, Optional, Literal, Tuple, Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from scipy.optimize import brentq, newton
 
+logger = logging.getLogger(__name__)
+
 PaymentTiming = Literal["beginning", "end"]  # 年初/年末
+
+
+def _bisection_fallback(
+    f: Callable[[float], float],
+    a: float,
+    b: float,
+    tol: float = 1e-10,
+    max_iter: int = 1000
+) -> Optional[float]:
+    """
+    Bisection method for root finding with guaranteed convergence.
+    
+    Used as third-tier fallback when Newton and Brent fail.
+    """
+    fa = f(a)
+    fb = f(b)
+    
+    if fa * fb > 0:
+        return None
+    
+    for i in range(max_iter):
+        c = (a + b) / 2
+        fc = f(c)
+        
+        if abs(fc) < tol or abs(b - a) < tol:
+            return c
+        
+        if fa * fc < 0:
+            b = c
+            fb = fc
+        else:
+            a = c
+            fa = fc
+    
+    return (a + b) / 2
+
+
+def count_sign_changes(cashflows: List[float]) -> int:
+    """
+    Count the number of sign changes in cash flow sequence.
+    
+    According to Descartes' Rule of Signs, the number of positive real roots
+    of a polynomial is at most equal to the number of sign changes in its
+    coefficients.
+    
+    For IRR calculation: NPV(r) = sum(CF[i] / (1+r)^i) = 0
+    
+    Args:
+        cashflows: List of cash flow values
+    
+    Returns:
+        Number of sign changes (upper bound on number of positive IRR solutions)
+    """
+    if not cashflows:
+        return 0
+    
+    signs = []
+    for cf in cashflows:
+        if abs(cf) > 1e-10:
+            signs.append(1 if cf > 0 else -1)
+    
+    if len(signs) < 2:
+        return 0
+    
+    changes = 0
+    for i in range(1, len(signs)):
+        if signs[i] != signs[i-1]:
+            changes += 1
+    
+    return changes
+
+
+@dataclass
+class IRRResult:
+    """IRR calculation result with diagnostics."""
+    irr: Optional[float]
+    method: Literal['newton', 'brent', 'bisection', 'failed']
+    iterations: int
+    residual: float
+    sign_changes: int
+    warning: Optional[str] = None
+    convergence: bool = True
 
 
 @dataclass
@@ -69,49 +154,60 @@ def xnpv(rate: float, cashflows: List[Tuple[date, float]]) -> float:
 
 def xirr_brent(
     cashflows: List[Tuple[date, float]],
-    guess: float = 0.05,
-    max_iterations: int = 10000
-) -> Optional[float]:
+    guess: float = 0.1,
+    max_iterations: int = 1000,
+    tol: float = 1e-10,
+) -> IRRResult:
     """
-    Calculate IRR using Brent's hybrid root-finding algorithm.
-    
-    Strategy:
-    1. Try Newton-Raphson first (fast, but may not converge)
-    2. Fall back to Brent's method (robust, guaranteed convergence)
+    Calculate XIRR using Brent hybrid method with fallback to bisection.
     
     Args:
-        cashflows: List of (date, cash_flow) tuples
-        guess: Initial guess for IRR (default 0.05 = 5%)
-        max_iterations: Maximum iterations for Newton-Raphson
+        cashflows: List of (date, amount) tuples
+        guess: Initial guess for IRR
+        max_iterations: Maximum solver iterations
+        tol: Convergence tolerance
     
     Returns:
-        IRR as decimal (e.g., 0.05 for 5%), or None if no solution exists
-    
-    Note:
-        Returns None for invalid cases:
-        - All positive cash flows (no investment)
-        - All negative cash flows (no return)
-        - No sign change (no IRR solution)
+        IRRResult with IRR value and diagnostics
     """
     if not cashflows or len(cashflows) < 2:
-        return None
+        return IRRResult(
+            irr=None,
+            method='failed',
+            iterations=0,
+            residual=float('inf'),
+            sign_changes=0,
+            warning="Insufficient cash flows",
+            convergence=False,
+        )
     
-    # Check for valid cash flow pattern (must have both positive and negative)
     amounts = [cf[1] for cf in cashflows]
+    sign_changes = count_sign_changes(amounts)
+    
     has_positive = any(amt > 0 for amt in amounts)
     has_negative = any(amt < 0 for amt in amounts)
     
     if not has_positive or not has_negative:
-        return None
+        return IRRResult(
+            irr=None,
+            method='failed',
+            iterations=0,
+            residual=float('inf'),
+            sign_changes=sign_changes,
+            warning="No sign change in cash flows",
+            convergence=False,
+        )
     
-    # Define NPV function for root finding
+    warning = None
+    if sign_changes > 1:
+        warning = f"Multiple IRR solutions may exist ({sign_changes} sign changes detected)"
+        logger.warning(warning)
+    
     def npv_func(rate: float) -> float:
         return xnpv(rate, cashflows)
     
-    # Define derivative for Newton-Raphson
     def npv_derivative(rate: float) -> float:
         if rate == 0:
-            # For rate = 0, derivative is -Σ(CF_i * years_i)
             sorted_flows = sorted(cashflows, key=lambda x: x[0])
             base_date = sorted_flows[0][0]
             deriv = 0.0
@@ -130,31 +226,77 @@ def xirr_brent(
             deriv -= flow_amount * years / ((1 + rate) ** (years + 1))
         return deriv
     
-    # Strategy 1: Try Newton-Raphson (fast)
     try:
         irr_result = newton(npv_func, guess, fprime=npv_derivative, maxiter=max_iterations)
         irr_float = float(irr_result)
-        if -0.99 < irr_float < 10:  # Reasonable IRR range: -99% to 1000%
-            return irr_float
+        if -0.99 < irr_float < 10:
+            residual = abs(npv_func(irr_float))
+            return IRRResult(
+                irr=irr_float,
+                method='newton',
+                iterations=0,
+                residual=residual,
+                sign_changes=sign_changes,
+                warning=warning,
+            )
     except (RuntimeError, ValueError):
-        pass  # Fall through to Brent's method
+        pass
     
-    # Strategy 2: Brent's method (robust)
     try:
-        # Search in reasonable range
-        irr_result = brentq(npv_func, -0.99, 10.0, xtol=1e-12, maxiter=max_iterations)
-        if isinstance(irr_result, tuple):
-            return float(irr_result[0])
-        return float(irr_result)
+        irr_result = brentq(npv_func, -0.99, 10.0, xtol=tol, maxiter=max_iterations)
+        irr_float = float(irr_result[0] if isinstance(irr_result, tuple) else irr_result)
+        residual = abs(npv_func(irr_float))
+        return IRRResult(
+            irr=irr_float,
+            method='brent',
+            iterations=0,
+            residual=residual,
+            sign_changes=sign_changes,
+            warning=warning,
+        )
     except ValueError:
-        # No sign change in the interval, try wider range
         try:
-            irr_result = brentq(npv_func, -0.999, 100.0, xtol=1e-12, maxiter=max_iterations)
-            if isinstance(irr_result, tuple):
-                return float(irr_result[0])
-            return float(irr_result)
+            irr_result = brentq(npv_func, -0.999, 100.0, xtol=tol, maxiter=max_iterations)
+            irr_float = float(irr_result[0] if isinstance(irr_result, tuple) else irr_result)
+            residual = abs(npv_func(irr_float))
+            return IRRResult(
+                irr=irr_float,
+                method='brent',
+                iterations=0,
+                residual=residual,
+                sign_changes=sign_changes,
+                warning=warning,
+            )
         except ValueError:
-            return None
+            pass
+    
+    # Strategy 3: Bisection fallback (guaranteed convergence for bracketed roots)
+    # This is slower but more robust for pathological cases
+    try:
+        # Use bisection with much wider bracket
+        irr_result = _bisection_fallback(npv_func, -0.999, 1000.0, tol=tol, max_iter=max_iterations)
+        if irr_result is not None:
+            residual = abs(npv_func(irr_result))
+            return IRRResult(
+                irr=irr_result,
+                method='bisection',
+                iterations=max_iterations,
+                residual=residual,
+                sign_changes=sign_changes,
+                warning=warning,
+            )
+    except Exception:
+        pass
+    
+    return IRRResult(
+        irr=None,
+        method='failed',
+        iterations=0,
+        residual=float('inf'),
+        sign_changes=sign_changes,
+        warning=warning,
+        convergence=False,
+    )
 
 
 def create_insurance_cash_flows(
@@ -284,8 +426,8 @@ def project_cash_values(
         death_benefit = total_premium * 1.5 + cash_value
         
         cashflows.append((cash_value_date, cash_value))
-        irr_decimal = xirr_brent(cashflows)
-        irr = irr_decimal * 100 if irr_decimal is not None else None
+        irr_result = xirr_brent(cashflows)
+        irr = irr_result.irr * 100 if irr_result.irr is not None else None
         
         projections.append(CashValueProjection(
             year=year,

@@ -77,6 +77,9 @@ const closeSheet = () => {
   emit('snapPointChange', 'closed')
 }
 
+// Close threshold: 30% of current height
+const CLOSE_THRESHOLD = 0.3
+
 // Touch handlers
 const handleTouchStart = (e: TouchEvent) => {
   isDragging.value = true
@@ -87,29 +90,38 @@ const handleTouchStart = (e: TouchEvent) => {
 const handleTouchMove = (e: TouchEvent) => {
   if (!isDragging.value) return
 
-  const deltaY = e.touches[0].clientY - dragStartY.value
+  const rawDeltaY = e.touches[0].clientY - dragStartY.value
   const windowHeight = window.innerHeight
-  const heightDelta = (deltaY / windowHeight) * 100
 
-  sheetHeight.value = Math.max(0, Math.min(100, dragStartHeight.value - heightDelta))
+  // Apply logarithmic damping for downward drag (closing gesture)
+  // Formula: offsetY = Math.log(1 + |deltaY|) * FrictionCoefficient
+  if (rawDeltaY > 0) {
+    // Downward drag - apply damping resistance
+    const dampedDeltaY = Math.log(1 + rawDeltaY) * 15
+    const heightDelta = (dampedDeltaY / windowHeight) * 100
+    sheetHeight.value = Math.max(0, Math.min(100, dragStartHeight.value - heightDelta))
+  } else {
+    // Upward drag - no damping (expand gesture)
+    const heightDelta = (rawDeltaY / windowHeight) * 100
+    sheetHeight.value = Math.max(0, Math.min(100, dragStartHeight.value - heightDelta))
+  }
 }
+}
+
+const CLOSE_THRESHOLD = 0.3 // 30% of current height
 
 const handleTouchEnd = () => {
   isDragging.value = false
 
-  // Snap to closest point
-  const closestPoint = props.snapPoints.reduce((closest, point) => {
-    const distance = Math.abs(sheetHeight.value - SNAP_HEIGHTS[point])
-    const closestDistance = Math.abs(sheetHeight.value - SNAP_HEIGHTS[closest])
-    return distance < closestDistance ? point : closest
-  }, props.snapPoints[0])
-
-  if (closestPoint === 'closed') {
+  // If dragged down more than 30% of current height, close
+  const heightDelta = dragStartHeight.value - sheetHeight.value
+  if (heightDelta > dragStartHeight.value * CLOSE_THRESHOLD) {
     closeSheet()
   } else {
-    sheetHeight.value = SNAP_HEIGHTS[closestPoint]
-    emit('snapPointChange', closestPoint)
+    // Snap back to original position with elastic animation
+    sheetHeight.value = dragStartHeight.value
   }
+}
 }
 
 // Backdrop click
@@ -284,7 +296,8 @@ onUnmounted(() => {
   padding: var(--spacing-md);
   overflow-y: auto;
   flex: 1;
-  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; /* Prevent scroll chaining */
+  -webkit-overflow-scrolling: touch; /* Smooth iOS scrolling */
 }
 
 /* Desktop: Limit max height for better UX */

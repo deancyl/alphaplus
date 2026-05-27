@@ -283,6 +283,9 @@ onUnmounted(() => {
               :step="1000"
               :precision="0"
               controls-position="right"
+              inputmode="numeric"
+              autocomplete="off"
+              enterkeyhint="next"
             />
           </el-form-item>
 
@@ -306,6 +309,9 @@ onUnmounted(() => {
               :max="70"
               :step="1"
               controls-position="right"
+              inputmode="numeric"
+              autocomplete="off"
+              enterkeyhint="next"
             />
           </el-form-item>
 
@@ -342,6 +348,9 @@ onUnmounted(() => {
               :max="50"
               :step="5"
               controls-position="right"
+              inputmode="numeric"
+              autocomplete="off"
+              enterkeyhint="done"
             />
           </el-form-item>
 

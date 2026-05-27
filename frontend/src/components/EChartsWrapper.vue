@@ -2,6 +2,7 @@
 import { ref, shallowRef, onMounted, onUnmounted, watch, computed } from 'vue'
 import * as echarts from 'echarts'
 import type { EChartsOption } from 'echarts'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 
 interface Props {
   option: EChartsOption
@@ -21,6 +22,15 @@ const props = withDefaults(defineProps<Props>(), {
   manualUpdate: false,
   isSparkline: false,
 })
+
+const { isMobile, devicePixelRatio } = useBreakpoint()
+
+/**
+ * Select renderer based on breakpoint:
+ * - Mobile (SVG): Better for touch interactions, lower memory footprint
+ * - Desktop (Canvas): Higher performance for complex charts
+ */
+const renderer = computed(() => isMobile.value ? 'svg' : 'canvas')
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const chart = shallowRef<echarts.ECharts | null>(null)
@@ -151,8 +161,12 @@ watch(
 onMounted(() => {
   if (!chartRef.value) return
   
-  // Initialize chart
-  chart.value = echarts.init(chartRef.value)
+  // Initialize chart with renderer selection and device pixel ratio
+  // SVG for mobile (better touch, lower memory), Canvas for desktop (higher performance)
+  chart.value = echarts.init(chartRef.value, undefined, {
+    renderer: renderer.value,
+    devicePixelRatio: devicePixelRatio.value,
+  })
   if (!props.manualUpdate) {
     chart.value.setOption(processedOption.value)
   }

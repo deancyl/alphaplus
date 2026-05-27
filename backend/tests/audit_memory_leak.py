@@ -162,6 +162,11 @@ ECHARTS_ROUTES = [
     "/fund/similarity",    # ECharts factor exposure
     "/analytics/fear-greed",  # ECharts gauge
     "/market/erp",         # ECharts line chart
+    "/",                   # Dashboard with multiple charts
+    "/fof/fofBacktest",    # FOF backtest with Brinson charts
+    "/fof/fundFilter",     # Fund filter with sparklines
+    "/product/insuranceFilter",  # Insurance calculator
+    "/market/index-valuation",  # Index valuation charts
 ]
 
 
@@ -196,9 +201,10 @@ async def memory_page(browser_context: BrowserContext):
 
 @pytest.mark.asyncio
 @pytest.mark.playwright
+@pytest.mark.timeout(120000)  # 2 minutes for 50 transitions
 async def test_echarts_memory_leak_route_transitions(memory_page):
     """
-    Test memory leak during 30 route transitions between ECharts pages.
+    Test memory leak during 50 route transitions between ECharts pages.
     
     Assertions:
     - JSHeap delta < 50KB after GC
@@ -216,8 +222,8 @@ async def test_echarts_memory_leak_route_transitions(memory_page):
     # Take baseline measurement
     baseline = await profiler.measure("baseline_after_initial_load")
     
-    # Perform 30 route transitions
-    num_transitions = 30
+    # Perform 50 route transitions
+    num_transitions = 50
     for i in range(num_transitions):
         route = ECHARTS_ROUTES[i % len(ECHARTS_ROUTES)]
         await page.goto(f"{base_url}{route}")

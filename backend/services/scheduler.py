@@ -97,6 +97,21 @@ class SchedulerService:
             replace_existing=True,
             max_instances=1,
         )
+        
+        # Job 4: Quarterly holdings ingestion (Jan/Apr/Jul/Oct after 15th)
+        self._scheduler.add_job(
+            self._quarterly_holdings_ingestion,
+            trigger=CronTrigger(
+                month="1,4,7,10",
+                day="16-31",
+                hour=2,
+                minute=0,
+            ),
+            id="quarterly_holdings_ingestion",
+            name="季度持仓数据摄入",
+            replace_existing=True,
+            max_instances=1,
+        )
     
     async def _refresh_pandas_cache(self):
         """Refresh Pandas in-memory cache."""
@@ -130,6 +145,26 @@ class SchedulerService:
             await index_quotes.refresh()
         except Exception as e:
             print(f"Index quotes refresh error: {e}")
+    
+    async def _quarterly_holdings_ingestion(self):
+        """Quarterly holdings ingestion with Parquet-first caching."""
+        from backend.services.parquet_cache import PhysicalLock, load_holdings_from_parquet
+        from backend.services.duckdb_ingestion import insert_holdings_batch
+        from datetime import date
+        
+        try:
+            with PhysicalLock("holdings_ingestion"):
+                today = date.today()
+                cached = load_holdings_from_parquet(today)
+                if cached:
+                    insert_holdings_batch(cached)
+                    print(f"Quarterly holdings ingestion: {len(cached)} records from Parquet cache")
+                else:
+                    print("Quarterly holdings ingestion: No cached Parquet data available")
+        except RuntimeError:
+            print("Quarterly holdings ingestion: Another process is running, skipping")
+        except Exception as e:
+            print(f"Quarterly holdings ingestion error: {e}")
     
     @property
     def is_running(self) -> bool:

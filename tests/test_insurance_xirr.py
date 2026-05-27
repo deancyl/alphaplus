@@ -476,3 +476,56 @@ class TestEdgeCases:
         
         assert all(p.premium_paid == 50000 for p in projections)
         assert all(p.irr is not None for p in projections)
+
+
+class TestExtremeProjections:
+    """Test extreme projection scenarios."""
+    
+    def test_80_year_projection(self):
+        """Test IRR calculation for 80-year projection."""
+        policy = InsurancePolicy(
+            premium=10000,
+            payment_years=20,
+            age=20,
+            gender='M'
+        )
+        
+        projections = project_cash_values(
+            policy=policy,
+            projection_years=80,
+            assumed_growth=3.5,
+            payment_timing="beginning"
+        )
+        
+        assert len(projections) == 80
+        assert all(p.irr is not None for p in projections[:60])
+        
+        for p in projections[:20]:
+            assert p.premium_paid == (p.year * 10000)
+        
+        for p in projections[20:]:
+            assert p.premium_paid == 200000
+    
+    def test_extreme_cash_values(self):
+        """Test IRR with very large cash values."""
+        base = date(2024, 1, 1)
+        cashflows = [
+            (base, -10000000),
+            (base + timedelta(days=365 * 30), 50000000)
+        ]
+        
+        result = xirr_brent(cashflows)
+        assert result.irr is not None
+        assert -0.99 < result.irr < 10.0
+    
+    def test_negative_irr_scenario(self):
+        """Test scenario with negative IRR (loss)."""
+        base = date(2024, 1, 1)
+        cashflows = [
+            (base, -10000),
+            (base + timedelta(days=365 * 10), 8000)
+        ]
+        
+        result = xirr_brent(cashflows)
+        assert result.irr is not None
+        assert result.irr < 0

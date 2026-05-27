@@ -45,6 +45,11 @@ const radarChartRef = ref<HTMLElement | null>(null)
 let correlationChart: echarts.ECharts | null = null
 let radarChart: echarts.ECharts | null = null
 
+// Scroll detection refs
+const tableContainer = ref<HTMLElement | null>(null)
+const canScrollLeft = ref(false)
+const canScrollRight = ref(false)
+
 // Constants
 const MAX_COMPARE = 15
 const DEBOUNCE_DELAY = 300
@@ -489,18 +494,31 @@ watch(searchQuery, () => {
   debouncedSearch()
 })
 
+// Scroll detection logic
+const updateScrollIndicators = () => {
+  if (!tableContainer.value) return
+  const { scrollLeft, scrollWidth, clientWidth } = tableContainer.value
+  canScrollLeft.value = scrollLeft > 0
+  canScrollRight.value = scrollLeft < scrollWidth - clientWidth - 1
+}
+
 // Handle window resize
 const handleResize = () => {
   correlationChart?.resize()
   radarChart?.resize()
+  updateScrollIndicators()
 }
 
 onMounted(() => {
   window.addEventListener('resize', handleResize)
+  tableContainer.value?.addEventListener('scroll', updateScrollIndicators)
+  // Initial check
+  nextTick(() => updateScrollIndicators())
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  tableContainer.value?.removeEventListener('scroll', updateScrollIndicators)
   correlationChart?.dispose()
   radarChart?.dispose()
   if (searchDebounceTimer) {
@@ -639,90 +657,108 @@ onUnmounted(() => {
             <h3>指标对比</h3>
           </div>
           
-          <el-table
-            :data="selectedFunds"
-            stripe
-            border
-            size="small"
-            max-height="300"
-          >
-            <el-table-column
-              prop="fund_code"
-              label="代码"
-              width="100"
-              fixed
-            />
-            <el-table-column
-              prop="fund_name"
-              label="名称"
-              min-width="150"
-              fixed="left"
-              class-name="sticky-column"
-              show-overflow-tooltip
+          <div class="table-container" ref="tableContainer">
+            <!-- Left scroll indicator -->
+            <div v-if="canScrollLeft" class="scroll-indicator scroll-indicator-left">
+              <el-icon><i-ep-arrow-left /></el-icon>
+            </div>
+            
+            <el-table
+              :data="selectedFunds"
+              stripe
+              border
+              size="small"
+              max-height="300"
             >
-              <template #default="{ row }">
-                <span class="font-medium">{{ row.fund_name }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="fund_type"
-              label="类型"
-              width="90"
-            />
-            <el-table-column
-              prop="scale"
-              label="规模(亿)"
-              width="100"
-            >
-              <template #default="{ row }">
-                {{ formatNumber(row.scale) }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="return_1y"
-              label="近1年%"
-              width="100"
-              sortable
-            >
-              <template #default="{ row }">
-                <span :class="getValueClass(row.return_1y)">
-                  {{ formatNumber(row.return_1y) }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="max_drawdown_1y"
-              label="最大回撤%"
-              width="110"
-              sortable
-            >
-              <template #default="{ row }">
-                <span :class="getValueClass(-row.max_drawdown_1y)">
-                  {{ formatNumber(row.max_drawdown_1y) }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="sharpe_1y"
-              label="夏普"
-              width="80"
-              sortable
-            >
-              <template #default="{ row }">
-                {{ formatNumber(row.sharpe_1y) }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="volatility_1y"
-              label="波动率%"
-              width="100"
-              sortable
-            >
-              <template #default="{ row }">
-                {{ formatNumber(row.volatility_1y) }}
-              </template>
-            </el-table-column>
-          </el-table>
+              <el-table-column
+                prop="fund_code"
+                label="代码"
+                width="100"
+                fixed
+              />
+              <el-table-column
+                prop="fund_name"
+                label="名称"
+                min-width="150"
+                fixed="left"
+                class-name="sticky-column"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  <span class="font-medium">{{ row.fund_name }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="fund_type"
+                label="类型"
+                width="90"
+                class-name="table-cell"
+              />
+              <el-table-column
+                prop="scale"
+                label="规模(亿)"
+                width="100"
+                class-name="hidden sm:table-cell"
+              >
+                <template #default="{ row }">
+                  {{ formatNumber(row.scale) }}
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="return_1y"
+                label="近1年%"
+                width="100"
+                sortable
+                class-name="hidden sm:table-cell md:table-cell"
+              >
+                <template #default="{ row }">
+                  <span :class="getValueClass(row.return_1y)">
+                    {{ formatNumber(row.return_1y) }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="max_drawdown_1y"
+                label="最大回撤%"
+                width="110"
+                sortable
+                class-name="hidden md:table-cell lg:table-cell"
+              >
+                <template #default="{ row }">
+                  <span :class="getValueClass(-row.max_drawdown_1y)">
+                    {{ formatNumber(row.max_drawdown_1y) }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="sharpe_1y"
+                label="夏普"
+                width="80"
+                sortable
+                class-name="hidden lg:table-cell xl:table-cell"
+              >
+                <template #default="{ row }">
+                  {{ formatNumber(row.sharpe_1y) }}
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="volatility_1y"
+                label="波动率%"
+                width="100"
+                sortable
+                class-name="hidden xl:table-cell"
+              >
+                <template #default="{ row }">
+                  {{ formatNumber(row.volatility_1y) }}
+                </template>
+              </el-table-column>
+            </el-table>
+            
+            <!-- Right scroll indicator -->
+            <div v-if="canScrollRight" class="scroll-indicator scroll-indicator-right">
+              <el-icon><i-ep-arrow-right /></el-icon>
+            </div>
+          </div>
         </div>
         
         <!-- 图表区域 -->
@@ -1120,6 +1156,12 @@ onUnmounted(() => {
   left: 0;
   z-index: 10;
   background: var(--bg-card);
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
+}
+
+/* For dark mode */
+:root.dark .el-table .sticky-column {
+  background: var(--bg-card);
 }
 
 /* Second column also sticky if needed */
@@ -1128,5 +1170,50 @@ onUnmounted(() => {
   left: 150px;
   z-index: 9;
   background: var(--bg-card);
+}
+
+/* Table container with scroll detection */
+.table-container {
+  position: relative;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+}
+
+/* Scroll indicators */
+.scroll-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  background: var(--bg-card);
+  padding: 8px;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  opacity: 0.8;
+  transition: opacity 0.2s;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.scroll-indicator:hover {
+  opacity: 1;
+}
+
+.scroll-indicator-left {
+  left: 8px;
+}
+
+.scroll-indicator-right {
+  right: 8px;
+}
+
+/* Dark mode scroll indicators */
+:root.dark .scroll-indicator {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 </style>
