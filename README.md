@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.6-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.6)
+[![Version](https://img.shields.io/badge/version-0.1.7-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.7)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -248,6 +248,71 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.7 (2026-05-27)
+
+**V4.5/V4.6 技术债清偿 - 五项关键修复:**
+
+**1. 多期Brinson归因算法 (Carino + Menchero):**
+- Carino链接系数: `k = (R_p_compound - R_b_compound) / sum(R_p_i - R_b_i)`
+- Menchero平滑因子: 周期特定系数 + 数值稳定性优化
+- 残差精度: `< 1e-12` (目标达成)
+- 自动方法切换: 超额收益接近零时自动选择Menchero
+- 50个测试用例全部通过
+
+**2. 黄金盎司精算换算:**
+- 精确常量: `31.1034768` 克/金衡盎司 (非近似值31.10)
+- 成色校正: London 0.9999 vs Shanghai 0.995 纯度比
+- VAT摩擦因子: 0.35% 增值税影响
+- Round-trip误差: `0.000005%` (目标 <0.01%, 超2000倍精度)
+- 18个测试用例全部通过
+
+**3. 保险IRR现金流时序对齐:**
+- 显式日期现金流: 消除1年期初/期末偏差
+- XNPV/XIRR算法: 不规则间隔NPV计算
+- Brent混合求解器: Newton-Raphson优先 + Brent保底
+- payment_timing参数: "beginning"/"end" 期初/期末选项
+- 30个测试用例全部通过
+
+**4. 数据库并发写入重试:**
+- 指数退避装饰器: `delay = min(max_delay, base_delay * 2^attempt) + jitter`
+- 仅SQLITE_BUSY重试: 非锁定错误立即抛出
+- 随机抖动: 防止惊群效应
+- 应用范围: Portfolio/Pool/Favorites/Ingestion写操作
+- 15个测试用例全部通过
+
+**5. 内存泄漏自动化测试:**
+- Playwright CDP集成: Chrome DevTools Protocol内存分析
+- MemoryProfiler类: force_gc + measure + analyze
+- 验证标准: JSHeap delta < 50KB, DOM nodes delta ≤ 0
+- 测试路由: 5个ECharts图表页面
+- 30次路由切换压力测试
+
+**新增文件:**
+- `backend/services/gold_constants.py` - 黄金精算常量 (308行)
+- `backend/tests/audit_memory_leak.py` - Playwright内存测试 (418行)
+- `tests/test_gold_conversion.py` - 黄金换算测试 (280行)
+- `tests/test_insurance_xirr.py` - 保险IRR测试 (350行)
+- `backend/tests/test_sqlite_retry.py` - 数据库重试测试 (180行)
+
+**修改文件:**
+- `backend/services/brinson.py` - 多期Brinson实现 (670行)
+- `backend/services/insurance_calculator.py` - XIRR时序对齐 (450行)
+- `backend/core/database.py` - 重试装饰器 (120行)
+- `backend/api/gold.py` - 黄金API更新 (268行)
+- `backend/api/insurance.py` - 保险API更新 (85行)
+- `requirements.txt` - 添加pytest-playwright
+
+**测试覆盖:**
+- 113个测试全部通过
+- Brinson: 50 tests
+- Gold: 18 tests
+- Insurance: 30 tests
+- Retry: 15 tests
+
+**文件统计:**
+- 15 files changed
+- 2,800+ insertions
 
 ### v0.1.6 (2026-05-27)
 

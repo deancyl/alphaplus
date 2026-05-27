@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.database import get_db
+from backend.core.database import get_db, retry_on_sqlite_busy
 from backend.models.portfolio import UserPortfolio, BacktestResult as BacktestResultModel
 from backend.schemas.portfolio import (
     PortfolioCreate,
@@ -113,6 +113,7 @@ def build_backtest_response(bt: BacktestResultModel) -> BacktestResultResponse:
 # ==================== Portfolio CRUD ====================
 
 @router.post("", response_model=PortfolioResponse, status_code=status.HTTP_201_CREATED)
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def create_portfolio(
     portfolio_data: PortfolioCreate,
     db: AsyncSession = Depends(get_db)
@@ -258,6 +259,7 @@ async def get_portfolio(
 
 
 @router.put("/{portfolio_id}", response_model=PortfolioResponse)
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def update_portfolio(
     portfolio_id: int,
     portfolio_data: PortfolioUpdate,
@@ -328,6 +330,7 @@ async def update_portfolio(
 
 
 @router.delete("/{portfolio_id}", status_code=status.HTTP_204_NO_CONTENT)
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def delete_portfolio(
     portfolio_id: int,
     db: AsyncSession = Depends(get_db)

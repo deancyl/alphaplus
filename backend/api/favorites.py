@@ -7,6 +7,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core import get_db
+from backend.core.database import retry_on_sqlite_busy
 from backend.models.fund import UserFavoritesRegistry
 from backend.schemas.favorites import (
     FavoriteCreate,
@@ -54,6 +55,7 @@ async def list_favorites(
 
 
 @favorites_router.post("/favorites", response_model=FavoriteResponse, status_code=201)
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def add_favorite(
     favorite: FavoriteCreate,
     db: AsyncSession = Depends(get_db),
@@ -94,6 +96,7 @@ async def add_favorite(
 
 
 @favorites_router.delete("/favorites/{favorite_id}", status_code=204)
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def remove_favorite(
     favorite_id: int,
     db: AsyncSession = Depends(get_db),
@@ -116,6 +119,7 @@ async def remove_favorite(
 
 
 @favorites_router.put("/favorites/reorder")
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def reorder_favorites(
     request: FavoriteReorderRequest,
     db: AsyncSession = Depends(get_db),

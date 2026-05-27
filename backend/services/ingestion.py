@@ -14,6 +14,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core import settings, AsyncSessionLocal
+from backend.core.database import retry_on_sqlite_busy
 from backend.models.fund import FundIndicators, FundIssuePipeline, FundIndustryAllocation, FundPortfolioHoldings
 from backend.services.rate_limiter import RateLimiter
 
@@ -90,6 +91,7 @@ class FundIngestion:
                 print(f"Category sync error ({category}): {e}")
                 continue
     
+    @retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
     async def _save_fund_dataframe(self, df: pd.DataFrame, fund_type: str):
         """保存基金数据到数据库."""
         async with AsyncSessionLocal() as session:
@@ -120,6 +122,7 @@ class FundIngestion:
             
             await session.commit()
     
+    @retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
     async def _sync_fund_companies(self):
         """同步基金公司数据."""
         try:
@@ -298,6 +301,7 @@ class IndustryAllocationIngestion:
         logger.info(f"Industry allocation batch sync: {results}")
         return results
 
+    @retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
     async def _save_industry_allocation(self, fund_code: str, df: pd.DataFrame):
         """
         保存行业配置数据到数据库 (upsert logic).
@@ -449,6 +453,7 @@ def _parse_quarter_to_date(quarter_str: str) -> str:
     return f"{year}-{quarter_end_dates.get(quarter, '12-31')}"
 
 
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def save_fund_holdings(fund_code: str, holdings: List[dict], report_date: str) -> int:
     """
     Save fund holdings to database with upsert logic.
@@ -505,6 +510,7 @@ async def save_fund_holdings(fund_code: str, holdings: List[dict], report_date: 
             raise
 
 
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def ingest_fund_industry_allocation(
     fund_code: str,
     year: Optional[str] = None,

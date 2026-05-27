@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
 from backend.core import get_db
+from backend.core.database import retry_on_sqlite_busy
 from backend.models.fund import FundPoolRegistry
 from backend.schemas.pool import (
     PoolAddRequest,
@@ -102,6 +103,7 @@ async def add_to_pool(
 
 
 @pool_router.post("/pool/bulk-add", status_code=status.HTTP_201_CREATED)
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def bulk_add_to_pool(
     request: PoolBulkAddRequest,
     db: AsyncSession = Depends(get_db),
@@ -164,6 +166,7 @@ async def bulk_add_to_pool(
 
 
 @pool_router.delete("/pool/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def remove_from_pool(
     id: int,
     db: AsyncSession = Depends(get_db),
@@ -222,6 +225,7 @@ async def update_pool_status(
 
 
 @pool_router.post("/pool/transfer", response_model=PoolFundResponse)
+@retry_on_sqlite_busy(max_retries=3, base_delay_ms=50, max_delay_ms=500)
 async def transfer_between_pools(
     request: PoolTransferRequest,
     db: AsyncSession = Depends(get_db),
