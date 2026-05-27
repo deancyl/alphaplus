@@ -17,6 +17,7 @@ const filterParams = ref<FundFilterParams>({
   return_1y_max: undefined,
   max_drawdown_1y_max: undefined,
   sharpe_1y_min: undefined,
+  new_high_ratio_min: undefined,
   page: 1,
   page_size: 50,
   sort_by: 'return_1y',
@@ -239,6 +240,7 @@ watch(
     filterParams.value.return_1y_max,
     filterParams.value.max_drawdown_1y_max,
     filterParams.value.sharpe_1y_min,
+    filterParams.value.new_high_ratio_min,
   ],
   () => {
     debouncedFilter()
@@ -352,6 +354,18 @@ onMounted(() => {
                 <el-input-number
                   v-model="filterParams.sharpe_1y_min"
                   :step="0.1"
+                />
+              </div>
+              
+              <div class="form-item">
+                <label>内含新高率 (近1年) ≥</label>
+                <el-slider
+                  v-model="filterParams.new_high_ratio_min"
+                  :min="0"
+                  :max="100"
+                  :step="5"
+                  :marks="{ 0: '0%', 50: '50%', 80: '80%', 100: '100%' }"
+                  show-input
                 />
               </div>
             </div>
@@ -473,6 +487,23 @@ onMounted(() => {
             >
               <template #default="{ row }">
                 {{ formatNumber(row.sharpe_1y) }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="new_high_ratio_1y"
+              label="内含新高率"
+              width="100"
+              sortable
+            >
+              <template #default="{ row }">
+                <span
+                  :class="{
+                    'text-green-600': row.new_high_ratio_1y >= 80,
+                    'text-gray-500': row.new_high_ratio_1y < 80 || !row.new_high_ratio_1y
+                  }"
+                >
+                  {{ row.new_high_ratio_1y ? `${row.new_high_ratio_1y.toFixed(1)}%` : '-' }}
+                </span>
               </template>
             </el-table-column>
           </el-table>

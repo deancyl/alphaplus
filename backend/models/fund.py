@@ -30,7 +30,11 @@ class FundIndicators(Base):
     volatility_1y: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     max_drawdown_1y: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     sharpe_1y: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    new_high_ratio_1y: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 近一年内含新高率 (%)
     heavy_sector: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    
+    # Manager honors (awards)
+    manager_honors: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 金牛奖,明星基金奖,招行五星
 
     __table_args__ = (
         Index("idx_fund_filter", "fund_type", "setup_year", "scale", "return_1y"),

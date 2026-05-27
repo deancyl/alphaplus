@@ -15,6 +15,7 @@ export interface FundFilterParams {
   return_1y_max?: number
   max_drawdown_1y_max?: number
   sharpe_1y_min?: number
+  new_high_ratio_min?: number
   page?: number
   page_size?: number
   sort_by?: string
@@ -35,6 +36,8 @@ export interface FundItem {
   max_drawdown_1y: number | null
   sharpe_1y: number | null
   heavy_sector: string | null
+  new_high_ratio_1y?: number | null
+  manager_honors?: string | null
 }
 
 export interface FundFilterResponse {

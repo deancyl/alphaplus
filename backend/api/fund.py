@@ -69,6 +69,9 @@ async def filter_funds(
     if request.sharpe_1y_min is not None:
         conditions.append(FundIndicators.sharpe_1y >= request.sharpe_1y_min)
     
+    if request.new_high_ratio_min is not None:
+        conditions.append(FundIndicators.new_high_ratio_1y >= request.new_high_ratio_min)
+    
     query = select(FundIndicators)
     if conditions:
         query = query.where(and_(*conditions))
@@ -105,7 +108,9 @@ async def filter_funds(
             volatility_1y=f.volatility_1y,
             max_drawdown_1y=f.max_drawdown_1y,
             sharpe_1y=f.sharpe_1y,
+            new_high_ratio_1y=f.new_high_ratio_1y,
             heavy_sector=f.heavy_sector,
+            manager_honors=f.manager_honors,
         )
         for f in funds
     ]
@@ -449,16 +454,18 @@ async def get_fund_detail(
 
     return FundIndicatorResponse(
         fund_code=fund.fund_code,
-        fund_name=f.fund_name,
-        fund_type=f.fund_type,
-        manager=f.manager,
-        setup_date=f.setup_date,
-        setup_year=f.setup_year,
-        scale=f.scale,
-        company_name=f.company_name,
-        return_1y=f.return_1y,
-        volatility_1y=f.volatility_1y,
-        max_drawdown_1y=f.max_drawdown_1y,
-        sharpe_1y=f.sharpe_1y,
-        heavy_sector=f.heavy_sector,
+        fund_name=fund.fund_name,
+        fund_type=fund.fund_type,
+        manager=fund.manager,
+        setup_date=fund.setup_date,
+        setup_year=fund.setup_year,
+        scale=fund.scale,
+        company_name=fund.company_name,
+        return_1y=fund.return_1y,
+        volatility_1y=fund.volatility_1y,
+        max_drawdown_1y=fund.max_drawdown_1y,
+        sharpe_1y=fund.sharpe_1y,
+        new_high_ratio_1y=fund.new_high_ratio_1y,
+        heavy_sector=fund.heavy_sector,
+        manager_honors=fund.manager_honors,
     )

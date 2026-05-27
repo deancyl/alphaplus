@@ -33,6 +33,7 @@ class FundFilterRequest(BaseModel):
     return_1y_max: Optional[float] = Field(default=None, description="近1年收益率最大值%")
     max_drawdown_1y_max: Optional[float] = Field(default=None, description="近1年最大回撤最大值%")
     sharpe_1y_min: Optional[float] = Field(default=None, description="近1年夏普最小值")
+    new_high_ratio_min: Optional[float] = Field(default=None, description="近一年内含新高率最小值 (%)")
     
     # Manager Style
     manager_experience_min: Optional[float] = Field(default=None, description="经理从业年限最小值")
@@ -62,7 +63,9 @@ class FundIndicatorResponse(BaseModel):
     volatility_1y: Optional[float] = None
     max_drawdown_1y: Optional[float] = None
     sharpe_1y: Optional[float] = None
+    new_high_ratio_1y: Optional[float] = None
     heavy_sector: Optional[str] = None
+    manager_honors: Optional[str] = Field(None, description="基金经理荣誉奖项 (逗号分隔)")
 
 
 class FundFilterResponse(BaseModel):

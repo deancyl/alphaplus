@@ -24,6 +24,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const chart = shallowRef<echarts.ECharts | null>(null)
+let resizeObserver: ResizeObserver | null = null
 
 /**
  * Compute effective height based on sparkline mode
@@ -88,14 +89,14 @@ const processedOption = computed(() => {
   return option
 })
 
-// 初始化图表
-const initChart = () => {
-  if (!chartRef.value) return
-  
-  chart.value = echarts.init(chartRef.value)
-  
-  if (!props.manualUpdate) {
-    chart.value.setOption(processedOption.value)
+// Debounce function for resize handling
+function debounce(fn: Function, delay: number) {
+  let timer: number | null = null
+  return (...args: any[]) => {
+    if (timer) clearTimeout(timer)
+    timer = window.setTimeout(() => {
+      fn(...args)
+    }, delay)
   }
 }
 
@@ -104,11 +105,6 @@ const updateChart = (option: EChartsOption) => {
   if (chart.value) {
     chart.value.setOption(option, { notMerge: false })
   }
-}
-
-// 响应式调整
-const handleResize = () => {
-  chart.value?.resize()
 }
 
 // 监听option变化
@@ -151,13 +147,41 @@ watch(
 )
 
 onMounted(() => {
-  initChart()
-  window.addEventListener('resize', handleResize)
+  if (!chartRef.value) return
+  
+  // Initialize chart
+  chart.value = echarts.init(chartRef.value)
+  if (!props.manualUpdate) {
+    chart.value.setOption(processedOption.value)
+  }
+  
+  // Use ResizeObserver instead of window resize
+  resizeObserver = new ResizeObserver(
+    debounce(() => {
+      chart.value?.resize({
+        animation: { duration: 200, easing: 'cubicOut' }
+      })
+    }, 150)
+  )
+  
+  if (chartRef.value.parentElement) {
+    resizeObserver.observe(chartRef.value.parentElement)
+  }
 })
 
 onUnmounted(() => {
-  chart.value?.dispose()
-  window.removeEventListener('resize', handleResize)
+  // Disconnect ResizeObserver first
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+  
+  // Clear and dispose chart
+  if (chart.value) {
+    chart.value.clear()
+    chart.value.dispose()
+    chart.value = null
+  }
 })
 
 // 暴露方法

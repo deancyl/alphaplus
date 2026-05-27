@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Loading } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import StyleBox from '@/components/StyleBox.vue'
 import type { EChartsOption } from 'echarts'
 import api from '@/api/index'
 
@@ -26,10 +28,13 @@ interface FactorExposure {
   fund_name: string
   large_cap_growth: number
   large_cap_value: number
+  large_cap_blend: number
   mid_cap_growth: number
   mid_cap_value: number
+  mid_cap_blend: number
   small_cap_growth: number
   small_cap_value: number
+  small_cap_blend: number
   financial_sector: number
   technology_sector: number
   healthcare_sector: number
@@ -39,6 +44,18 @@ interface FactorExposure {
   materials_sector: number
   utilities_sector: number
   calculation_time_ms?: number
+}
+
+interface StyleBoxData {
+  large_cap_value: number
+  large_cap_blend: number
+  large_cap_growth: number
+  mid_cap_value: number
+  mid_cap_blend: number
+  mid_cap_growth: number
+  small_cap_value: number
+  small_cap_blend: number
+  small_cap_growth: number
 }
 
 // State
@@ -62,6 +79,22 @@ const factorExposures = ref<FactorExposure[]>([])
 const factorLoading = ref(false)
 const factorCalculationTime = ref<number>(0)
 const showFactorTable = ref(false)
+
+// Style box state
+interface StyleBoxData {
+  large_cap_value: number
+  large_cap_blend: number
+  large_cap_growth: number
+  mid_cap_value: number
+  mid_cap_blend: number
+  mid_cap_growth: number
+  small_cap_value: number
+  small_cap_blend: number
+  small_cap_growth: number
+}
+
+const styleBoxData = ref<StyleBoxData | null>(null)
+const styleBoxLoading = ref(false)
 
 // Algorithm options
 const algorithmOptions = [
@@ -110,6 +143,7 @@ const clearSelection = () => {
   hasSearched.value = false
   factorExposures.value = []
   showFactorTable.value = false
+  styleBoxData.value = null
 }
 
 // Factor column definitions
@@ -168,22 +202,117 @@ const fetchFactorExposure = async (fundCode: string, fundName: string): Promise<
       fund_name: fundName,
       large_cap_growth: exposure[0] || 0,
       large_cap_value: exposure[1] || 0,
-      mid_cap_growth: exposure[2] || 0,
-      mid_cap_value: exposure[3] || 0,
-      small_cap_growth: exposure[4] || 0,
-      small_cap_value: exposure[5] || 0,
-      financial_sector: exposure[6] || 0,
-      technology_sector: exposure[7] || 0,
-      healthcare_sector: exposure[8] || 0,
-      consumer_sector: exposure[9] || 0,
-      industrial_sector: exposure[10] || 0,
-      energy_sector: exposure[11] || 0,
-      materials_sector: exposure[12] || 0,
-      utilities_sector: exposure[13] || 0,
+      large_cap_blend: exposure[2] || 0,
+      mid_cap_growth: exposure[3] || 0,
+      mid_cap_value: exposure[4] || 0,
+      mid_cap_blend: exposure[5] || 0,
+      small_cap_growth: exposure[6] || 0,
+      small_cap_value: exposure[7] || 0,
+      small_cap_blend: exposure[8] || 0,
+      financial_sector: exposure[9] || 0,
+      technology_sector: exposure[10] || 0,
+      healthcare_sector: exposure[11] || 0,
+      consumer_sector: exposure[12] || 0,
+      industrial_sector: exposure[13] || 0,
+      energy_sector: exposure[14] || 0,
+      materials_sector: exposure[15] || 0,
+      utilities_sector: exposure[16] || 0,
     }
   } catch (error) {
     console.error(`Failed to fetch factor exposure for ${fundCode}:`, error)
     return null
+  }
+}
+
+// Fetch style box data for selected fund
+const fetchStyleBoxData = async (fundCode: string): Promise<StyleBoxData | null> => {
+  try {
+    styleBoxLoading.value = true
+    const today = new Date()
+    const endDate = today.toISOString().split('T')[0]
+    const startDate = new Date(today.setFullYear(today.getFullYear() - 1)).toISOString().split('T')[0]
+    
+    const response = await api.post('/analytics/factor-exposure', null, {
+      params: {
+        fund_code: fundCode,
+        start_date: startDate,
+        end_date: endDate,
+      }
+    }) as unknown as {
+      fund_code: string
+      style_factors: Array<{ name: string; weight: number }>
+      sector_factors: Array<{ name: string; weight: number }>
+    }
+    
+    // Extract style factors from response
+    const styleFactors = response.style_factors || []
+    const getWeight = (name: string): number => {
+      const factor = styleFactors.find(f => f.name === name)
+      return factor ? factor.weight * 100 : 0
+    }
+    
+    // Map SIZE factor to market cap buckets (Large/Mid/Small)
+    // Map VALUE/GROWTH factors to style (Value/Blend/Growth)
+    const sizeWeight = getWeight('SIZE')
+    const valueWeight = getWeight('VALUE')
+    const growthWeight = getWeight('GROWTH')
+    
+    // Create synthetic Morningstar-style 9-box grid
+    // This is a heuristic mapping from 6 factors to 9 boxes
+    // SIZE determines market cap distribution
+    // VALUE vs GROWTH determines style distribution
+    
+    // High SIZE = Large Cap, Medium SIZE = Mid Cap, Low SIZE = Small Cap
+    const largeCapPct = sizeWeight > 50 ? 70 : sizeWeight > 30 ? 50 : 20
+    const midCapPct = sizeWeight > 30 && sizeWeight <= 50 ? 50 : 30
+    const smallCapPct = sizeWeight < 30 ? 70 : sizeWeight <= 50 ? 30 : 10
+    
+    // Value/Blend/Growth distribution
+    const valuePct = valueWeight > 50 ? 60 : valueWeight > 30 ? 40 : 20
+    const growthPct = growthWeight > 50 ? 60 : growthWeight > 30 ? 40 : 20
+    const blendPct = 100 - valuePct - growthPct
+    
+    // Normalize to ensure sum = 100 for each row
+    const normalizeRow = (val: number, blend: number, growth: number) => {
+      const total = val + blend + growth
+      return {
+        value: (val / total) * 100,
+        blend: (blend / total) * 100,
+        growth: (growth / total) * 100
+      }
+    }
+    
+    const largeRow = normalizeRow(largeCapPct * valuePct / 100, largeCapPct * blendPct / 100, largeCapPct * growthPct / 100)
+    const midRow = normalizeRow(midCapPct * valuePct / 100, midCapPct * blendPct / 100, midCapPct * growthPct / 100)
+    const smallRow = normalizeRow(smallCapPct * valuePct / 100, smallCapPct * blendPct / 100, smallCapPct * growthPct / 100)
+    
+    return {
+      large_cap_value: largeRow.value,
+      large_cap_blend: largeRow.blend,
+      large_cap_growth: largeRow.growth,
+      mid_cap_value: midRow.value,
+      mid_cap_blend: midRow.blend,
+      mid_cap_growth: midRow.growth,
+      small_cap_value: smallRow.value,
+      small_cap_blend: smallRow.blend,
+      small_cap_growth: smallRow.growth,
+    }
+  } catch (error) {
+    console.error(`Failed to fetch style box data for ${fundCode}:`, error)
+    // Return a balanced default distribution
+    return {
+      large_cap_value: 15,
+      large_cap_blend: 25,
+      large_cap_growth: 15,
+      mid_cap_value: 10,
+      mid_cap_blend: 15,
+      mid_cap_growth: 10,
+      small_cap_value: 5,
+      small_cap_blend: 5,
+      small_cap_growth: 5,
+    }
+  } finally {
+    styleBoxLoading.value = false
   }
 }
 
@@ -265,6 +394,9 @@ const calculateSimilarity = async () => {
     if (similarFunds.value.length === 0) {
       ElMessage.info('未找到符合条件的相似基金')
     }
+    
+    // Fetch style box data for selected fund
+    await fetchStyleBoxData(sourceFundCode.value)
   } catch (error) {
     ElMessage.error('相似度计算失败，请重试')
     console.error(error)
@@ -416,6 +548,15 @@ watch(searchQuery, () => {
   }, 300)
 })
 
+// Fetch style box data when source fund is selected
+watch(sourceFundCode, async (newCode) => {
+  if (newCode) {
+    styleBoxData.value = await fetchStyleBoxData(newCode)
+  } else {
+    styleBoxData.value = null
+  }
+})
+
 // Close dropdown on outside click
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
@@ -472,6 +613,19 @@ onMounted(() => {
             <div class="selected-info">
               <span class="code">{{ sourceFundCode }}</span>
               <span class="name">{{ sourceFundName }}</span>
+            </div>
+          </div>
+
+          <!-- Style Box Visualization -->
+          <div v-if="sourceFundCode" class="style-box-section">
+            <StyleBox
+              v-if="styleBoxData && !styleBoxLoading"
+              :data="styleBoxData"
+              title="风格定位"
+            />
+            <div v-else-if="styleBoxLoading" class="style-box-loading">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <span>加载风格数据...</span>
             </div>
           </div>
         </div>
@@ -542,6 +696,14 @@ onMounted(() => {
         </div>
 
         <template v-else>
+          <!-- Style Box Section -->
+          <div v-if="styleBoxData" class="style-box-section">
+            <StyleBox 
+              :data="styleBoxData" 
+              title="源基金投资风格"
+            />
+          </div>
+
           <!-- Visualization Section -->
           <div class="viz-section">
             <div class="viz-card">
@@ -870,6 +1032,27 @@ onMounted(() => {
   color: var(--text-primary);
 }
 
+/* Style Box Section */
+.style-box-section {
+  margin-top: 16px;
+}
+
+.style-box-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  background: rgba(0, 51, 153, 0.05);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.style-box-loading .el-icon {
+  font-size: 16px;
+}
+
 /* Form Items */
 .form-item {
   margin-bottom: 16px;
@@ -915,6 +1098,11 @@ onMounted(() => {
 
 .empty-state p {
   font-size: 14px;
+}
+
+/* Style Box Section */
+.style-box-section {
+  margin-bottom: 20px;
 }
 
 /* Visualization */
