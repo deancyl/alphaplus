@@ -74,7 +74,11 @@ async def get_treasury_yield_10y() -> float:
         return cached
     
     try:
-        df = ak.bond_china_yield(start_date=datetime.now().strftime("%Y%m%d"))
+        # Wrap blocking AkShare call in asyncio.to_thread
+        df = await asyncio.to_thread(
+            ak.bond_china_yield,
+            start_date=datetime.now().strftime("%Y%m%d")
+        )
         # Filter for 国债 type
         treasury_df = df[df['债券类型'] == '国债']
         if not treasury_df.empty:
@@ -108,7 +112,11 @@ async def get_cdb_yield_10y() -> float:
         return cached
     
     try:
-        df = ak.bond_china_yield(start_date=datetime.now().strftime("%Y%m%d"))
+        # Wrap blocking AkShare call in asyncio.to_thread
+        df = await asyncio.to_thread(
+            ak.bond_china_yield,
+            start_date=datetime.now().strftime("%Y%m%d")
+        )
         # Filter for 国开债 type
         cdb_df = df[df['债券类型'] == '国开债']
         if not cdb_df.empty:
@@ -144,7 +152,8 @@ async def get_dr007_rate() -> float:
         return cached
     
     try:
-        df = ak.rate_interbank()
+        # Wrap blocking AkShare call in asyncio.to_thread
+        df = await asyncio.to_thread(ak.rate_interbank)
         # Filter for DR007
         dr007_df = df[df['利率类型'] == 'DR007']
         if not dr007_df.empty:
@@ -162,12 +171,40 @@ async def get_dr007_rate() -> float:
     return 2.0
 
 
+# Large deposit rate tiers (fixed rates for demonstration)
+# Real implementation would fetch from bank rate APIs
+DEPOSIT_RATES = {
+    "deposit_1y": 1.75,  # 1-year large deposit rate
+    "deposit_3y": 2.25,  # 3-year large deposit rate
+    "deposit_5y": 2.75,  # 5-year large deposit rate
+}
+
+
+async def get_deposit_rate(tier: str) -> float:
+    """
+    Get large deposit rate by tier.
+    
+    Args:
+        tier: "deposit_1y", "deposit_3y", or "deposit_5y"
+    
+    Returns:
+        float: Deposit rate as percentage (e.g., 1.75 for 1.75%)
+    
+    Raises:
+        ValueError: If tier is not recognized
+    """
+    if tier in DEPOSIT_RATES:
+        return DEPOSIT_RATES[tier]
+    else:
+        raise ValueError(f"Unknown deposit tier: {tier}. Must be one of: deposit_1y, deposit_3y, deposit_5y")
+
+
 async def get_risk_free_rate(rate_type: str) -> float:
     """
     Get risk-free rate by type.
     
     Args:
-        rate_type: "treasury_10y", "cdb_10y", or "dr007"
+        rate_type: "treasury_10y", "cdb_10y", "dr007", "deposit_1y", "deposit_3y", or "deposit_5y"
     
     Returns:
         float: Annual risk-free rate as percentage (e.g., 2.5 for 2.5%)
@@ -181,5 +218,7 @@ async def get_risk_free_rate(rate_type: str) -> float:
         return await get_cdb_yield_10y()
     elif rate_type == "dr007":
         return await get_dr007_rate()
+    elif rate_type in DEPOSIT_RATES:
+        return await get_deposit_rate(rate_type)
     else:
-        raise ValueError(f"Unknown rate_type: {rate_type}. Must be one of: treasury_10y, cdb_10y, dr007")
+        raise ValueError(f"Unknown rate_type: {rate_type}. Must be one of: treasury_10y, cdb_10y, dr007, deposit_1y, deposit_3y, deposit_5y")

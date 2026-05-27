@@ -118,6 +118,26 @@ const getValueClass = (val: number | null | undefined): string => {
   return val >= 0 ? 'text-up' : 'text-down'
 }
 
+// Handle numeric input focus with scroll for keyboard occlusion
+const handleNumericInputFocus = (e: FocusEvent) => {
+  const target = e.target as HTMLElement
+  if (target) {
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+  }
+}
+
+// Handle select focus with scroll for keyboard occlusion
+const handleSelectFocus = (e: FocusEvent) => {
+  const target = e.target as HTMLElement
+  if (target) {
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+  }
+}
+
 // Render cash value chart
 const renderChart = () => {
   if (!chartRef.value || !result.value) return
@@ -286,12 +306,13 @@ onUnmounted(() => {
               inputmode="numeric"
               autocomplete="off"
               enterkeyhint="next"
+              @focus="handleNumericInputFocus"
             />
           </el-form-item>
 
           <!-- Payment Years -->
           <el-form-item label="交费年期" required>
-            <el-select v-model="formData.payment_years" placeholder="选择交费年期">
+            <el-select v-model="formData.payment_years" placeholder="选择交费年期" @focus="handleSelectFocus">
               <el-option
                 v-for="opt in paymentYearsOptions"
                 :key="opt.value"
@@ -312,6 +333,7 @@ onUnmounted(() => {
               inputmode="numeric"
               autocomplete="off"
               enterkeyhint="next"
+              @focus="handleNumericInputFocus"
             />
           </el-form-item>
 
@@ -330,7 +352,7 @@ onUnmounted(() => {
 
           <!-- Assumed Growth -->
           <el-form-item label="假设年化收益率">
-            <el-select v-model="formData.assumed_growth" placeholder="选择收益率">
+            <el-select v-model="formData.assumed_growth" placeholder="选择收益率" @focus="handleSelectFocus">
               <el-option
                 v-for="opt in growthRateOptions"
                 :key="opt.value"
@@ -351,6 +373,7 @@ onUnmounted(() => {
               inputmode="numeric"
               autocomplete="off"
               enterkeyhint="done"
+              @focus="handleNumericInputFocus"
             />
           </el-form-item>
 

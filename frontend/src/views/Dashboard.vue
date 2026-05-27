@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import type { EChartsOption } from 'echarts'
 import { getFearGreedIndex, getERPSpread, getCrowdingAnalysis, getStyleStrength } from '@/api/analytics'
 import { getIndices, getMarketHeatmap } from '@/api/market'
@@ -495,20 +496,32 @@ onUnmounted(() => {
         <span class="refresh-hint">每30秒自动刷新</span>
       </div>
       <div class="index-bar-content" v-loading="indicesLoading">
-        <div 
-          v-for="(quote, code) in indexQuotes" 
-          :key="code" 
-          class="index-item"
-        >
-          <div class="index-name">{{ quote.name }}</div>
-          <div class="index-price">{{ quote.price.toFixed(2) }}</div>
-          <div class="index-change" :class="getValueClass(quote.change)">
-            {{ formatChange(quote.change_pct) }}
+        <!-- Skeleton when loading -->
+        <template v-if="indicesLoading || Object.keys(indexQuotes).length === 0">
+          <SkeletonLoader
+            v-for="i in 6"
+            :key="`index-skeleton-${i}`"
+            variant="index-item"
+          />
+        </template>
+        
+        <!-- Actual data when loaded -->
+        <template v-else>
+          <div 
+            v-for="(quote, code) in indexQuotes" 
+            :key="code" 
+            class="index-item"
+          >
+            <div class="index-name">{{ quote.name }}</div>
+            <div class="index-price">{{ quote.price.toFixed(2) }}</div>
+            <div class="index-change" :class="getValueClass(quote.change)">
+              {{ formatChange(quote.change_pct) }}
+            </div>
           </div>
-        </div>
-        <div v-if="Object.keys(indexQuotes).length === 0" class="index-empty">
-          暂无行情数据
-        </div>
+          <div v-if="Object.keys(indexQuotes).length === 0" class="index-empty">
+            暂无行情数据
+          </div>
+        </template>
       </div>
     </div>
 
@@ -534,71 +547,96 @@ onUnmounted(() => {
       <div class="card widget-fear-greed">
         <div class="card-header">
           <div class="card-title">恐惧贪婪指数</div>
-          <div class="card-subtitle" v-if="fearGreedData">
+          <div class="card-subtitle" v-if="fearGreedData && !loading">
             {{ fearGreedData.trade_date }}
           </div>
         </div>
-        <div class="widget-content">
-          <div class="gauge-container">
-            <EChartsWrapper
-              :option="fearGreedOption"
-              :loading="loading"
-              height="200px"
-            />
+        
+        <!-- Skeleton when loading -->
+        <template v-if="loading">
+          <div class="widget-content">
+            <SkeletonLoader variant="gauge" height="200px" />
           </div>
-          <div class="history-chart">
-            <EChartsWrapper
-              :option="fearGreedHistoryOption"
-              :loading="loading"
-              height="100px"
-            />
+          <div class="factor-breakdown">
+            <div class="factor-item" v-for="i in 3" :key="`factor-${i}`">
+              <span class="skeleton skeleton-text" style="width: 40px; height: 11px;"></span>
+              <span class="skeleton skeleton-text" style="width: 60px; height: 14px;"></span>
+            </div>
           </div>
-        </div>
-        <div class="factor-breakdown" v-if="fearGreedData">
-          <div class="factor-item">
-            <span class="factor-label">波动率</span>
-            <span class="factor-value">{{ formatNumber(fearGreedData.factor_volatility) }}</span>
+        </template>
+        
+        <!-- Actual content when loaded -->
+        <template v-else>
+          <div class="widget-content">
+            <div class="gauge-container">
+              <EChartsWrapper
+                :option="fearGreedOption"
+                height="200px"
+              />
+            </div>
+            <div class="history-chart">
+              <EChartsWrapper
+                :option="fearGreedHistoryOption"
+                height="100px"
+              />
+            </div>
           </div>
-          <div class="factor-item">
-            <span class="factor-label">避险情绪</span>
-            <span class="factor-value">{{ formatNumber(fearGreedData.factor_safe_haven) }}</span>
+          <div class="factor-breakdown" v-if="fearGreedData">
+            <div class="factor-item">
+              <span class="factor-label">波动率</span>
+              <span class="factor-value">{{ formatNumber(fearGreedData.factor_volatility) }}</span>
+            </div>
+            <div class="factor-item">
+              <span class="factor-label">避险情绪</span>
+              <span class="factor-value">{{ formatNumber(fearGreedData.factor_safe_haven) }}</span>
+            </div>
+            <div class="factor-item">
+              <span class="factor-label">杠杆水平</span>
+              <span class="factor-value">{{ formatNumber(fearGreedData.factor_margin_ratio) }}</span>
+            </div>
           </div>
-          <div class="factor-item">
-            <span class="factor-label">杠杆水平</span>
-            <span class="factor-value">{{ formatNumber(fearGreedData.factor_margin_ratio) }}</span>
-          </div>
-        </div>
+        </template>
       </div>
 
       <!-- ERP Spread Widget -->
       <div class="card widget-erp">
         <div class="card-header">
           <div class="card-title">股债性价比 (ERP)</div>
-          <div class="card-subtitle" v-if="erpData">
+          <div class="card-subtitle" v-if="erpData && !loading">
             {{ erpData.index_name }} | {{ erpData.trade_date }}
           </div>
         </div>
-        <div class="widget-content">
-          <EChartsWrapper
-            :option="erpOption"
-            :loading="loading"
-            height="220px"
-          />
-        </div>
-        <div class="erp-details" v-if="erpData">
-          <div class="detail-row">
-            <span class="detail-label">PE(TTM)</span>
-            <span class="detail-value">{{ erpData.pe_ttm.toFixed(2) }}</span>
+        
+        <!-- Skeleton when loading -->
+        <template v-if="loading">
+          <div class="widget-content">
+            <SkeletonLoader variant="gauge" height="220px" />
           </div>
-          <div class="detail-row">
-            <span class="detail-label">10Y国债收益率</span>
-            <span class="detail-value">{{ erpData.treasury_yield_10y.toFixed(2) }}%</span>
+        </template>
+        
+        <!-- Actual content when loaded -->
+        <template v-else>
+          <div class="widget-content">
+            <EChartsWrapper
+              :option="erpOption"
+              height="220px"
+            />
           </div>
-          <div class="detail-row">
-            <span class="detail-label">指数收盘</span>
-            <span class="detail-value">{{ erpData.index_close_price?.toFixed(2) ?? '-' }}</span>
+          <div class="erp-details" v-if="erpData">
+            <div class="detail-row">
+              <span class="detail-label">PE(TTM)</span>
+              <span class="detail-value">{{ erpData.pe_ttm.toFixed(2) }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">10Y国债收益率</span>
+              <span class="detail-value">{{ erpData.treasury_yield_10y.toFixed(2) }}%</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">指数收盘</span>
+              <span class="detail-value">{{ erpData.index_close_price?.toFixed(2) ?? '-' }}</span>
+            </div>
           </div>
-        </div>
+        </template>
       </div>
 
       <!-- Market Crowding Widget -->
@@ -607,24 +645,34 @@ onUnmounted(() => {
           <div class="card-title">市场拥挤度</div>
           <div class="card-subtitle">行业/板块拥挤度分布</div>
         </div>
-        <div class="widget-content">
-          <EChartsWrapper
-            :option="crowdingOption"
-            :loading="loading"
-            height="280px"
-          />
-        </div>
-        <div class="crowding-legend">
-          <span class="legend-item">
-            <span class="legend-dot low"></span>低拥挤
-          </span>
-          <span class="legend-item">
-            <span class="legend-dot mid"></span>中等
-          </span>
-          <span class="legend-item">
-            <span class="legend-dot high"></span>高拥挤
-          </span>
-        </div>
+        
+        <!-- Skeleton when loading -->
+        <template v-if="loading">
+          <div class="widget-content">
+            <SkeletonLoader variant="heatmap" height="280px" />
+          </div>
+        </template>
+        
+        <!-- Actual content when loaded -->
+        <template v-else>
+          <div class="widget-content">
+            <EChartsWrapper
+              :option="crowdingOption"
+              height="280px"
+            />
+          </div>
+          <div class="crowding-legend">
+            <span class="legend-item">
+              <span class="legend-dot low"></span>低拥挤
+            </span>
+            <span class="legend-item">
+              <span class="legend-dot mid"></span>中等
+            </span>
+            <span class="legend-item">
+              <span class="legend-dot high"></span>高拥挤
+            </span>
+          </div>
+        </template>
       </div>
 
       <!-- Style Strength Widget -->
@@ -633,13 +681,23 @@ onUnmounted(() => {
           <div class="card-title">风格强度</div>
           <div class="card-subtitle">大小盘/价值成长轮动</div>
         </div>
-        <div class="widget-content">
-          <EChartsWrapper
-            :option="styleStrengthOption"
-            :loading="loading"
-            height="280px"
-          />
-        </div>
+        
+        <!-- Skeleton when loading -->
+        <template v-if="loading">
+          <div class="widget-content">
+            <SkeletonLoader variant="image" height="280px" />
+          </div>
+        </template>
+        
+        <!-- Actual content when loaded -->
+        <template v-else>
+          <div class="widget-content">
+            <EChartsWrapper
+              :option="styleStrengthOption"
+              height="280px"
+            />
+          </div>
+        </template>
       </div>
 
       <!-- Top Gainers Table -->
@@ -648,9 +706,19 @@ onUnmounted(() => {
           <div class="card-title">涨幅榜 TOP10</div>
           <el-tag size="small" type="danger">近1年</el-tag>
         </div>
+        
+        <!-- Skeleton when loading -->
+        <SkeletonLoader
+          v-if="gainersLoading"
+          variant="table"
+          :rows="10"
+          :columns="4"
+        />
+        
+        <!-- Actual table when loaded -->
         <el-table
+          v-else
           :data="topGainers"
-          :loading="gainersLoading"
           size="small"
           max-height="300"
         >
@@ -671,9 +739,19 @@ onUnmounted(() => {
           <div class="card-title">跌幅榜 TOP10</div>
           <el-tag size="small" type="success">近1年</el-tag>
         </div>
+        
+        <!-- Skeleton when loading -->
+        <SkeletonLoader
+          v-if="gainersLoading"
+          variant="table"
+          :rows="10"
+          :columns="4"
+        />
+        
+        <!-- Actual table when loaded -->
         <el-table
+          v-else
           :data="topLosers"
-          :loading="gainersLoading"
           size="small"
           max-height="300"
         >
@@ -695,9 +773,18 @@ onUnmounted(() => {
         <div class="card-title">多周期热力矩阵</div>
         <div class="card-subtitle">行业/指数多周期涨跌分布</div>
       </div>
+      
+      <!-- Skeleton when loading -->
+      <SkeletonLoader
+        v-if="loading"
+        variant="heatmap"
+        height="400px"
+      />
+      
+      <!-- Actual chart when loaded -->
       <EChartsWrapper
+        v-else
         :option="heatmapOption"
-        :loading="loading"
         height="400px"
       />
     </div>

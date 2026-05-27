@@ -9,6 +9,7 @@ from typing import Optional
 
 import akshare as ak
 
+from backend.core.thread_pool import thread_pool_manager
 from backend.services.rate_limiter import RateLimiter
 from backend.services.resilience import RetryConfig, retry_with_backoff
 
@@ -41,8 +42,7 @@ class AkShareDataService:
     async def _run_sync(self, func, *args, **kwargs):
         """Run synchronous AkShare function in thread pool with retry."""
         await self._rate_limit()
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+        return await thread_pool_manager.run_in_thread(lambda: func(*args, **kwargs))
 
     async def get_index_quotes(self) -> dict[str, dict]:
         """

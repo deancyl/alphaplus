@@ -4,7 +4,10 @@ import { ElMessage } from 'element-plus'
 import { filterFunds, getFundNavTrend, type FundFilterParams, type FundItem } from '@/api/fund'
 import SplitPanel from '@/components/SplitPanel.vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import JargonTooltip from '@/components/JargonTooltip.vue'
 import type { EChartsOption } from 'echarts'
+import jargonData from '@/data/jargon.json'
 
 // 筛选条件
 const filterParams = ref<FundFilterParams>({
@@ -228,6 +231,16 @@ const isSparklineSimulated = (fundCode: string): boolean => {
   return cached?.isSimulated ?? false
 }
 
+// Handle input focus with scroll for keyboard occlusion
+const handleInputFocus = (e: FocusEvent) => {
+  const target = e.target as HTMLElement
+  if (target) {
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+  }
+}
+
 // Watch filter params for auto-filter with debounce
 watch(
   () => [
@@ -293,6 +306,7 @@ onMounted(() => {
                     :min="0"
                     :max="20"
                     placeholder="最小"
+                    @focus="handleInputFocus"
                   />
                   <span>-</span>
                   <el-input-number
@@ -300,6 +314,7 @@ onMounted(() => {
                     :min="0"
                     :max="20"
                     placeholder="最大"
+                    @focus="handleInputFocus"
                   />
                 </div>
               </div>
@@ -311,12 +326,14 @@ onMounted(() => {
                     v-model="filterParams.scale_min"
                     :min="0"
                     placeholder="最小"
+                    @focus="handleInputFocus"
                   />
                   <span>-</span>
                   <el-input-number
                     v-model="filterParams.scale_max"
                     :min="0"
                     placeholder="最大"
+                    @focus="handleInputFocus"
                   />
                 </div>
               </div>
@@ -331,11 +348,13 @@ onMounted(() => {
                   <el-input-number
                     v-model="filterParams.return_1y_min"
                     placeholder="最小"
+                    @focus="handleInputFocus"
                   />
                   <span>-</span>
                   <el-input-number
                     v-model="filterParams.return_1y_max"
                     placeholder="最大"
+                    @focus="handleInputFocus"
                   />
                 </div>
               </div>
@@ -346,6 +365,7 @@ onMounted(() => {
                   v-model="filterParams.max_drawdown_1y_max"
                   :min="0"
                   :max="100"
+                  @focus="handleInputFocus"
                 />
               </div>
               
@@ -354,6 +374,7 @@ onMounted(() => {
                 <el-input-number
                   v-model="filterParams.sharpe_1y_min"
                   :step="0.1"
+                  @focus="handleInputFocus"
                 />
               </div>
               
@@ -401,9 +422,25 @@ onMounted(() => {
             </div>
           </div>
           
+          <!-- Skeleton table when loading -->
+          <div v-if="loading" class="skeleton-table-wrapper">
+            <SkeletonLoader variant="table" :rows="10" :columns="10" />
+          </div>
+          
+          <!-- Empty state when no results -->
+          <EmptyState
+            v-else-if="!loading && tableData.length === 0"
+            icon="search"
+            title="未找到符合条件的基金"
+            description="请尝试调整筛选条件或重置筛选器"
+            action-text="重置筛选"
+            :action-handler="handleReset"
+          />
+          
+          <!-- Actual table when data loaded -->
           <el-table
+            v-else
             :data="tableData"
-            :loading="loading"
             stripe
             height="calc(100vh - 220px)"
           >
@@ -469,10 +506,16 @@ onMounted(() => {
             </el-table-column>
             <el-table-column
               prop="max_drawdown_1y"
-              label="最大回撤%"
               width="105"
               sortable
             >
+              <template #header>
+                <JargonTooltip
+                  term="最大回撤%"
+                  :definition="jargonData.max_drawdown"
+                  position="top"
+                />
+              </template>
               <template #default="{ row }">
                 <span :class="getValueClass(-row.max_drawdown_1y)">
                   {{ formatNumber(row.max_drawdown_1y) }}
@@ -481,20 +524,32 @@ onMounted(() => {
             </el-table-column>
             <el-table-column
               prop="sharpe_1y"
-              label="夏普"
               width="75"
               sortable
             >
+              <template #header>
+                <JargonTooltip
+                  term="夏普"
+                  :definition="jargonData.sharpe_ratio"
+                  position="top"
+                />
+              </template>
               <template #default="{ row }">
                 {{ formatNumber(row.sharpe_1y) }}
               </template>
             </el-table-column>
             <el-table-column
               prop="new_high_ratio_1y"
-              label="内含新高率"
               width="100"
               sortable
             >
+              <template #header>
+                <JargonTooltip
+                  term="内含新高率"
+                  :definition="jargonData.new_high_ratio"
+                  position="top"
+                />
+              </template>
               <template #default="{ row }">
                 <span
                   :class="{
@@ -632,6 +687,12 @@ onMounted(() => {
 
 .sparkline-cell {
   position: relative;
+}
+
+.skeleton-table-wrapper {
+  min-height: 400px;
+  background: var(--bg-card);
+  border-radius: 4px;
 }
 
 .sparkline-skeleton {

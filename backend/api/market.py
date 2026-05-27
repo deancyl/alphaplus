@@ -17,6 +17,7 @@ from backend.models.fund import (
 from backend.services.cache import realtime_cache
 from backend.services.akshare_data import akshare_data_service
 from backend.services.index_valuation import get_all_indices_valuation, get_index_pe_history
+from backend.services.market_gateway import market_gateway, init_gateway
 from backend.schemas.fund import DashboardResponse, DashboardDataQuality
 from backend.schemas.market import (
     IndexValuationItem,
@@ -26,6 +27,17 @@ from backend.schemas.market import (
 )
 
 router = APIRouter()
+
+# Initialize gateway on module load
+_gateway_initialized = False
+
+
+def _ensure_gateway_initialized():
+    """Ensure gateway is initialized with sources."""
+    global _gateway_initialized
+    if not _gateway_initialized:
+        init_gateway()
+        _gateway_initialized = True
 
 
 @router.get("/index-valuation", response_model=IndexValuationResponse)
@@ -494,3 +506,111 @@ async def get_dashboard_metrics(
             },
         ),
     )
+
+
+# ==================== Gateway-based Endpoints ====================
+
+
+@router.get("/gateway/indices")
+async def get_gateway_index_quotes(
+    source: str = Query(None, description="Preferred source: akshare, eastmoney, sina"),
+):
+    """
+    核心指数行情 - 通过Gateway多源获取.
+    
+    Features:
+    - Multi-source failover (AkShare -> Eastmoney -> Sina)
+    - Circuit breaker protection
+    - Automatic retry with backoff
+    
+    Query params:
+        source: Preferred data source (optional)
+    """
+    _ensure_gateway_initialized()
+    
+    cached_indices = await realtime_cache.get("indices")
+    if cached_indices:
+        return cached_indices
+    
+    result = await market_gateway.fetch("index_quotes", {}, preferred_source=source)
+    
+    if result.success:
+        return result.value
+    
+    return {
+        "000001": {"name": "上证指数", "price": 0, "change": 0, "change_pct": 0},
+        "399001": {"name": "深证成指", "price": 0, "change": 0, "change_pct": 0},
+        "000300": {"name": "沪深300", "price": 0, "change": 0, "change_pct": 0},
+        "_meta": {
+            "error": str(result.error),
+            "sources_tried": result.fallback_chain,
+        }
+    }
+
+
+@router.get("/gateway/futures")
+async def get_gateway_futures_quotes(
+    category: str = Query(None, description="商品期货/金融期货/能源期货"),
+    source: str = Query(None, description="Preferred source"),
+):
+    """期货实时行情 - 通过Gateway多源获取."""
+    _ensure_gateway_initialized()
+    
+    result = await market_gateway.fetch(
+        "futures_quotes",
+        {"category": category},
+        preferred_source=source,
+    )
+    
+    if result.success:
+        return result.value
+    
+    return []
+
+
+@router.get("/gateway/global")
+async def get_gateway_global_market():
+    """全球市场总览 - 通过Gateway并行获取."""
+    _ensure_gateway_initialized()
+    
+    results = await market_gateway.fetch_parallel(
+        ["global_indices", "currency_rates"],
+        {}
+    )
+    
+    indices_result, currencies_result = results
+    
+    return {
+        "indices": indices_result.value if indices_result.success else [],
+        "currencies": currencies_result.value if currencies_result.success else [],
+        "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "_meta": {
+            "indices_source": indices_result.source,
+            "currencies_source": currencies_result.source,
+        }
+    }
+
+
+@router.get("/gateway/status")
+async def get_gateway_status():
+    """
+    Gateway状态监控 - 返回所有数据源健康状态.
+    
+    Returns circuit breaker states and source availability.
+    """
+    _ensure_gateway_initialized()
+    
+    return {
+        "sources": market_gateway.get_all_sources_status(),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+@router.post("/gateway/reset/{source_name}")
+async def reset_source_circuit(source_name: str):
+    """重置指定数据源的熔断器."""
+    _ensure_gateway_initialized()
+    
+    if market_gateway.reset_circuit(source_name):
+        return {"success": True, "message": f"Circuit breaker for '{source_name}' reset"}
+    return {"success": False, "message": f"Source '{source_name}' not found"}

@@ -9,6 +9,9 @@ from backend.core.database import (
     get_db,
     init_db_pragma,
 )
+from backend.core.state_manager import StateManager, get_state_manager
+from backend.core.data_bridge import DataBridge, get_data_bridge
+from backend.core.process_manager import ProcessManager, get_process_manager
 
 __all__ = [
     "settings",
@@ -17,4 +20,10 @@ __all__ = [
     "AsyncSessionLocal",
     "get_db",
     "init_db_pragma",
+    "StateManager",
+    "get_state_manager",
+    "DataBridge",
+    "get_data_bridge",
+    "ProcessManager",
+    "get_process_manager",
 ]

@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, nextTick, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { filterFunds, compareFunds, type FundFilterParams, type FundItem } from '@/api/fund'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 
 // Types
 interface CompareFund extends FundItem {
@@ -663,7 +664,17 @@ onUnmounted(() => {
               <el-icon><i-ep-arrow-left /></el-icon>
             </div>
             
+            <!-- Skeleton table when loading -->
+            <SkeletonLoader 
+              v-if="compareLoading && hasSelection" 
+              variant="table" 
+              :rows="selectedFunds.length || 5" 
+              :columns="7"
+            />
+            
+            <!-- Actual table when loaded -->
             <el-table
+              v-else-if="hasSelection"
               :data="selectedFunds"
               stripe
               border
@@ -803,10 +814,18 @@ onUnmounted(() => {
               </div>
             </div>
             
+            <!-- Skeleton when loading -->
+            <SkeletonLoader 
+              v-if="compareLoading" 
+              variant="heatmap" 
+              height="320px"
+            />
+            
+            <!-- Actual chart when loaded -->
             <div
+              v-else
               ref="correlationChartRef"
               class="chart-container correlation-chart"
-              v-loading="compareLoading"
             />
           </div>
           
@@ -815,10 +834,18 @@ onUnmounted(() => {
             <div class="panel-header">
               <h3>多因子雷达图</h3>
             </div>
+            <!-- Skeleton when loading -->
+            <SkeletonLoader 
+              v-if="compareLoading" 
+              variant="gauge" 
+              height="280px"
+            />
+            
+            <!-- Actual chart when loaded -->
             <div
+              v-else
               ref="radarChartRef"
               class="chart-container"
-              v-loading="compareLoading"
             />
           </div>
         </div>

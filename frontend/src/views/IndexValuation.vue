@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import type { EChartsOption } from 'echarts'
 import { getIndexValuation, getIndexPEHistory, type IndexValuationItem, type IndexPEHistoryItem } from '@/api/market'
 
@@ -193,64 +194,77 @@ onUnmounted(() => {
     </div>
 
     <div class="valuation-grid">
-      <div
-        v-for="item in valuationData"
-        :key="item.index_code"
-        class="valuation-card"
-        :class="{ 'selected': selectedIndex?.index_code === item.index_code }"
-        @click="handleCardClick(item)"
-      >
-        <div class="card-header">
-          <div class="index-name">{{ item.index_name }}</div>
-          <el-tag 
-            v-if="item.is_simulated" 
-            size="small" 
-            type="warning"
-            class="simulated-tag"
-          >
-            模拟
-          </el-tag>
-        </div>
-        
-        <div class="pe-value" :style="{ color: getPercentileColor(item.pe_percentile) }">
-          PE: {{ item.pe_ttm.toFixed(2) }}
-        </div>
-
-        <div class="percentile-section">
-          <div class="percentile-bar">
-            <div 
-              class="percentile-fill"
-              :style="{ 
-                width: `${item.pe_percentile}%`,
-                background: getPercentileColor(item.pe_percentile)
-              }"
-            ></div>
+      <!-- Skeleton cards when loading -->
+      <template v-if="loading">
+        <SkeletonLoader
+          v-for="i in 8"
+          :key="`skeleton-card-${i}`"
+          variant="valuation-card"
+        />
+      </template>
+      
+      <!-- Actual cards when loaded -->
+      <template v-else>
+        <div
+          v-for="item in valuationData"
+          :key="item.index_code"
+          class="valuation-card"
+          :class="{ 'selected': selectedIndex?.index_code === item.index_code }"
+          @click="handleCardClick(item)"
+        >
+          <div class="card-header">
+            <div class="index-name">{{ item.index_name }}</div>
+            <el-tag 
+              v-if="item.is_simulated" 
+              size="small" 
+              type="warning"
+              class="simulated-tag"
+            >
+              模拟
+            </el-tag>
           </div>
-          <div class="percentile-value">{{ item.pe_percentile.toFixed(1) }}%</div>
-        </div>
-
-        <div class="zone-badge" :class="getZoneBgClass(item.zone)">
-          {{ item.zone }}
-        </div>
-
-        <div class="extra-metrics">
-          <div class="metric">
-            <span class="metric-label">PB</span>
-            <span class="metric-value">{{ item.pb.toFixed(2) }}</span>
+          
+          <div class="pe-value" :style="{ color: getPercentileColor(item.pe_percentile) }">
+            PE: {{ item.pe_ttm.toFixed(2) }}
           </div>
-          <div class="metric">
-            <span class="metric-label">股息率</span>
-            <span class="metric-value">{{ (item.dividend_yield * 100).toFixed(2) }}%</span>
+
+          <div class="percentile-section">
+            <div class="percentile-bar">
+              <div 
+                class="percentile-fill"
+                :style="{ 
+                  width: `${item.pe_percentile}%`,
+                  background: getPercentileColor(item.pe_percentile)
+                }"
+              ></div>
+            </div>
+            <div class="percentile-value">{{ item.pe_percentile.toFixed(1) }}%</div>
+          </div>
+
+          <div class="zone-badge" :class="getZoneBgClass(item.zone)">
+            {{ item.zone }}
+          </div>
+
+          <div class="extra-metrics">
+            <div class="metric">
+              <span class="metric-label">PB</span>
+              <span class="metric-value">{{ item.pb.toFixed(2) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">股息率</span>
+              <span class="metric-value">{{ (item.dividend_yield * 100).toFixed(2) }}%</span>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
-    <div class="history-section card" v-if="selectedIndex">
+    <div class="history-section card" v-if="selectedIndex || loading">
       <div class="card-title">
         <div class="title-left">
-          <span>{{ selectedIndex.index_name }} 历史PE走势</span>
-          <el-tag size="small" type="info">{{ selectedIndex.index_code }}</el-tag>
+          <span v-if="selectedIndex">{{ selectedIndex.index_name }} 历史PE走势</span>
+          <span v-else>历史PE走势</span>
+          <el-tag v-if="selectedIndex" size="small" type="info">{{ selectedIndex.index_code }}</el-tag>
         </div>
         <el-radio-group v-model="historyDays" size="small" @change="handleDaysChange">
           <el-radio-button :value="30">30天</el-radio-button>
@@ -276,9 +290,17 @@ onUnmounted(() => {
         </span>
       </div>
 
+      <!-- Skeleton when loading -->
+      <SkeletonLoader
+        v-if="historyLoading"
+        variant="image"
+        height="400px"
+      />
+      
+      <!-- Actual chart when loaded -->
       <EChartsWrapper
+        v-else
         :option="historyChartOption"
-        :loading="historyLoading"
         height="400px"
       />
     </div>

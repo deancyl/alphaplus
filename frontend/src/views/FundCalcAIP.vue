@@ -87,10 +87,17 @@ const selectFund = (fund: FundItem) => {
   showSuggestions.value = false
 }
 
-// Handle input focus
-const handleInputFocus = () => {
+// Handle input focus with scroll for keyboard occlusion
+const handleInputFocus = (e: FocusEvent) => {
   if (searchResults.value.length > 0) {
     showSuggestions.value = true
+  }
+  // Scroll input into view to avoid keyboard occlusion on mobile
+  const target = e.target as HTMLElement
+  if (target) {
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
   }
 }
 
@@ -187,6 +194,26 @@ const formatPercent = (val: number | null | undefined): string => {
 const getValueClass = (val: number | null | undefined): string => {
   if (val === null || val === undefined) return ''
   return val >= 0 ? 'text-up' : 'text-down'
+}
+
+// Handle numeric input focus with scroll for keyboard occlusion
+const handleNumericInputFocus = (e: FocusEvent) => {
+  const target = e.target as HTMLElement
+  if (target) {
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+  }
+}
+
+// Handle date picker focus with scroll for keyboard occlusion
+const handleDatePickerFocus = (e: FocusEvent) => {
+  const target = e.target as HTMLElement
+  if (target) {
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+  }
 }
 
 // Render NAV chart with investment markers
@@ -414,6 +441,7 @@ onUnmounted(() => {
               inputmode="numeric"
               autocomplete="off"
               enterkeyhint="next"
+              @focus="handleNumericInputFocus"
             />
           </el-form-item>
 
@@ -425,6 +453,7 @@ onUnmounted(() => {
               placeholder="选择开始日期"
               value-format="YYYY-MM-DD"
               :disabled-date="(time: Date) => time.getTime() > Date.now()"
+              @focus="handleDatePickerFocus"
             />
           </el-form-item>
 
@@ -437,6 +466,7 @@ onUnmounted(() => {
               value-format="YYYY-MM-DD"
               :disabled-date="(time: Date) => time.getTime() > Date.now()"
               enterkeyhint="done"
+              @focus="handleDatePickerFocus"
             />
           </el-form-item>
 

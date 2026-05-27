@@ -4,6 +4,7 @@ import { ElDrawer, ElTabs, ElTabPane, ElTable, ElButton, ElIcon, ElMessageBox, E
 import { Delete, Top, ArrowUp, ArrowDown, Refresh, DeleteFilled } from '@element-plus/icons-vue'
 import type { Favorite } from '@/api/favorites'
 import { favoritesApi } from '@/api/favorites'
+import EmptyState from '@/components/EmptyState.vue'
 
 // Props
 interface Props {
@@ -253,10 +254,19 @@ onMounted(() => {
           </template>
 
           <div class="table-wrapper">
+            <!-- Empty state when no favorites -->
+            <EmptyState
+              v-if="favorites[type.key].length === 0"
+              icon="favorites"
+              :title="`暂无${type.label}自选`"
+              description="从产品列表中添加自选，快速跟踪关注的产品"
+            />
+            
+            <!-- Favorites table -->
             <ElTable
+              v-else
               :data="favorites[type.key]"
               stripe
-              :empty-text="`暂无${type.label}自选`"
               class="favorites-table"
             >
               <ElTable.Column

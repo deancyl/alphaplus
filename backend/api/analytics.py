@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Literal
 from datetime import datetime
-import akshare as ak
 
 from backend.core import get_db
 from backend.models.fund import (
@@ -31,71 +30,9 @@ from backend.services.quant_engine import (
     build_echarts_trajectory_data,
 )
 from backend.services.factor_exposure import analyze_factor_exposure
+from backend.services.risk_free_rates import get_risk_free_rate as get_risk_free_rate_async
 
 router = APIRouter()
-
-
-async def get_risk_free_rate(rate_type: str) -> float:
-    """
-    获取无风险利率
-    - treasury_10y: 10年期国债收益率
-    - cdb_10y: 10年期国开债收益率  
-    - dr007: DR007利率(年化)
-    
-    Returns:
-        float: 无风险利率(%)
-    """
-    # Fallback values for graceful degradation
-    fallback_values = {
-        "treasury_10y": 2.5,
-        "cdb_10y": 2.6,
-        "dr007": 2.0,
-    }
-    
-    try:
-        if rate_type == "treasury_10y":
-            # Fetch from ak.bond_china_yield() - 国债
-            df = ak.bond_china_yield(start_date=datetime.now().strftime("%Y%m%d"))
-            if not df.empty:
-                # Filter for 国债 type
-                treasury_df = df[df['债券类型'] == '国债']
-                if not treasury_df.empty:
-                    # Get 10年期 yield
-                    if '10年期' in treasury_df.columns:
-                        return float(treasury_df['10年期'].iloc[0])
-                    # Fallback to 收益率 column if 10年期 not available
-                    elif '收益率' in treasury_df.columns:
-                        return float(treasury_df['收益率'].iloc[0])
-        
-        elif rate_type == "cdb_10y":
-            # Fetch from ak.bond_china_yield() - 国开债
-            df = ak.bond_china_yield(start_date=datetime.now().strftime("%Y%m%d"))
-            if not df.empty:
-                # Filter for 国开债 type
-                cdb_df = df[df['债券类型'] == '国开债']
-                if not cdb_df.empty:
-                    # Get 10年期 yield
-                    if '10年期' in cdb_df.columns:
-                        return float(cdb_df['10年期'].iloc[0])
-                    # Fallback to 收益率 column if 10年期 not available
-                    elif '收益率' in cdb_df.columns:
-                        return float(cdb_df['收益率'].iloc[0])
-        
-        elif rate_type == "dr007":
-            # Fetch from ak.rate_interbank() - DR007
-            df = ak.rate_interbank()
-            if not df.empty:
-                # Filter for DR007
-                dr007_df = df[df['利率类型'] == 'DR007']
-                if not dr007_df.empty:
-                    return float(dr007_df['利率'].iloc[0])
-    
-    except Exception:
-        # Graceful degradation to fallback values
-        pass
-    
-    # Return fallback value
-    return fallback_values.get(rate_type, 2.5)
 
 
 @router.get("/fear-greed")
@@ -132,9 +69,9 @@ async def get_fear_greed_index(
 @router.get("/erp")
 async def get_erp_spread(
     index_code: str = Query("000300", description="指数代码"),
-    risk_free_type: Literal["treasury_10y", "cdb_10y", "dr007"] = Query(
+    risk_free_type: Literal["treasury_10y", "cdb_10y", "dr007", "deposit_1y", "deposit_3y", "deposit_5y"] = Query(
         "treasury_10y", 
-        description="无风险利率类型: 国债10年/国开债10年/DR007"
+        description="无风险利率类型: 国债10年/国开债10年/DR007/大额存款1年/大额存款3年/大额存款5年"
     ),
     db: AsyncSession = Depends(get_db),
 ):
@@ -142,7 +79,7 @@ async def get_erp_spread(
     股债ERP收益差 - 标准差视角与百分位视角.
     Returns ERP history with ±1SD, ±2SD channels.
     """
-    risk_free_rate = await get_risk_free_rate(risk_free_type)
+    risk_free_rate = await get_risk_free_rate_async(risk_free_type)
     
     result = await db.execute(
         select(BondEquityYieldSpreadHistory)

@@ -5,6 +5,7 @@ import { Plus, Delete } from '@element-plus/icons-vue'
 import SplitPanel from '@/components/SplitPanel.vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 import {
   searchFunds,
   createPortfolio,
@@ -20,6 +21,12 @@ import {
 } from '@/api/portfolio'
 
 // ==================== State ====================
+
+// Breakpoint for responsive design
+const { isMobile } = useBreakpoint()
+
+// Active chart tab for mobile
+const activeChartTab = ref<'performance' | 'brinson'>('performance')
 
 // Portfolio Builder
 const portfolioName = ref('')
@@ -857,22 +864,52 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
             
             <!-- Performance Chart -->
             <div class="chart-section">
-              <h3 class="chart-title">净值曲线</h3>
-              <EChartsWrapper
-                v-if="performanceChartOption"
-                :option="performanceChartOption"
-                height="400px"
-              />
-            </div>
-            
-            <!-- Brinson Attribution Chart -->
-            <div class="chart-section">
-              <h3 class="chart-title">Brinson归因分析</h3>
-              <EChartsWrapper
-                v-if="brinsonChartOption"
-                :option="brinsonChartOption"
-                height="300px"
-              />
+              <!-- Mobile Tab Selector -->
+              <div v-if="isMobile" class="chart-tabs-mobile">
+                <el-radio-group v-model="activeChartTab" size="small">
+                  <el-radio-button value="performance">净值曲线</el-radio-button>
+                  <el-radio-button value="brinson">Brinson归因</el-radio-button>
+                </el-radio-group>
+              </div>
+              
+              <!-- Desktop: Show both charts -->
+              <template v-if="!isMobile">
+                <h3 class="chart-title">净值曲线</h3>
+                <EChartsWrapper
+                  v-if="performanceChartOption"
+                  :option="performanceChartOption"
+                  height="400px"
+                />
+                
+                <!-- Brinson Attribution Chart -->
+                <h3 class="chart-title" style="margin-top: 24px;">Brinson归因分析</h3>
+                <EChartsWrapper
+                  v-if="brinsonChartOption"
+                  :option="brinsonChartOption"
+                  height="300px"
+                />
+              </template>
+              
+              <!-- Mobile: Show active chart with fixed height -->
+              <template v-else>
+                <div v-show="activeChartTab === 'performance'" class="chart-tab-content">
+                  <h3 class="chart-title">净值曲线</h3>
+                  <EChartsWrapper
+                    v-if="performanceChartOption"
+                    :option="performanceChartOption"
+                    height="260px"
+                  />
+                </div>
+                
+                <div v-show="activeChartTab === 'brinson'" class="chart-tab-content">
+                  <h3 class="chart-title">Brinson归因分析</h3>
+                  <EChartsWrapper
+                    v-if="brinsonChartOption"
+                    :option="brinsonChartOption"
+                    height="260px"
+                  />
+                </div>
+              </template>
               
               <!-- Brinson Details Table -->
               <div class="brinson-details">
@@ -918,7 +955,6 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
             </div>
             
             <!-- Multi-Period Brinson Attribution -->
-            <div v-if="backtestResult?.multi_period_brinson_attribution" class="chart-section">
               <h3 class="chart-title">
                 多期归因分析
                 <el-tag size="small" type="info" style="margin-left: 8px">
@@ -960,11 +996,20 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
               </div>
               
               <!-- Period Breakdown Chart -->
-              <EChartsWrapper 
-                v-if="periodChartOption" 
-                :option="periodChartOption" 
-                height="300px" 
-              />
+              <div v-if="!isMobile">
+                <EChartsWrapper 
+                  v-if="periodChartOption" 
+                  :option="periodChartOption" 
+                  height="300px" 
+                />
+              </div>
+              <div v-else>
+                <EChartsWrapper 
+                  v-if="periodChartOption" 
+                  :option="periodChartOption" 
+                  height="260px" 
+                />
+              </div>
             </div>
           </template>
         </div>
@@ -1296,6 +1341,16 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
 /* Chart Section */
 .chart-section {
   margin-bottom: 24px;
+}
+
+.chart-tabs-mobile {
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.chart-tab-content {
+  width: 100%;
 }
 
 .chart-title {

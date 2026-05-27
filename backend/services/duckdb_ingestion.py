@@ -1,18 +1,22 @@
 """
 DuckDB data ingestion and OLAP query functions.
+
+Uses connection pool for thread-safe concurrent access.
 """
 from datetime import date
 from typing import List, Dict, Optional
 import duckdb
-from backend.core.duckdb_connection import get_duckdb
+from backend.core.duckdb_pool import duckdb_pool_manager
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def insert_holdings_batch(holdings: List[Dict]) -> int:
+async def insert_holdings_batch(holdings: List[Dict]) -> int:
     """
     Insert fund portfolio holdings batch into DuckDB.
+    
+    Uses write lock for serialized writes to prevent concurrency issues.
     
     Args:
         holdings: List of holding dicts with keys:
@@ -27,21 +31,22 @@ def insert_holdings_batch(holdings: List[Dict]) -> int:
     Returns:
         Number of rows inserted
     """
-    conn = get_duckdb()
+    if not holdings:
+        return 0
     
-    # Delete existing records for same fund+quarter
-    if holdings:
-        fund_code = holdings[0]['fund_code']
-        quarter_date = holdings[0]['quarter_date']
-        conn.execute(
-            "DELETE FROM fund_portfolio_holdings WHERE fund_code = ? AND quarter_date = ?",
-            [fund_code, quarter_date]
-        )
+    # Delete existing records for same fund+quarter (serialized write)
+    fund_code = holdings[0]['fund_code']
+    quarter_date = holdings[0]['quarter_date']
     
-    # Insert new records
+    await duckdb_pool_manager.execute_write(
+        "DELETE FROM fund_portfolio_holdings WHERE fund_code = ? AND quarter_date = ?",
+        [fund_code, quarter_date]
+    )
+    
+    # Insert new records (serialized write)
     rows_inserted = 0
     for h in holdings:
-        conn.execute("""
+        await duckdb_pool_manager.execute_write("""
             INSERT INTO fund_portfolio_holdings 
             (fund_code, quarter_date, stock_code, stock_name, holding_ratio, holding_value, holding_change)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -60,9 +65,11 @@ def insert_holdings_batch(holdings: List[Dict]) -> int:
     return rows_inserted
 
 
-def search_funds_by_stock(stock_code: str, limit: int = 100) -> Dict:
+async def search_funds_by_stock(stock_code: str, limit: int = 100) -> Dict:
     """
     Reverse lookup: Find all funds holding a specific stock.
+    
+    Uses read connection from pool for parallel query execution.
     
     Args:
         stock_code: Stock code to search (e.g., '600519')
@@ -71,9 +78,7 @@ def search_funds_by_stock(stock_code: str, limit: int = 100) -> Dict:
     Returns:
         Dict with stock info and list of fund holdings sorted by holding_ratio DESC
     """
-    conn = get_duckdb()
-    
-    result = conn.execute("""
+    result = await duckdb_pool_manager.execute_read("""
         SELECT 
             fund_code,
             stock_name,
@@ -86,7 +91,7 @@ def search_funds_by_stock(stock_code: str, limit: int = 100) -> Dict:
         WHERE stock_code = ?
         ORDER BY holding_ratio DESC
         LIMIT ?
-    """, [stock_code, limit]).fetchall()
+    """, [stock_code, limit])
     
     if not result:
         return {

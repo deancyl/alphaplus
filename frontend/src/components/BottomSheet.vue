@@ -77,9 +77,6 @@ const closeSheet = () => {
   emit('snapPointChange', 'closed')
 }
 
-// Close threshold: 30% of current height
-const CLOSE_THRESHOLD = 0.3
-
 // Touch handlers
 const handleTouchStart = (e: TouchEvent) => {
   isDragging.value = true
@@ -106,22 +103,39 @@ const handleTouchMove = (e: TouchEvent) => {
     sheetHeight.value = Math.max(0, Math.min(100, dragStartHeight.value - heightDelta))
   }
 }
-}
 
-const CLOSE_THRESHOLD = 0.3 // 30% of current height
+// Snap point thresholds
+const SNAP_THRESHOLDS = {
+  closed: 25,   // Below 25% -> snap to closed
+  half: 65,     // 25-65% -> snap to half
+  full: 100     // Above 65% -> snap to full
+}
 
 const handleTouchEnd = () => {
   isDragging.value = false
 
-  // If dragged down more than 30% of current height, close
-  const heightDelta = dragStartHeight.value - sheetHeight.value
-  if (heightDelta > dragStartHeight.value * CLOSE_THRESHOLD) {
+  // Determine snap point based on current height
+  const currentHeight = sheetHeight.value
+  
+  // Find the nearest snap point from available snap points
+  const availableSnapPoints = props.snapPoints.filter(p => p !== 'closed')
+  let targetSnapPoint: 'closed' | 'half' | 'full' = 'half'
+  
+  if (currentHeight < SNAP_THRESHOLDS.closed) {
+    targetSnapPoint = 'closed'
+  } else if (currentHeight < SNAP_THRESHOLDS.half) {
+    targetSnapPoint = availableSnapPoints.includes('half') ? 'half' : 'closed'
+  } else {
+    targetSnapPoint = availableSnapPoints.includes('full') ? 'full' : 'half'
+  }
+  
+  // Apply snap
+  if (targetSnapPoint === 'closed') {
     closeSheet()
   } else {
-    // Snap back to original position with elastic animation
-    sheetHeight.value = dragStartHeight.value
+    sheetHeight.value = SNAP_HEIGHTS[targetSnapPoint]
+    emit('snapPointChange', targetSnapPoint)
   }
-}
 }
 
 // Backdrop click

@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     thread_pool_workers: int = 4
     async_timeout: float = 30.0
     
+    # DuckDB Connection Pool
+    duckdb_pool_readers: int = 4
+    duckdb_pool_writers: int = 1
+    
     # CORS (configurable via CORS_ORIGINS env var)
     cors_origins: list[str] = _parse_cors_origins()
     

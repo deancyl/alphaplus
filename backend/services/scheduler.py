@@ -1,5 +1,8 @@
 """
 APScheduler service for nightly data ingestion.
+
+Delegates task execution to isolated worker process via ProcessManager
+to avoid OOM on large ETL operations.
 """
 import asyncio
 from datetime import datetime
@@ -10,12 +13,17 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
 from backend.core import settings
+from backend.core.process_manager import get_process_manager
 
 
 class SchedulerService:
     """
     APScheduler wrapper for managing scheduled data ingestion jobs.
-    Uses SQLite for job persistence.
+    
+    Uses isolated worker process for task execution to provide:
+    - Memory isolation (large ETL doesn't OOM FastAPI)
+    - Crash isolation (worker failure doesn't affect API)
+    - Automatic restart on failure
     """
     
     def __init__(self):
@@ -27,7 +35,6 @@ class SchedulerService:
         if self._running:
             return
         
-        # Configure job store (SQLite for persistence)
         jobstores = {
             "default": SQLAlchemyJobStore(
                 url=f"sqlite:///{settings.database_path.replace('.db', '_jobs.db')}"
@@ -36,10 +43,8 @@ class SchedulerService:
         
         self._scheduler = AsyncIOScheduler(jobstores=jobstores)
         
-        # Add scheduled jobs
         self._add_jobs()
         
-        # Start scheduler
         self._scheduler.start()
         self._running = True
     
@@ -54,7 +59,6 @@ class SchedulerService:
     def _add_jobs(self):
         """Add all scheduled jobs."""
         
-        # Job 0: Pandas cache refresh at 17:00
         self._scheduler.add_job(
             self._refresh_pandas_cache,
             trigger=CronTrigger(hour=17, minute=0),
@@ -64,7 +68,6 @@ class SchedulerService:
             max_instances=1,
         )
         
-        # Job 1: Fund data sync at 18:00
         self._scheduler.add_job(
             self._sync_fund_data,
             trigger=CronTrigger(hour=settings.fund_sync_hour, minute=0),
@@ -74,7 +77,6 @@ class SchedulerService:
             max_instances=1,
         )
         
-        # Job 2: Bond yield sync at 17:30
         self._scheduler.add_job(
             self._sync_bond_yields,
             trigger=CronTrigger(hour=settings.bond_sync_hour, minute=30),
@@ -84,7 +86,6 @@ class SchedulerService:
             max_instances=1,
         )
         
-        # Job 3: Index quotes refresh every 5 seconds during trading hours
         self._scheduler.add_job(
             self._refresh_index_quotes,
             trigger=CronTrigger(
@@ -98,7 +99,6 @@ class SchedulerService:
             max_instances=1,
         )
         
-        # Job 4: Quarterly holdings ingestion (Jan/Apr/Jul/Oct after 15th)
         self._scheduler.add_job(
             self._quarterly_holdings_ingestion,
             trigger=CronTrigger(
@@ -113,63 +113,47 @@ class SchedulerService:
             max_instances=1,
         )
     
-    async def _refresh_pandas_cache(self):
-        """Refresh Pandas in-memory cache."""
-        from backend.services.pandas_cache import GLOBAL_FUND_DF
+    async def _schedule_worker_task(self, task_type: str, payload: dict = None):
+        """Schedule a task to be executed by the isolated worker process."""
         try:
-            stats = GLOBAL_FUND_DF.refresh_cache()
-            print(f"Pandas cache refreshed: {stats}")
+            process_manager = get_process_manager()
+            payload = payload or {}
+            payload['task_type'] = task_type
+            
+            task_id = process_manager.schedule_task(
+                task_type=task_type,
+                payload=payload,
+                priority=0
+            )
+            print(f"Scheduled worker task: {task_id} (type={task_type})")
+            return task_id
         except Exception as e:
-            print(f"Pandas cache refresh error: {e}")
+            print(f"Failed to schedule worker task: {e}")
+            return None
+    
+    async def _refresh_pandas_cache(self):
+        """Refresh Pandas in-memory cache - delegate to worker."""
+        await self._schedule_worker_task('pandas_cache_refresh')
     
     async def _sync_fund_data(self):
-        """Sync fund data from AkShare."""
-        from backend.services.ingestion import fund_ingestion
-        try:
-            await fund_ingestion.sync_all_funds()
-        except Exception as e:
-            print(f"Fund sync error: {e}")
+        """Sync fund data from AkShare - delegate to worker."""
+        await self._schedule_worker_task('fund_sync')
     
     async def _sync_bond_yields(self):
-        """Sync bond yield data."""
-        from backend.services.ingestion import bond_ingestion
-        try:
-            await bond_ingestion.sync_bond_yields()
-        except Exception as e:
-            print(f"Bond yield sync error: {e}")
+        """Sync bond yield data - delegate to worker."""
+        await self._schedule_worker_task('bond_sync')
     
     async def _refresh_index_quotes(self):
-        """Refresh real-time index quotes."""
-        from backend.services.quotes import index_quotes
-        try:
-            await index_quotes.refresh()
-        except Exception as e:
-            print(f"Index quotes refresh error: {e}")
+        """Refresh real-time index quotes - delegate to worker."""
+        await self._schedule_worker_task('index_refresh')
     
     async def _quarterly_holdings_ingestion(self):
-        """Quarterly holdings ingestion with Parquet-first caching."""
-        from backend.services.parquet_cache import PhysicalLock, load_holdings_from_parquet
-        from backend.services.duckdb_ingestion import insert_holdings_batch
-        from datetime import date
-        
-        try:
-            with PhysicalLock("holdings_ingestion"):
-                today = date.today()
-                cached = load_holdings_from_parquet(today)
-                if cached:
-                    insert_holdings_batch(cached)
-                    print(f"Quarterly holdings ingestion: {len(cached)} records from Parquet cache")
-                else:
-                    print("Quarterly holdings ingestion: No cached Parquet data available")
-        except RuntimeError:
-            print("Quarterly holdings ingestion: Another process is running, skipping")
-        except Exception as e:
-            print(f"Quarterly holdings ingestion error: {e}")
+        """Quarterly holdings ingestion - delegate to worker."""
+        await self._schedule_worker_task('holdings_ingestion')
     
     @property
     def is_running(self) -> bool:
         return self._running
 
 
-# Global scheduler instance
 scheduler_service = SchedulerService()
