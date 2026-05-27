@@ -268,6 +268,7 @@ onUnmounted(() => {
   cursor: pointer;
   border-radius: 4px;
   transition: background-color 0.2s, color 0.2s;
+  touch-action: manipulation;
 }
 
 .bottom-sheet-close:hover {

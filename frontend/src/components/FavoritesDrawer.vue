@@ -458,6 +458,7 @@ onMounted(() => {
 .action-buttons .el-button {
   padding: 4px 8px;
   min-width: 28px;
+  touch-action: manipulation;
 }
 
 .action-buttons .el-button:disabled {

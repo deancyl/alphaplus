@@ -156,6 +156,11 @@ body {
   font-size: 14px;
 }
 
+/* Remove 300ms tap delay on mobile */
+a, button, td, input, select, .clickable {
+  touch-action: manipulation;
+}
+
 /* ==================== Responsive Utility Classes ==================== */
 
 /* Hide on specific breakpoints */

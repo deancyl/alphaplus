@@ -30,7 +30,9 @@ let resizeObserver: ResizeObserver | null = null
  * Compute effective height based on sparkline mode
  */
 const effectiveHeight = computed(() => {
-  return props.isSparkline ? '40px' : props.height
+  if (props.isSparkline) return '40px'
+  // Use percentage-based height for responsive
+  return props.height
 })
 
 /**
@@ -203,5 +205,21 @@ defineExpose({
 .echarts-container {
   width: 100%;
   min-height: 200px;
+}
+
+/* Mobile: compact 4:3 ratio */
+@media (max-width: 768px) {
+  .echarts-container {
+    aspect-ratio: 4 / 3;
+    min-height: 260px;
+  }
+}
+
+/* Desktop: 16:9 ratio */
+@media (min-width: 1024px) {
+  .echarts-container {
+    aspect-ratio: 16 / 9;
+    min-height: 400px;
+  }
 }
 </style>

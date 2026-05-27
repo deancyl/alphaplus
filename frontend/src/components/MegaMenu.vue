@@ -447,6 +447,7 @@ onUnmounted(() => {
   font-size: 13px;
   cursor: pointer;
   transition: background-color 0.15s;
+  touch-action: manipulation;
 }
 
 .dropdown-item:hover {
@@ -480,6 +481,7 @@ onUnmounted(() => {
   background: transparent;
   cursor: pointer;
   gap: 5px;
+  touch-action: manipulation;
 }
 
 .hamburger-line {
@@ -548,6 +550,7 @@ onUnmounted(() => {
   color: white;
   font-size: 28px;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .mobile-drawer-content {
@@ -616,6 +619,7 @@ onUnmounted(() => {
   font-size: 14px;
   cursor: pointer;
   min-height: 44px;
+  touch-action: manipulation;
 }
 
 .mobile-menu-item:active {

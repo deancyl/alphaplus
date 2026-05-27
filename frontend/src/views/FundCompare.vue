@@ -656,8 +656,14 @@ onUnmounted(() => {
               prop="fund_name"
               label="名称"
               min-width="150"
+              fixed="left"
+              class-name="sticky-column"
               show-overflow-tooltip
-            />
+            >
+              <template #default="{ row }">
+                <span class="font-medium">{{ row.fund_name }}</span>
+              </template>
+            </el-table-column>
             <el-table-column
               prop="fund_type"
               label="类型"
@@ -1106,5 +1112,21 @@ onUnmounted(() => {
   .selected-funds-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
+}
+
+/* Sticky left column for mobile horizontal scroll */
+.el-table .sticky-column {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: var(--bg-card);
+}
+
+/* Second column also sticky if needed */
+.el-table .sticky-column-second {
+  position: sticky;
+  left: 150px;
+  z-index: 9;
+  background: var(--bg-card);
 }
 </style>
