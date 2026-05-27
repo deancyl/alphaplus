@@ -39,6 +39,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '基金公司' },
   },
   {
+    path: '/fof/fundDetail/:fundCode',
+    name: 'FundDetail',
+    component: () => import('@/views/FundDetail.vue'),
+    meta: { title: '基金详情' },
+  },
+  {
     path: '/info/stock',
     name: 'StockInfo',
     component: () => import('@/views/StockInfo.vue'),

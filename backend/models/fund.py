@@ -278,3 +278,37 @@ class FundPoolRegistry(Base):
         UniqueConstraint("pool_type", "fund_code", name="uq_fund_pool"),
         Index("idx_fund_pool", "pool_type", "status"),
     )
+
+
+class FundPortfolioHoldings(Base):
+    """基金持仓明细表 - Fund portfolio stock holdings details."""
+    __tablename__ = "fund_portfolio_holdings"
+
+    fund_code: Mapped[str] = mapped_column(String(10), primary_key=True)
+    report_date: Mapped[str] = mapped_column(String(10), primary_key=True)  # YYYY-MM-DD or YYYYQ1
+    stock_code: Mapped[str] = mapped_column(String(10), primary_key=True)
+    stock_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    holding_ratio: Mapped[float] = mapped_column(Float)  # 占净值比例 (%)
+    holding_value: Mapped[float] = mapped_column(Float)  # 持仓市值 (万元)
+    holding_change: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # 新进/增持/减持/不变
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_fund_holdings", "fund_code", "report_date"),
+    )
+
+
+class FundIndustryAllocation(Base):
+    """基金行业配置表 - Fund portfolio industry allocation details."""
+    __tablename__ = "fund_industry_allocation"
+
+    fund_code: Mapped[str] = mapped_column(String(10), primary_key=True)
+    report_date: Mapped[str] = mapped_column(String(10), primary_key=True)  # YYYY-MM-DD
+    industry: Mapped[str] = mapped_column(String(100), primary_key=True)  # 行业名称
+    allocation_ratio: Mapped[float] = mapped_column(Float)  # 配置比例 (%)
+    market_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 市值 (万元)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_fund_industry", "fund_code", "report_date"),
+    )

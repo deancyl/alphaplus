@@ -299,3 +299,36 @@ class AIPCalculateResponse(BaseModel):
     lump_sum_comparison: dict = Field(..., description="一次性投资对比 {value, return_rate}")
     investment_dates: List[str] = Field(..., description="投资日期列表")
     nav_history: List[dict] = Field(..., description="净值历史 [{date, nav, units, value, cumulative_return}]")
+
+
+# ==================== Fund Industry Allocation Schemas ====================
+
+class IndustryAllocationItem(BaseModel):
+    """行业配置项."""
+    industry: str = Field(..., description="行业名称")
+    allocation_ratio: float = Field(..., description="配置比例 (%)")
+    market_value: Optional[float] = Field(None, description="市值 (万元)")
+
+
+class IndustryAllocationResponse(BaseModel):
+    """基金行业配置响应."""
+    fund_code: str = Field(..., description="基金代码")
+    report_date: str = Field(..., description="报告日期 YYYY-MM-DD")
+    allocations: List[IndustryAllocationItem] = Field(..., description="行业配置列表")
+    data_source: str = Field(default="akshare", description="数据来源")
+
+
+class FundHoldingItem(BaseModel):
+    stock_code: str = Field(..., description="股票代码")
+    stock_name: str = Field(..., description="股票名称")
+    holding_ratio: float = Field(..., description="占净值比例 (%)")
+    holding_value: float = Field(..., description="持仓市值 (万元)")
+    holding_change: Optional[str] = Field(None, description="持仓变化: 新进/增持/减持/不变")
+
+
+class FundHoldingsResponse(BaseModel):
+    fund_code: str
+    report_date: str = Field(..., description="报告期 (YYYY-MM-DD 或 YYYYQ1)")
+    holdings: List[FundHoldingItem] = Field(..., description="持仓明细列表")
+    total_count: int = Field(..., description="持仓股票数量")
+    data_source: str = Field(default="akshare", description="数据来源")

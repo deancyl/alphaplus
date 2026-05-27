@@ -10,7 +10,7 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core import get_db
-from backend.models.fund import FundIndicators, FundIssuePipeline, FundCompanyMetadata
+from backend.models.fund import FundIndicators, FundIssuePipeline, FundCompanyMetadata, FundPortfolioHoldings, FundIndustryAllocation
 from backend.schemas.fund import (
     FundFilterRequest,
     FundFilterResponse,
@@ -22,6 +22,10 @@ from backend.schemas.fund import (
     FactorExposureItem,
     AIPCalculateRequest,
     AIPCalculateResponse,
+    FundHoldingsResponse,
+    FundHoldingItem,
+    IndustryAllocationResponse,
+    IndustryAllocationItem,
 )
 from backend.services.correlation import calculate_pearson_matrix, correlation_matrix_to_list
 from backend.services.factor_exposure import FactorExposureAnalyzer, ALL_FACTORS
@@ -438,6 +442,120 @@ async def calculate_aip_endpoint(
         raise HTTPException(status_code=500, detail=f"Calculation error: {str(e)}")
 
 
+@router.get("/{fund_code}/holdings", response_model=FundHoldingsResponse)
+async def get_fund_holdings(
+    fund_code: str,
+    report_date: Optional[str] = Query(None, description="报告期 (YYYY-MM-DD 或 YYYYQ1格式)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    获取基金持仓明细 - 股票持仓列表.
+    支持历史报告期查询, 默认返回最新一期.
+    """
+    from backend.services.ingestion import fund_portfolio_em, save_fund_holdings
+    
+    if report_date:
+        result = await db.execute(
+            select(FundPortfolioHoldings)
+            .where(
+                FundPortfolioHoldings.fund_code == fund_code,
+                FundPortfolioHoldings.report_date == report_date
+            )
+            .order_by(FundPortfolioHoldings.holding_ratio.desc())
+        )
+        holdings_db = result.scalars().all()
+        
+        if holdings_db:
+            holdings = [
+                FundHoldingItem(
+                    stock_code=h.stock_code,
+                    stock_name=h.stock_name,
+                    holding_ratio=h.holding_ratio,
+                    holding_value=h.holding_value,
+                    holding_change=h.holding_change,
+                )
+                for h in holdings_db
+            ]
+            
+            return FundHoldingsResponse(
+                fund_code=fund_code,
+                report_date=report_date,
+                holdings=holdings,
+                total_count=len(holdings),
+                data_source="database",
+            )
+    
+    result = await db.execute(
+        select(FundPortfolioHoldings)
+        .where(FundPortfolioHoldings.fund_code == fund_code)
+        .order_by(FundPortfolioHoldings.report_date.desc())
+        .limit(1)
+    )
+    latest_holding = result.scalar_one_or_none()
+    
+    if latest_holding:
+        latest_report_date = latest_holding.report_date
+        
+        result = await db.execute(
+            select(FundPortfolioHoldings)
+            .where(
+                FundPortfolioHoldings.fund_code == fund_code,
+                FundPortfolioHoldings.report_date == latest_report_date
+            )
+            .order_by(FundPortfolioHoldings.holding_ratio.desc())
+        )
+        holdings_db = result.scalars().all()
+        
+        holdings = [
+            FundHoldingItem(
+                stock_code=h.stock_code,
+                stock_name=h.stock_name,
+                holding_ratio=h.holding_ratio,
+                holding_value=h.holding_value,
+                holding_change=h.holding_change,
+            )
+            for h in holdings_db
+        ]
+        
+        return FundHoldingsResponse(
+            fund_code=fund_code,
+            report_date=latest_report_date,
+            holdings=holdings,
+            total_count=len(holdings),
+            data_source="database",
+        )
+    
+    try:
+        holdings_raw, report_date_detected = await fund_portfolio_em(fund_code)
+        
+        if not holdings_raw:
+            raise HTTPException(status_code=404, detail=f"No holdings found for fund {fund_code}")
+        
+        holdings = [
+            FundHoldingItem(
+                stock_code=h["stock_code"],
+                stock_name=h["stock_name"],
+                holding_ratio=h["holding_ratio"],
+                holding_value=h["holding_value"],
+                holding_change=h.get("holding_change"),
+            )
+            for h in holdings_raw
+        ]
+        
+        await save_fund_holdings(fund_code, holdings_raw, report_date_detected)
+        
+        return FundHoldingsResponse(
+            fund_code=fund_code,
+            report_date=report_date_detected,
+            holdings=holdings,
+            total_count=len(holdings),
+            data_source="akshare",
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch holdings: {str(e)}")
+
+
 @router.get("/{fund_code}")
 async def get_fund_detail(
     fund_code: str,
@@ -468,4 +586,100 @@ async def get_fund_detail(
         new_high_ratio_1y=fund.new_high_ratio_1y,
         heavy_sector=fund.heavy_sector,
         manager_honors=fund.manager_honors,
+    )
+
+
+@router.get("/{fund_code}/industry", response_model=IndustryAllocationResponse)
+async def get_fund_industry_allocation(
+    fund_code: str,
+    report_date: Optional[str] = Query(None, description="报告日期 YYYY-MM-DD, 默认最新"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    获取基金行业配置 - Fund industry allocation from portfolio reports.
+    
+    If data not in DB, fetches from AkShare and stores.
+    Returns latest report by default, or specific report_date if provided.
+    """
+    from backend.services.ingestion import ingest_fund_industry_allocation
+    
+    if report_date:
+        result = await db.execute(
+            select(FundIndustryAllocation)
+            .where(
+                FundIndustryAllocation.fund_code == fund_code,
+                FundIndustryAllocation.report_date == report_date,
+            )
+            .order_by(FundIndustryAllocation.allocation_ratio.desc())
+        )
+        allocations = result.scalars().all()
+        
+        if allocations:
+            return IndustryAllocationResponse(
+                fund_code=fund_code,
+                report_date=report_date,
+                allocations=[
+                    IndustryAllocationItem(
+                        industry=a.industry,
+                        allocation_ratio=a.allocation_ratio,
+                        market_value=a.market_value,
+                    )
+                    for a in allocations
+                ],
+                data_source="database",
+            )
+    
+    result = await db.execute(
+        select(FundIndustryAllocation)
+        .where(FundIndustryAllocation.fund_code == fund_code)
+        .order_by(
+            FundIndustryAllocation.report_date.desc(),
+            FundIndustryAllocation.allocation_ratio.desc(),
+        )
+    )
+    allocations = result.scalars().all()
+    
+    if allocations:
+        latest_date = allocations[0].report_date
+        latest_allocations = [a for a in allocations if a.report_date == latest_date]
+        
+        return IndustryAllocationResponse(
+            fund_code=fund_code,
+            report_date=latest_date,
+            allocations=[
+                IndustryAllocationItem(
+                    industry=a.industry,
+                    allocation_ratio=a.allocation_ratio,
+                    market_value=a.market_value,
+                )
+                for a in latest_allocations
+            ],
+            data_source="database",
+        )
+    
+    records = await ingest_fund_industry_allocation(fund_code=fund_code)
+    
+    if records:
+        latest_date = records[0]["report_date"]
+        latest_records = [r for r in records if r["report_date"] == latest_date]
+        
+        return IndustryAllocationResponse(
+            fund_code=fund_code,
+            report_date=latest_date,
+            allocations=[
+                IndustryAllocationItem(
+                    industry=r["industry"],
+                    allocation_ratio=r["allocation_ratio"],
+                    market_value=r.get("market_value"),
+                )
+                for r in latest_records
+            ],
+            data_source="akshare",
+        )
+    
+    return IndustryAllocationResponse(
+        fund_code=fund_code,
+        report_date="",
+        allocations=[],
+        data_source="none",
     )

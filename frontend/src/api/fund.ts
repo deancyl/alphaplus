@@ -164,3 +164,72 @@ export const calculateAIP = async (
 ): Promise<AIPCalculateResponse> => {
   return api.post('/fund/aip-calculate', data)
 }
+
+// ==================== Holdings & Industry Types ====================
+
+/**
+ * Stock holding item in portfolio
+ */
+export interface HoldingItem {
+  stock_code: string        // 股票代码
+  stock_name: string        // 股票名称
+  holding_ratio: number     // 持仓比例 (%)
+  holding_value: number     // 持仓市值 (万元)
+  change_direction: 'new' | 'increase' | 'decrease' | 'unchanged'  // 变动方向
+}
+
+/**
+ * Industry allocation item
+ */
+export interface IndustryItem {
+  industry_name: string     // 行业名称
+  weight: number            // 占比 (%)
+}
+
+/**
+ * Report date with holdings data
+ */
+export interface ReportDate {
+  report_date: string       // 报告期 (YYYY-MM-DD)
+  label: string             // 显示标签 (如 "2024年一季报")
+}
+
+/**
+ * Holdings API response
+ */
+export interface HoldingsResponse {
+  fund_code: string
+  report_date: string
+  report_dates: ReportDate[]
+  holdings: HoldingItem[]
+}
+
+/**
+ * Industry API response
+ */
+export interface IndustryResponse {
+  fund_code: string
+  report_date: string
+  report_dates: ReportDate[]
+  industries: IndustryItem[]
+}
+
+// Get fund holdings (top 10 stocks)
+export const getFundHoldings = async (
+  fundCode: string,
+  reportDate?: string
+): Promise<HoldingsResponse> => {
+  const params: Record<string, string> = {}
+  if (reportDate) params.report_date = reportDate
+  return api.get(`/fund/${fundCode}/holdings`, { params })
+}
+
+// Get fund industry allocation
+export const getFundIndustry = async (
+  fundCode: string,
+  reportDate?: string
+): Promise<IndustryResponse> => {
+  const params: Record<string, string> = {}
+  if (reportDate) params.report_date = reportDate
+  return api.get(`/fund/${fundCode}/industry`, { params })
+}

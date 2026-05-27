@@ -2,18 +2,22 @@
 AkShare data ingestion with rate limiting and anti-ban strategies.
 """
 import asyncio
+import logging
 import random
+import re
 from typing import List, Optional
 from datetime import datetime
 
 import akshare as ak
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core import settings, AsyncSessionLocal
-from backend.models.fund import FundIndicators, FundIssuePipeline
+from backend.models.fund import FundIndicators, FundIssuePipeline, FundIndustryAllocation, FundPortfolioHoldings
 from backend.services.rate_limiter import RateLimiter
+
+logger = logging.getLogger(__name__)
 
 
 class FundIngestion:
@@ -223,3 +227,371 @@ class BondIngestion:
 # Global ingestion instances
 fund_ingestion = FundIngestion()
 bond_ingestion = BondIngestion()
+
+
+class IndustryAllocationIngestion:
+    """基金行业配置数据摄取服务."""
+
+    def __init__(self, rate_limit: int = 5):
+        self.rate_limiter = RateLimiter(rate_limit)
+
+    async def sync_fund_industry_allocation(self, fund_code: str) -> bool:
+        """
+        同步单个基金的行业配置数据.
+
+        Args:
+            fund_code: 基金代码
+
+        Returns:
+            bool: 是否成功获取并存储数据
+        """
+        try:
+            await self.rate_limiter.acquire()
+
+            for attempt in range(settings.akshare_retry_count):
+                try:
+                    df = ak.fund_portfolio_industry_allocation(symbol=fund_code)
+
+                    if df is None or df.empty:
+                        logger.warning(f"No industry allocation data for fund {fund_code}")
+                        return False
+
+                    await self._save_industry_allocation(fund_code, df)
+                    logger.info(f"Synced industry allocation for fund {fund_code}")
+                    return True
+
+                except Exception as e:
+                    if attempt < settings.akshare_retry_count - 1:
+                        delay = settings.akshare_retry_delay * (2 ** attempt)
+                        await asyncio.sleep(delay + random.uniform(0, 1))
+                    else:
+                        logger.error(f"Failed to sync industry allocation for {fund_code}: {e}")
+                        return False
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Industry allocation sync error for {fund_code}: {e}")
+            return False
+
+    async def sync_multiple_funds_industry_allocation(self, fund_codes: List[str]) -> dict:
+        """
+        批量同步多个基金的行业配置数据.
+
+        Args:
+            fund_codes: 基金代码列表
+
+        Returns:
+            dict: {"success": int, "failed": int, "total": int}
+        """
+        results = {"success": 0, "failed": 0, "total": len(fund_codes)}
+
+        for fund_code in fund_codes:
+            success = await self.sync_fund_industry_allocation(fund_code)
+            if success:
+                results["success"] += 1
+            else:
+                results["failed"] += 1
+
+            await asyncio.sleep(0.5)
+
+        logger.info(f"Industry allocation batch sync: {results}")
+        return results
+
+    async def _save_industry_allocation(self, fund_code: str, df: pd.DataFrame):
+        """
+        保存行业配置数据到数据库 (upsert logic).
+
+        Args:
+            fund_code: 基金代码
+            df: AkShare返回的行业配置DataFrame
+        """
+        async with AsyncSessionLocal() as session:
+            try:
+                report_date = self._extract_report_date(df)
+
+                if report_date:
+                    await session.execute(
+                        delete(FundIndustryAllocation).where(
+                            FundIndustryAllocation.fund_code == fund_code,
+                            FundIndustryAllocation.report_date == report_date
+                        )
+                    )
+
+                for _, row in df.iterrows():
+                    industry_name = str(row.get("行业名称", row.get("行业", "")))
+                    ratio = float(row.get("占净值比例", row.get("配置比例", 0)) or 0)
+
+                    if not industry_name:
+                        continue
+
+                    allocation = FundIndustryAllocation(
+                        fund_code=fund_code,
+                        report_date=report_date or datetime.now().strftime("%Y-%m-%d"),
+                        industry=industry_name,
+                        allocation_ratio=ratio,
+                    )
+                    session.add(allocation)
+
+                await session.commit()
+
+            except Exception as e:
+                logger.error(f"Failed to save industry allocation for {fund_code}: {e}")
+                await session.rollback()
+                raise
+
+    def _extract_report_date(self, df: pd.DataFrame) -> Optional[str]:
+        """
+        从DataFrame中提取报告日期.
+
+        Args:
+            df: AkShare返回的DataFrame
+
+        Returns:
+            str: 报告日期 (YYYY-MM-DD) 或 None
+        """
+        date_columns = ["报告期", "报告日期", "日期", "report_date"]
+        for col in date_columns:
+            if col in df.columns:
+                try:
+                    date_val = df[col].iloc[0]
+                    if pd.notna(date_val):
+                        if isinstance(date_val, str):
+                            return date_val[:10]
+                        else:
+                            return str(date_val)[:10]
+                except (IndexError, KeyError):
+                    continue
+        return None
+
+
+industry_allocation_ingestion = IndustryAllocationIngestion()
+
+
+async def fund_portfolio_em(fund_code: str, report_date: Optional[str] = None) -> tuple[List[dict], str]:
+    """
+    Fetch fund portfolio holdings from AkShare.
+    
+    Args:
+        fund_code: Fund code (e.g., '000001')
+        report_date: Report date in format YYYYMMDD or YYYYQ1 (optional)
+    
+    Returns:
+        Tuple of (holdings list, extracted report date)
+    
+    Raises:
+        Exception: If AkShare API fails
+    """
+    import logging
+    import re
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        df = ak.fund_portfolio_hold_em(symbol=fund_code, date=report_date) if report_date else ak.fund_portfolio_hold_em(symbol=fund_code)
+        
+        if df is None or df.empty:
+            logger.warning(f"No holdings data for fund {fund_code}")
+            return [], ""
+        
+        if "季度" not in df.columns:
+            logger.error(f"Missing '季度' column in AkShare response for fund {fund_code}")
+            return [], ""
+        
+        latest_quarter = df["季度"].iloc[0]
+        df_filtered = df[df["季度"] == latest_quarter]
+        
+        report_date_str = _parse_quarter_to_date(latest_quarter)
+        
+        holdings = []
+        for _, row in df_filtered.iterrows():
+            holding = {
+                "stock_code": str(row.get("股票代码", "")),
+                "stock_name": str(row.get("股票名称", "")),
+                "holding_ratio": float(row.get("占净值比例", 0) or 0),
+                "holding_value": float(row.get("持仓市值", 0) or 0),
+            }
+            
+            if holding["stock_code"]:
+                holdings.append(holding)
+        
+        return holdings, report_date_str
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch holdings for fund {fund_code}: {e}")
+        raise
+
+
+def _parse_quarter_to_date(quarter_str: str) -> str:
+    """
+    Parse AkShare quarter string to date string.
+    
+    Args:
+        quarter_str: e.g., "2024年1季度股票投资明细" or "2024年1季度"
+    
+    Returns:
+        Date string in YYYY-MM-DD format (last day of quarter)
+    """
+    match = re.search(r'(\d{4})年(\d)季度', quarter_str)
+    if not match:
+        return datetime.now().strftime("%Y-%m-%d")
+    
+    year = int(match.group(1))
+    quarter = int(match.group(2))
+    
+    quarter_end_dates = {
+        1: "03-31",
+        2: "06-30",
+        3: "09-30",
+        4: "12-31"
+    }
+    
+    return f"{year}-{quarter_end_dates.get(quarter, '12-31')}"
+
+
+async def save_fund_holdings(fund_code: str, holdings: List[dict], report_date: str) -> int:
+    """
+    Save fund holdings to database with upsert logic.
+    
+    Args:
+        fund_code: Fund code
+        holdings: List of holding dictionaries
+        report_date: Report date (YYYY-MM-DD or YYYYQ1)
+    
+    Returns:
+        Number of records saved
+    """
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    if not holdings:
+        return 0
+    
+    async with AsyncSessionLocal() as session:
+        try:
+            await session.execute(
+                delete(FundPortfolioHoldings).where(
+                    FundPortfolioHoldings.fund_code == fund_code,
+                    FundPortfolioHoldings.report_date == report_date
+                )
+            )
+            
+            saved_count = 0
+            for holding in holdings:
+                stock_code = holding.get("stock_code", "")
+                if not stock_code:
+                    continue
+                
+                new_record = FundPortfolioHoldings(
+                    fund_code=fund_code,
+                    report_date=report_date,
+                    stock_code=stock_code,
+                    stock_name=holding.get("stock_name", ""),
+                    holding_ratio=holding.get("holding_ratio", 0),
+                    holding_value=holding.get("holding_value", 0),
+                    holding_change=holding.get("holding_change"),
+                )
+                session.add(new_record)
+                saved_count += 1
+            
+            await session.commit()
+            logger.info(f"Saved {saved_count} holdings for fund {fund_code}")
+            return saved_count
+            
+        except Exception as e:
+            logger.error(f"Failed to save holdings for fund {fund_code}: {e}")
+            await session.rollback()
+            raise
+
+
+async def ingest_fund_industry_allocation(
+    fund_code: str,
+    year: Optional[str] = None,
+) -> List[dict]:
+    """
+    Fetch fund industry allocation from AkShare and store in SQLite.
+    
+    Args:
+        fund_code: Fund code (e.g., '000001')
+        year: Query year (defaults to current year)
+    
+    Returns:
+        List of industry allocation records
+    
+    Raises:
+        Exception: If AkShare API fails and no fallback data available
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    if year is None:
+        year = str(datetime.now().year)
+    
+    try:
+        df = ak.fund_portfolio_industry_allocation_em(symbol=fund_code, date=year)
+        
+        if df is None or df.empty:
+            logger.warning(f"No industry allocation data for fund {fund_code} year {year}")
+            return []
+        
+        records = []
+        async with AsyncSessionLocal() as session:
+            for _, row in df.iterrows():
+                industry_name = str(row.get("行业类别", "")).strip()
+                if not industry_name:
+                    continue
+                
+                report_date_str = str(row.get("截止时间", ""))
+                if not report_date_str or report_date_str == "nan":
+                    report_date_str = f"{year}-12-31"
+                
+                ratio_str = row.get("占净值比例", 0)
+                try:
+                    allocation_ratio = float(ratio_str) if ratio_str else 0.0
+                except (ValueError, TypeError):
+                    allocation_ratio = 0.0
+                
+                mv_str = row.get("市值", None)
+                market_value = None
+                if mv_str and str(mv_str) != "nan":
+                    try:
+                        market_value = float(mv_str)
+                    except (ValueError, TypeError):
+                        pass
+                
+                from sqlalchemy import delete
+                await session.execute(
+                    delete(FundIndustryAllocation).where(
+                        FundIndustryAllocation.fund_code == fund_code,
+                        FundIndustryAllocation.report_date == report_date_str,
+                        FundIndustryAllocation.industry == industry_name,
+                    )
+                )
+                
+                record = FundIndustryAllocation(
+                    fund_code=fund_code,
+                    report_date=report_date_str,
+                    industry=industry_name,
+                    allocation_ratio=allocation_ratio,
+                    market_value=market_value,
+                    created_at=datetime.utcnow(),
+                )
+                session.add(record)
+                
+                records.append({
+                    "fund_code": fund_code,
+                    "report_date": report_date_str,
+                    "industry": industry_name,
+                    "allocation_ratio": allocation_ratio,
+                    "market_value": market_value,
+                })
+            
+            await session.commit()
+        
+        logger.info(f"Ingested {len(records)} industry allocation records for fund {fund_code}")
+        return records
+        
+    except Exception as e:
+        logger.error(f"Failed to ingest industry allocation for fund {fund_code}: {e}")
+        return []

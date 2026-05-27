@@ -72,24 +72,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files (frontend dist)
-frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
-
-
-# Health check endpoint
-@app.get("/api/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "app": settings.app_name,
-        "version": settings.app_version,
-    }
-
-
-# Import and register routers
+# Import and register routers FIRST (before static mount)
 from backend.api.fund import router as fund_router
 from backend.api.market import router as market_router
 from backend.api.analytics import router as analytics_router
@@ -105,6 +88,23 @@ app.include_router(pool_router, prefix="/api/v1", tags=["pool"])
 app.include_router(favorites_router, prefix="/api/v1", tags=["favorites"])
 app.include_router(insurance_router, prefix="/api/v1/insurance", tags=["Insurance"])
 app.include_router(gold_router, prefix="/api/v1/gold", tags=["Gold"])
+
+
+# Health check endpoint
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "app": settings.app_name,
+        "version": settings.app_version,
+    }
+
+
+# Mount static files (frontend dist) - MUST be last
+frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
 
 
 if __name__ == "__main__":
