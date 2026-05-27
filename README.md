@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.4)
+[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.5)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -251,6 +251,47 @@ alphaplus/
 **文件统计:**
 - 17 files changed
 - 2502+ insertions
+
+### v0.1.5 (2026-05-27)
+
+**V4.2 规范实现:**
+
+**响应式基础设施:**
+- useBreakpoint.ts: Vue 3 组合式 API 断点检测
+- EChartsWrapper: ResizeObserver 内存泄漏修复 + 150ms 防抖
+- 完全清理组件销毁时的资源
+
+**移动端 UX 组件:**
+- BottomSheet.vue: 触控友好底部抽屉
+- 拖拽手势 + snap points (closed/half/full)
+- WCAG 44px 触控目标最小尺寸
+- 适配设计系统 CSS 变量
+
+**量化特色指标:**
+- new_high_ratio_1y: 近一年内含新高率 (招行特色)
+- manager_honors: 基金经理荣誉 (金牛奖/明星基金奖/招行五星)
+
+**风格可视化:**
+- StyleBox.vue: 3x3 投资风格箱 (Morningstar 风格)
+- 大盘/中盘/小盘 × 价值/混合/成长 九宫格
+- 主导风格高亮显示
+
+**新增 API 参数:**
+- `new_high_ratio_min`: 基金筛选内含新高率阈值
+- `manager_honors`: 基金详情返回经理荣誉
+
+**新增前端组件:**
+- frontend/src/composables/useBreakpoint.ts
+- frontend/src/components/BottomSheet.vue
+- frontend/src/components/StyleBox.vue
+- frontend/src/services/fund_metrics.py
+
+**测试覆盖:**
+- test_new_high_ratio.py: 6 tests (schema + calculation)
+
+**文件统计:**
+- 12 files changed
+- 1076+ insertions
 
 ### v0.1.3 (2026-05-26)
 
