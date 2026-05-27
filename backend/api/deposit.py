@@ -3,6 +3,7 @@ Deposit product API endpoints.
 """
 from fastapi import APIRouter
 from datetime import datetime
+import asyncio
 import akshare as ak
 
 router = APIRouter()
@@ -23,7 +24,7 @@ async def get_deposit_rates():
     # Try to fetch real data from AkShare
     try:
         # Fetch interbank rates as reference
-        df = ak.rate_interbank()
+        df = await asyncio.to_thread(ak.rate_interbank)
         
         # Get latest rate data
         if not df.empty:
@@ -71,7 +72,7 @@ async def get_deposit_rates():
     # Try to fetch treasury yields
     try:
         # Fetch treasury bond yields
-        bond_df = ak.bond_china_yield(start_date="20240101")
+        bond_df = await asyncio.to_thread(ak.bond_china_yield, start_date="20240101")
         
         # Get latest yields
         if not bond_df.empty:

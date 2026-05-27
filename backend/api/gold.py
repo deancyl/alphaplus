@@ -16,6 +16,7 @@ from backend.services.gold_constants import (
     verify_round_trip,
     calculate_premium,
 )
+from backend.services.async_akshare import async_akshare
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -37,10 +38,7 @@ async def get_gold_spot_price():
     Graceful degradation to simulated data if AkShare fails.
     """
     try:
-        import akshare as ak
-        
-        # Fetch Shanghai gold price (Au99.99)
-        shanghai_df = ak.spot_hist_sge(symbol="Au99.99")
+        shanghai_df = await async_akshare.get_spot_hist_sge(symbol="Au99.99")
         shanghai_price_cny_per_g = float(shanghai_df['close'].iloc[-1]) if len(shanghai_df) > 0 else 0.0
         
         # Fetch real-time USDCNY exchange rate
@@ -197,12 +195,11 @@ async def get_gold_price_history(days: int = 30):
     days = min(days, 365)
     
     try:
-        import akshare as ak
         import pandas as pd
         
         history = []
         
-        shanghai_df = ak.spot_hist_sge(symbol="Au99.99")
+        shanghai_df = await async_akshare.get_spot_hist_sge(symbol="Au99.99")
         shanghai_df = shanghai_df.tail(days)
         shanghai_prices = dict(zip(
             pd.to_datetime(shanghai_df['date']).dt.strftime('%Y-%m-%d'),

@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 60200
     
+    # Thread Pool
+    thread_pool_workers: int = 4
+    async_timeout: float = 30.0
+    
     # CORS (configurable via CORS_ORIGINS env var)
     cors_origins: list[str] = _parse_cors_origins()
     
