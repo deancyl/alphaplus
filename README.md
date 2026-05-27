@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.5)
+[![Version](https://img.shields.io/badge/version-0.1.6-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.6)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -9,7 +9,7 @@
 
 ## 功能特性
 
-### 核心模块 (19个功能视图)
+### 核心模块 (24个功能视图)
 
 | 模块 | 功能 | 数据来源 |
 |------|------|----------|
@@ -19,6 +19,7 @@
 | 相似度计算器 | 14因子暴露分析，SLSQP风格归因 | 本地计算 |
 | 基金发行看板 | 新发基金周历管线 | AkShare |
 | 基金公司透视 | Treemap资产分布 + 经理四象限气泡图 | AkShare |
+| **基金详情穿透** | 持仓明细 + 行业配置饼图，报告期选择 | AkShare |
 | 股票行情 | A股实时行情 | AkShare |
 | 债券行情 | 国债/信用债收益率曲线 | AkShare |
 | 期货行情 | 商品/金融期货报价 | AkShare |
@@ -32,6 +33,10 @@
 | **指数估值** | 17核心指数PE/PB百分位，历史曲线+markArea | AkShare |
 | **定投计算器** | 周/双周/月定投收益计算，一次性对比 | 本地计算 |
 | **指数专区** | 5类指数标签页，对比抽屉 | AkShare |
+| **存款利率看板** | 银行存款利率 vs 国债收益率利差分析 | AkShare |
+| **保险IRR测算器** | Newton-Raphson IRR计算，30年现金价值投影 | 本地计算 |
+| **贵金属跟踪** | 上海金交所Au99.99 + 伦敦金估算，价差分析 | AkShare |
+| **FOF组合回测** | 虚拟组合构建 + Brinson业绩归因 | 本地计算 |
 
 ### 技术亮点
 
@@ -181,6 +186,35 @@ alphaplus/
 | `/api/v1/market/index-valuation/{code}/history` | GET | 单指数PE历史数据 |
 | `/api/v1/fund/aip-calculate` | POST | 定投收益计算 |
 
+### 产品研究模块
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/v1/deposit/rates` | GET | 存款利率与国债利差 |
+| `/api/v1/insurance/calculate` | POST | 保险IRR计算 |
+| `/api/v1/gold/spot-price` | GET | 金价实时数据 |
+| `/api/v1/gold/history` | GET | 金价历史走势 |
+
+### 基金穿透模块
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/v1/fund/{code}/holdings` | GET | 基金持仓明细 |
+| `/api/v1/fund/{code}/industry` | GET | 行业配置分布 |
+
+### FOF组合模块
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/v1/portfolio` | POST | 创建组合 |
+| `/api/v1/portfolio` | GET | 列出组合 |
+| `/api/v1/portfolio/{id}` | GET | 获取组合详情 |
+| `/api/v1/portfolio/{id}` | PUT | 更新组合 |
+| `/api/v1/portfolio/{id}` | DELETE | 删除组合 |
+| `/api/v1/portfolio/{id}/backtest` | POST | 运行回测 |
+| `/api/v1/portfolio/{id}/backtest` | GET | 列出回测结果 |
+| `/api/v1/portfolio/{id}/backtest/{result_id}` | GET | 获取回测详情 |
+
 ## 配置说明
 
 ### 环境变量
@@ -214,6 +248,60 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.6 (2026-05-27)
+
+**V4.3 规范完整实现 - 三大里程碑:**
+
+**里程碑一 - 大类配置研究:**
+- 存款利率看板: AkShare interbank rates + 国债收益率利差分析
+- 保险IRR测算器: Newton-Raphson算法 + 30年现金价值投影
+- 贵金属跟踪: 上海金交所Au99.99实时价格 + 伦敦金估算 + 价差分析
+
+**里程碑二 - 穿透持仓因子分析:**
+- fund_portfolio_holdings表: 基金持仓明细 (股票代码/名称/比例/市值/变动方向)
+- fund_industry_allocation表: 行业配置分布 (行业/比例/市值)
+- FundDetail.vue: 持仓表格 + 行业饼图可视化 + 报告期下拉选择
+
+**里程碑三 - FOF虚拟组合回测 + Brinson业绩归因:**
+- user_portfolio表: 用户FOF组合管理 (基金代码/权重配置)
+- backtest_result表: 回测结果存储 (收益率/统计指标/Brinson归因)
+- 回测引擎: 组合NAV计算 + 基准对比 + 统计指标
+- Brinson-Hood-Beebower归因模型: allocation/selection/interaction效应
+- FOFBacktest.vue: 组合构建器 + 回测配置 + 结果仪表盘
+
+**新增 API 端点 (17个):**
+- `GET /api/v1/deposit/rates` 存款利率与国债利差
+- `POST /api/v1/insurance/calculate` 保险IRR计算
+- `GET /api/v1/gold/spot-price` 金价实时数据
+- `GET /api/v1/gold/history` 金价历史走势
+- `GET /api/v1/fund/{code}/holdings` 基金持仓明细
+- `GET /api/v1/fund/{code}/industry` 行业配置分布
+- `POST /api/v1/portfolio` 创建组合
+- `GET /api/v1/portfolio` 列出组合
+- `GET /api/v1/portfolio/{id}` 获取组合详情
+- `PUT /api/v1/portfolio/{id}` 更新组合
+- `DELETE /api/v1/portfolio/{id}` 删除组合
+- `POST /api/v1/portfolio/{id}/backtest` 运行回测
+- `GET /api/v1/portfolio/{id}/backtest` 列出回测结果
+- `GET /api/v1/portfolio/{id}/backtest/{result_id}` 获取回测详情
+
+**新增前端视图 (5个):**
+- DepositMarket.vue - 存款利率看板
+- InsuranceCalculator.vue - 保险IRR测算器
+- GoldProducts.vue - 贵金属跟踪
+- FundDetail.vue - 基金详情穿透
+- FOFBacktest.vue - FOF组合回测
+
+**技术亮点:**
+- EChartsWrapper响应式aspect-ratio (4:3移动端, 16:9桌面端)
+- FundCompare粘性首列 + 触控优化CSS
+- 权重自动归一化 (组合构建)
+- Brinson瀑布图归因可视化
+
+**文件统计:**
+- 31 files changed
+- 6,385+ insertions
 
 ### v0.1.4 (2026-05-27)
 
