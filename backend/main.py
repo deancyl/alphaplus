@@ -80,6 +80,7 @@ from backend.api.pool import pool_router
 from backend.api.favorites import favorites_router
 from backend.api.insurance import router as insurance_router
 from backend.api.gold import router as gold_router
+from backend.api.portfolio import router as portfolio_router
 
 app.include_router(fund_router, prefix="/api/v1/fund", tags=["Fund"])
 app.include_router(market_router, prefix="/api/v1/market", tags=["Market"])
@@ -88,6 +89,7 @@ app.include_router(pool_router, prefix="/api/v1", tags=["pool"])
 app.include_router(favorites_router, prefix="/api/v1", tags=["favorites"])
 app.include_router(insurance_router, prefix="/api/v1/insurance", tags=["Insurance"])
 app.include_router(gold_router, prefix="/api/v1/gold", tags=["Gold"])
+app.include_router(portfolio_router, prefix="/api/v1/portfolio", tags=["Portfolio"])
 
 
 # Health check endpoint

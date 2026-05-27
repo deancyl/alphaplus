@@ -32,6 +32,7 @@ const menuItems = [
     children: [
       { label: '基金筛选', path: '/fof/fundFilter', group: '公募基金研究' },
       { label: '基金对比', path: '/fof/fundCompare', group: '公募基金研究' },
+      { label: 'FOF回测', path: '/fof/fofBacktest', group: '公募基金研究', isNew: true },
       { label: '相似度计算', path: '/fof/fundSimilarity', group: '公募基金研究' },
       { label: '基金发行', path: '/fof/fundIssue', group: '公募基金研究' },
       { label: '基金公司', path: '/fof/fundCompany', group: '公募基金研究' },

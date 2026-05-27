@@ -21,6 +21,10 @@ from backend.models.fund import (
     UserFavoritesRegistry,
     FundPoolRegistry,
 )
+from backend.models.portfolio import (
+    UserPortfolio,
+    BacktestResult,
+)
 
 __all__ = [
     "FundIndicators",
@@ -41,4 +45,6 @@ __all__ = [
     "MarketCalendar",
     "UserFavoritesRegistry",
     "FundPoolRegistry",
+    "UserPortfolio",
+    "BacktestResult",
 ]

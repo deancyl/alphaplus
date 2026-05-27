@@ -21,6 +21,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '基金对比' },
   },
   {
+    path: '/fof/fofBacktest',
+    name: 'FOFBacktest',
+    component: () => import('@/views/FOFBacktest.vue'),
+    meta: { title: 'FOF回测' },
+  },
+  {
     path: '/fof/fundSimilarity',
     name: 'FundSimilarity',
     component: () => import('@/views/FundSimilarity.vue'),
