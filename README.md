@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.9-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.9)
+[![Version](https://img.shields.io/badge/version-0.1.20-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.20)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -248,6 +248,86 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.20 (2026-05-28)
+
+**Stock-to-Fund Reverse Lookup Enhancement:**
+- crowding_analysis.py: Holding overlap and crowding score calculation
+- duckdb_ingestion.py: Aggregation by stock with HHI index
+- StockReverseHolding.vue: Crowding heatmap, export buttons
+- New endpoints: /crowding, /aggregation, /export
+
+### v0.1.19 (2026-05-28)
+
+**Deposit-ERP Linkage:**
+- deposit_spread.py: Deposit-bond spread calculation
+- risk_free_rates.py: Large deposit rate tiers (1Y/3Y/5Y)
+- ERP endpoint supports risk_free_type parameter
+
+### v0.1.18 (2026-05-28)
+
+**Mobile Responsive Fixes:**
+- FOFBacktest.vue: Tab switching for dual charts on mobile
+- scrollIntoView for keyboard occlusion
+- BottomSheet snap points optimization
+
+### v0.1.17 (2026-05-28)
+
+**Empty States + Jargon Tooltips:**
+- EmptyState.vue: User-friendly empty state component
+- JargonTooltip.vue: Financial term definitions with touch support
+- jargon.json: 10+ financial term definitions
+
+### v0.1.16 (2026-05-28)
+
+**Skeleton Screens:**
+- SkeletonLoader.vue: Shimmer animation component
+- skeleton.css: Linear-gradient loading effect
+- Applied to FundFilter, FundCompare, Dashboard, IndexValuation
+
+### v0.1.15 (2026-05-28)
+
+**aData Direct Mode:**
+- Request batching (max 50 symbols)
+- Request deduplication and coalescing
+- Primary source with AkShare fallback
+
+### v0.1.14 (2026-05-28)
+
+**L1/L2 Tiered Cache:**
+- tiered_cache.py: TTLCache L1 + Parquet L2
+- cache_metadata.py: SQLite tracking
+- Cache warmup on startup
+
+### v0.1.13 (2026-05-28)
+
+**Market Data Gateway + Circuit Breaker:**
+- circuit_breaker.py: CLOSED/OPEN/HALF_OPEN state machine
+- market_gateway.py: Multi-source failover
+- sources/: AkShare, EastMoney, Sina adapters
+
+### v0.1.12 (2026-05-28)
+
+**DuckDB Connection Pool:**
+- duckdb_pool.py: 4 read + 1 write connections
+- asyncio.Lock for write serialization
+- Connection health check with auto-reconnect
+
+### v0.1.11 (2026-05-28)
+
+**Scheduler Process Isolation:**
+- scheduler_worker.py: Independent worker process
+- state_manager.py: SQLite WAL for IPC
+- data_bridge.py: Parquet + SQLite manifest
+- process_manager.py: Health monitoring
+
+### v0.1.10 (2026-05-28)
+
+**Event Loop Unblocking:**
+- async_akshare.py: ThreadPoolExecutor wrapper
+- thread_pool.py: Centralized pool management
+- asyncio.to_thread for blocking operations
+- 30s timeout protection
 
 ### v0.1.9 (2026-05-27)
 
