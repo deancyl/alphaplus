@@ -44,6 +44,7 @@ class BacktestResult(Base):
     benchmark_returns: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True)  # [{date, return, nav}, ...]
     statistics: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)  # {"total_return", "annual_return", "max_drawdown", "sharpe", "volatility"}
     brinson_attribution: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)  # {"allocation_effect", "selection_effect", "interaction_effect", "total_effect"}
+    multi_period_brinson_attribution: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)  # Multi-period Brinson with linking
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationship to portfolio

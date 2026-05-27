@@ -26,9 +26,17 @@ from backend.schemas.portfolio import (
     DailyReturn,
     BacktestStatistics,
     BrinsonAttribution,
+    MultiPeriodBrinsonAttribution,
+    PeriodAttribution,
 )
-from backend.services.backtest import run_backtest, BacktestError
-from backend.services.brinson import calculate_brinson_attribution, BrinsonAttributionError
+from backend.services.backtest import run_backtest, BacktestError, decompose_into_periods, calculate_single_period_brinson
+from backend.services.brinson import (
+    calculate_brinson_attribution,
+    calculate_multi_period_brinson,
+    _carino_linking_coefficient,
+    _menchero_coefficient,
+    BrinsonAttributionError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +95,36 @@ def build_backtest_response(bt: BacktestResultModel) -> BacktestResultResponse:
             total_effect=float(brinson_data["total_effect"]) if isinstance(brinson_data.get("total_effect"), str) else brinson_data["total_effect"],
         )
     
+    multi_period_brinson = None
+    multi_period_data = parse_json_dict(bt.multi_period_brinson_attribution)
+    if multi_period_data:
+        periods = []
+        for p in multi_period_data.get("periods", []):
+            periods.append(PeriodAttribution(
+                period_start=p["period_start"] if isinstance(p["period_start"], str) else p["period_start"],
+                period_end=p["period_end"] if isinstance(p["period_end"], str) else p["period_end"],
+                allocation_effect=float(p.get("allocation_effect", 0)),
+                selection_effect=float(p.get("selection_effect", 0)),
+                interaction_effect=float(p.get("interaction_effect", 0)),
+                linking_coefficient=float(p.get("linking_coefficient", 0)),
+                portfolio_return=float(p.get("portfolio_return", 0)),
+                benchmark_return=float(p.get("benchmark_return", 0)),
+                excess_return=float(p.get("excess_return", 0)),
+            ))
+        
+        multi_period_brinson = MultiPeriodBrinsonAttribution(
+            method=multi_period_data.get("method", "auto"),
+            allocation_effect=float(multi_period_data.get("allocation_effect", 0)),
+            selection_effect=float(multi_period_data.get("selection_effect", 0)),
+            interaction_effect=float(multi_period_data.get("interaction_effect", 0)),
+            total_effect=float(multi_period_data.get("total_effect", 0)),
+            residual=float(multi_period_data.get("residual", 0)),
+            portfolio_compound_return=float(multi_period_data.get("portfolio_compound_return", 0)),
+            benchmark_compound_return=float(multi_period_data.get("benchmark_compound_return", 0)),
+            excess_return=float(multi_period_data.get("excess_return", 0)),
+            periods=periods,
+        )
+    
     statistics_data = parse_json_dict(bt.statistics)
     
     return BacktestResultResponse(
@@ -106,6 +144,7 @@ def build_backtest_response(bt: BacktestResultModel) -> BacktestResultResponse:
             calmar_ratio=float(statistics_data["calmar_ratio"]) if statistics_data.get("calmar_ratio") and isinstance(statistics_data.get("calmar_ratio"), str) else statistics_data.get("calmar_ratio"),
         ),
         brinson_attribution=brinson,
+        multi_period_brinson_attribution=multi_period_brinson,
         created_at=bt.created_at
     )
 
@@ -383,9 +422,10 @@ async def run_portfolio_backtest(
     - **start_date**: Start date (YYYY-MM-DD)
     - **end_date**: End date (YYYY-MM-DD)
     - **benchmark**: Benchmark index code (default: "000300" for 沪深300)
+    - **linking_method**: Multi-period Brinson linking method (auto/carino/menchero)
+    - **period_granularity**: Period granularity (daily/weekly/monthly)
     """
     try:
-        # Get portfolio
         result = await db.execute(
             select(UserPortfolio).where(UserPortfolio.id == portfolio_id)
         )
@@ -397,7 +437,6 @@ async def run_portfolio_backtest(
                 detail=f"Portfolio {portfolio_id} not found"
             )
         
-        # Run backtest
         backtest_result = await run_backtest(
             fund_allocations=parse_json_field(portfolio.funds),
             start_date=backtest_request.start_date,
@@ -406,9 +445,10 @@ async def run_portfolio_backtest(
             db=db
         )
         
-        # Calculate Brinson attribution
         brinson_result = None
         brinson_dict = None
+        multi_period_brinson_dict = None
+        
         if backtest_result.benchmark_returns:
             try:
                 portfolio_returns_list = [
@@ -436,7 +476,91 @@ async def run_portfolio_backtest(
             except BrinsonAttributionError as e:
                 logger.warning(f"Brinson attribution failed: {e}")
         
-        # Save backtest result to database
+        if backtest_result.benchmark_returns and len(backtest_result.portfolio_returns) > 1:
+            try:
+                portfolio_periods = decompose_into_periods(
+                    [
+                        {"date": r.date, "return_pct": r.return_pct, "nav": r.nav}
+                        for r in backtest_result.portfolio_returns
+                    ],
+                    granularity=backtest_request.period_granularity
+                )
+                
+                benchmark_periods = decompose_into_periods(
+                    [
+                        {"date": r.date, "return_pct": r.return_pct, "nav": r.nav}
+                        for r in backtest_result.benchmark_returns
+                    ],
+                    granularity=backtest_request.period_granularity
+                )
+                
+                if portfolio_periods and benchmark_periods and len(portfolio_periods) == len(benchmark_periods):
+                    portfolio_period_returns = [p["period_return"] for p in portfolio_periods]
+                    benchmark_period_returns = [p["period_return"] for p in benchmark_periods]
+                    
+                    single_period_results = []
+                    for i, (p_period, b_period) in enumerate(zip(portfolio_periods, benchmark_periods)):
+                        portfolio_weights = {f["fund_code"]: f["weight"] for f in backtest_result.fund_performance}
+                        benchmark_weights = portfolio_weights.copy()
+                        
+                        fund_returns = {
+                            f["fund_code"]: f["total_return"] / 100.0
+                            for f in backtest_result.fund_performance
+                        }
+                        
+                        single_result = calculate_single_period_brinson(
+                            portfolio_period_return=p_period["period_return"],
+                            benchmark_period_return=b_period["period_return"],
+                            portfolio_weights=portfolio_weights,
+                            benchmark_weights=benchmark_weights,
+                            fund_returns=fund_returns,
+                        )
+                        single_period_results.append(single_result)
+                    
+                    multi_period_result = calculate_multi_period_brinson(
+                        single_period_results=single_period_results,
+                        portfolio_returns=portfolio_period_returns,
+                        benchmark_returns=benchmark_period_returns,
+                        method=backtest_request.linking_method,
+                    )
+                    
+                    linking_coeffs = []
+                    if multi_period_result["method"] == "carino":
+                        k = _carino_linking_coefficient(portfolio_period_returns, benchmark_period_returns)
+                        linking_coeffs = [k] * len(portfolio_periods)
+                    elif multi_period_result["method"] == "menchero":
+                        _, k_coeffs = _menchero_coefficient(portfolio_period_returns, benchmark_period_returns)
+                        linking_coeffs = k_coeffs
+                    
+                    multi_period_brinson_dict = {
+                        "method": multi_period_result["method"],
+                        "allocation_effect": multi_period_result["allocation_effect"],
+                        "selection_effect": multi_period_result["selection_effect"],
+                        "interaction_effect": multi_period_result["interaction_effect"],
+                        "total_effect": multi_period_result["total_effect"],
+                        "residual": multi_period_result["residual"],
+                        "portfolio_compound_return": multi_period_result["portfolio_compound_return"],
+                        "benchmark_compound_return": multi_period_result["benchmark_compound_return"],
+                        "excess_return": multi_period_result["excess_return"],
+                        "periods": [
+                            {
+                                "period_start": p["period_start"],
+                                "period_end": p["period_end"],
+                                "allocation_effect": spr["allocation_effect"],
+                                "selection_effect": spr["selection_effect"],
+                                "interaction_effect": spr["interaction_effect"],
+                                "linking_coefficient": linking_coeffs[i] if i < len(linking_coeffs) else 1.0,
+                                "portfolio_return": p["period_return"],
+                                "benchmark_return": b["period_return"],
+                                "excess_return": p["period_return"] - b["period_return"],
+                            }
+                            for i, (p, b, spr) in enumerate(zip(portfolio_periods, benchmark_periods, single_period_results))
+                        ],
+                    }
+                    
+            except Exception as e:
+                logger.warning(f"Multi-period Brinson attribution failed: {e}")
+        
         backtest_record = BacktestResultModel(
             portfolio_id=portfolio_id,
             start_date=backtest_request.start_date,
@@ -459,6 +583,7 @@ async def run_portfolio_backtest(
                 "calmar_ratio": backtest_result.statistics.calmar_ratio,
             },
             brinson_attribution=brinson_dict if brinson_result else None,
+            multi_period_brinson_attribution=multi_period_brinson_dict,
             created_at=datetime.utcnow()
         )
         

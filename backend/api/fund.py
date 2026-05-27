@@ -26,6 +26,8 @@ from backend.schemas.fund import (
     FundHoldingItem,
     IndustryAllocationResponse,
     IndustryAllocationItem,
+    StockReverseHoldingItem,
+    StockReverseHoldingResponse,
 )
 from backend.services.correlation import calculate_pearson_matrix, correlation_matrix_to_list
 from backend.services.factor_exposure import FactorExposureAnalyzer, ALL_FACTORS
@@ -124,6 +126,65 @@ async def filter_funds(
         page=request.page,
         page_size=request.page_size,
         funds=fund_responses,
+    )
+
+
+@router.get("/stock-reverse", response_model=StockReverseHoldingResponse)
+async def get_stock_reverse_holding(
+    stock_code: str = Query(..., description="股票代码，如 600519"),
+    limit: int = Query(50, ge=1, le=200, description="返回基金数量上限"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    反向查询：根据股票代码查询所有持有该股票的基金
+    用于机构抱团拥挤度分析
+    """
+    from sqlalchemy import func
+    
+    result = await db.execute(
+        select(FundPortfolioHoldings)
+        .where(FundPortfolioHoldings.stock_code == stock_code)
+        .order_by(FundPortfolioHoldings.holding_ratio.desc())
+    )
+    holdings = result.scalars().all()
+    
+    if not holdings:
+        return StockReverseHoldingResponse(
+            stock_code=stock_code,
+            stock_name="",
+            total_funds=0,
+            aggregate_exposure=0.0,
+            funds=[],
+        )
+    
+    stock_name = holdings[0].stock_name
+    
+    fund_codes = list(set(h.fund_code for h in holdings))
+    result = await db.execute(
+        select(FundIndicators).where(FundIndicators.fund_code.in_(fund_codes))
+    )
+    funds_info = {f.fund_code: f.fund_name for f in result.scalars().all()}
+    
+    fund_items = []
+    for h in holdings[:limit]:
+        fund_items.append(
+            StockReverseHoldingItem(
+                fund_code=h.fund_code,
+                fund_name=funds_info.get(h.fund_code, ""),
+                holding_ratio=h.holding_ratio,
+                holding_value=h.holding_value,
+                report_date=h.report_date,
+            )
+        )
+    
+    aggregate_exposure = sum(h.holding_ratio for h in holdings)
+    
+    return StockReverseHoldingResponse(
+        stock_code=stock_code,
+        stock_name=stock_name,
+        total_funds=len(holdings),
+        aggregate_exposure=round(aggregate_exposure, 2),
+        funds=fund_items,
     )
 
 

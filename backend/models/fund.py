@@ -295,6 +295,7 @@ class FundPortfolioHoldings(Base):
 
     __table_args__ = (
         Index("idx_fund_holdings", "fund_code", "report_date"),
+        Index("idx_stock_reverse", "stock_code", "report_date"),  # For stock-reverse query
     )
 
 

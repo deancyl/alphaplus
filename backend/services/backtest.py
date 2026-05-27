@@ -5,7 +5,7 @@ Computes statistics: total_return, annual_return, max_drawdown, sharpe_ratio, vo
 """
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Tuple
 
 import numpy as np
@@ -389,3 +389,140 @@ async def run_backtest(
         statistics=portfolio_stats,
         fund_performance=fund_performance
     )
+
+
+def decompose_into_periods(
+    daily_returns: List[Dict],
+    granularity: str = "monthly"
+) -> List[Dict]:
+    """
+    Decompose daily returns into periods (monthly/weekly/daily).
+    
+    Args:
+        daily_returns: List of daily return dicts with keys:
+            - date: str (YYYY-MM-DD)
+            - return_pct: float (daily return percentage)
+            - nav: float (NAV value)
+        granularity: Period granularity - "daily", "weekly", or "monthly"
+    
+    Returns:
+        List of period dicts with keys:
+            - period_start: str (YYYY-MM-DD)
+            - period_end: str (YYYY-MM-DD)
+            - period_return: float (period return as decimal, e.g., 0.05 for 5%)
+            - start_nav: float
+            - end_nav: float
+    
+    Examples:
+        >>> daily = [
+        ...     {"date": "2023-01-01", "return_pct": 1.0, "nav": 1.01},
+        ...     {"date": "2023-01-02", "return_pct": 0.5, "nav": 1.015},
+        ... ]
+        >>> periods = decompose_into_periods(daily, granularity="daily")
+        >>> len(periods)
+        2
+    """
+    if not daily_returns:
+        return []
+    
+    # Convert to DataFrame for easier manipulation
+    df = pd.DataFrame(daily_returns)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+    
+    if granularity == "daily":
+        # Each day is a period
+        periods = []
+        for idx, row in df.iterrows():
+            periods.append({
+                "period_start": str(row["date"].date()),
+                "period_end": str(row["date"].date()),
+                "period_return": row["return_pct"] / 100.0,  # Convert to decimal
+                "start_nav": row["nav"] / (1 + row["return_pct"] / 100.0),
+                "end_nav": row["nav"],
+            })
+        return periods
+    
+    # Group by period
+    if granularity == "weekly":
+        # Use ISO week
+        df["period_key"] = df["date"].dt.strftime("%Y-W%U")
+    elif granularity == "monthly":
+        # Use year-month
+        df["period_key"] = df["date"].dt.strftime("%Y-%m")
+    else:
+        raise ValueError(f"Unknown granularity: {granularity}")
+    
+    periods = []
+    for period_key, group in df.groupby("period_key"):
+        group = group.sort_values("date")
+        
+        start_date = group.iloc[0]["date"]
+        end_date = group.iloc[-1]["date"]
+        start_nav = group.iloc[0]["nav"]
+        end_nav = group.iloc[-1]["nav"]
+        
+        # Calculate period return from NAV
+        # If first row has a return, adjust start_nav
+        if group.iloc[0]["return_pct"] != 0:
+            start_nav = group.iloc[0]["nav"] / (1 + group.iloc[0]["return_pct"] / 100.0)
+        
+        period_return = (end_nav / start_nav) - 1.0
+        
+        periods.append({
+            "period_start": str(start_date.date()),
+            "period_end": str(end_date.date()),
+            "period_return": period_return,
+            "start_nav": start_nav,
+            "end_nav": end_nav,
+        })
+    
+    return periods
+
+
+def calculate_single_period_brinson(
+    portfolio_period_return: float,
+    benchmark_period_return: float,
+    portfolio_weights: Dict[str, float],
+    benchmark_weights: Dict[str, float],
+    fund_returns: Dict[str, float],
+) -> Dict[str, float]:
+    """
+    Calculate single-period Brinson attribution.
+    
+    Args:
+        portfolio_period_return: Portfolio return for this period (decimal)
+        benchmark_period_return: Benchmark return for this period (decimal)
+        portfolio_weights: Portfolio weights per fund {fund_code: weight}
+        benchmark_weights: Benchmark weights per fund {fund_code: weight}
+        fund_returns: Individual fund returns {fund_code: return}
+    
+    Returns:
+        Dict with allocation_effect, selection_effect, interaction_effect
+    """
+    allocation_effect = 0.0
+    selection_effect = 0.0
+    interaction_effect = 0.0
+    
+    all_funds = set(portfolio_weights.keys()) | set(benchmark_weights.keys())
+    
+    for fund_code in all_funds:
+        w_p = portfolio_weights.get(fund_code, 0.0)
+        w_b = benchmark_weights.get(fund_code, 0.0)
+        R_p = fund_returns.get(fund_code, 0.0)
+        R_b = benchmark_period_return  # Use benchmark return as proxy
+        
+        # Allocation effect: weight difference * benchmark return
+        allocation_effect += (w_p - w_b) * R_b
+        
+        # Selection effect: benchmark weight * return difference
+        selection_effect += w_b * (R_p - R_b)
+        
+        # Interaction effect: weight difference * return difference
+        interaction_effect += (w_p - w_b) * (R_p - R_b)
+    
+    return {
+        "allocation_effect": allocation_effect,
+        "selection_effect": selection_effect,
+        "interaction_effect": interaction_effect,
+    }

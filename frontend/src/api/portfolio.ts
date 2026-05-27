@@ -51,6 +51,8 @@ export interface BacktestConfig {
   start_date: string    // YYYY-MM-DD
   end_date: string      // YYYY-MM-DD
   benchmark: string     // Benchmark index code (e.g., '000300', '000905', '399006')
+  linking_method?: 'auto' | 'carino' | 'menchero'  // Multi-period Brinson linking method
+  period_granularity?: 'daily' | 'weekly' | 'monthly'  // Period granularity for multi-period attribution
 }
 
 /**
@@ -76,6 +78,31 @@ export interface BrinsonAttribution {
   interaction_effect: number     // 交互效应 (%)
   total_excess_return: number    // 总超额收益 (%)
   details: BrinsonDetailItem[]   // Detailed breakdown by asset class
+}
+
+/**
+ * Multi-period Brinson attribution result
+ */
+export interface MultiPeriodBrinsonAttribution {
+  allocation_effect: number      // 累计配置效应 (%)
+  selection_effect: number       // 累计选择效应 (%)
+  interaction_effect: number     // 累计交互效应 (%)
+  total_excess_return: number    // 总超额收益 (%)
+  residual: number               // 残差 (should be < 1e-12)
+  linking_method: 'carino' | 'menchero'  // Method used
+  periods: PeriodAttribution[]   // Per-period breakdown
+}
+
+/**
+ * Single period attribution breakdown
+ */
+export interface PeriodAttribution {
+  period_start: string     // Period start date
+  period_end: string       // Period end date
+  allocation_effect: number  // Period allocation effect (%)
+  selection_effect: number   // Period selection effect (%)
+  interaction_effect: number // Period interaction effect (%)
+  excess_return: number      // Period excess return (%)
 }
 
 /**
@@ -115,6 +142,7 @@ export interface BacktestResult {
   portfolio_nav_series: NAVPoint[]
   benchmark_nav_series: NAVPoint[]
   brinson_attribution: BrinsonAttribution
+  multi_period_brinson_attribution?: MultiPeriodBrinsonAttribution  // Multi-period attribution (optional)
   is_simulated: boolean   // Whether data is simulated (fallback)
 }
 

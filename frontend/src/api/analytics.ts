@@ -20,7 +20,8 @@ export const getFearGreedIndex = async (): Promise<Array<{
 
 // Get ERP spread
 export const getERPSpread = async (
-  indexCode = '000300'
+  indexCode = '000300',
+  riskFreeType = 'treasury_10y'
 ): Promise<Array<{
   index_code: string
   index_name: string
@@ -30,8 +31,15 @@ export const getERPSpread = async (
   erp_spread: number
   percentile_rank_10y: number | null
   index_close_price: number | null
+  risk_free_rate?: number
+  risk_free_type?: string
 }>> => {
-  return api.get('/analytics/erp', { params: { index_code: indexCode } })
+  return api.get('/analytics/erp', { 
+    params: { 
+      index_code: indexCode,
+      risk_free_type: riskFreeType
+    } 
+  })
 }
 
 // Get style strength

@@ -233,3 +233,33 @@ export const getFundIndustry = async (
   if (reportDate) params.report_date = reportDate
   return api.get(`/fund/${fundCode}/industry`, { params })
 }
+
+// ==================== Stock Reverse Holding Types ====================
+
+/**
+ * Fund holding a specific stock
+ */
+export interface StockReverseHoldingItem {
+  fund_code: string         // 基金代码
+  fund_name: string         // 基金名称
+  holding_ratio: number     // 持仓占净值比例
+  holding_value?: number    // 持股市值 (万元)
+  report_date: string       // 报告期
+}
+
+export interface StockReverseHoldingResponse {
+  stock_code: string            // 股票代码
+  stock_name: string            // 股票名称
+  total_funds: number           // 持有该股票的基金总数
+  aggregate_exposure: number    // 加总暴露度 (%)
+  funds: StockReverseHoldingItem[]  // 持仓基金列表
+}
+
+export const getStockReverseHolding = async (
+  stockCode: string,
+  limit: number = 50
+): Promise<StockReverseHoldingResponse> => {
+  return api.get('/fund/stock-reverse', {
+    params: { stock_code: stockCode, limit }
+  })
+}

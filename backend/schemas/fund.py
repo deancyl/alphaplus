@@ -153,6 +153,8 @@ class ERPSpreadResponse(BaseModel):
     erp_spread: float
     percentile_rank_10y: Optional[float]
     index_close_price: Optional[float]
+    risk_free_type: Optional[str] = Field(None, description="无风险利率类型: treasury_10y/cdb_10y/dr007")
+    risk_free_rate: Optional[float] = Field(None, description="实际使用的无风险利率(%)")
 
 
 class TrajectoryPoint(BaseModel):
@@ -332,3 +334,23 @@ class FundHoldingsResponse(BaseModel):
     holdings: List[FundHoldingItem] = Field(..., description="持仓明细列表")
     total_count: int = Field(..., description="持仓股票数量")
     data_source: str = Field(default="akshare", description="数据来源")
+
+
+# ==================== Stock Reverse Holding Schemas ====================
+
+class StockReverseHoldingItem(BaseModel):
+    """反向持仓基金项 - Single fund holding the queried stock."""
+    fund_code: str = Field(..., description="基金代码")
+    fund_name: str = Field(..., description="基金名称")
+    holding_ratio: float = Field(..., description="占基金净值比 (%)")
+    holding_value: Optional[float] = Field(None, description="持股市值 (万元)")
+    report_date: str = Field(..., description="报告期 YYYY-MM-DD")
+
+
+class StockReverseHoldingResponse(BaseModel):
+    """股票反向持仓响应 - All funds holding a specific stock."""
+    stock_code: str = Field(..., description="股票代码")
+    stock_name: str = Field(..., description="股票名称")
+    total_funds: int = Field(..., description="持有该股票的基金总数")
+    aggregate_exposure: float = Field(..., description="加总占净值比 (%)")
+    funds: List[StockReverseHoldingItem] = Field(..., description="基金列表")

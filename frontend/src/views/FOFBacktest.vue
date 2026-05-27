@@ -34,6 +34,8 @@ const loadingPortfolios = ref(false)
 const startDate = ref('')
 const endDate = ref('')
 const selectedBenchmark = ref('000300')
+const linkingMethod = ref<'auto' | 'carino' | 'menchero'>('auto')
+const periodGranularity = ref<'daily' | 'weekly' | 'monthly'>('monthly')
 const runningBacktest = ref(false)
 
 // Results
@@ -238,6 +240,83 @@ const brinsonChartOption = computed<EChartsOption | null>(() => {
   }
 })
 
+/**
+ * Period breakdown chart option for multi-period attribution
+ */
+const periodChartOption = computed<EChartsOption | null>(() => {
+  if (!backtestResult.value?.multi_period_brinson_attribution?.periods) return null
+  
+  const periods = backtestResult.value.multi_period_brinson_attribution.periods
+  
+  return {
+    title: { 
+      text: '期间归因分解', 
+      left: 'center',
+      textStyle: { color: 'var(--text-primary)', fontSize: 14 }
+    },
+    tooltip: { 
+      trigger: 'axis',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: 'var(--border-line)',
+      borderWidth: 1,
+      textStyle: { color: 'var(--text-primary)', fontSize: 12 }
+    },
+    legend: { 
+      data: ['配置效应', '选择效应', '交互效应'],
+      bottom: 0,
+      textStyle: { color: 'var(--text-regular)', fontSize: 12 }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      top: '15%',
+      containLabel: true
+    },
+    xAxis: { 
+      type: 'category', 
+      data: periods.map(p => p.period_start),
+      axisLine: { lineStyle: { color: 'var(--border-line)' } },
+      axisLabel: { 
+        color: 'var(--text-muted)', 
+        fontSize: 10,
+        rotate: 45
+      }
+    },
+    yAxis: { 
+      type: 'value',
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { 
+        color: 'var(--text-muted)', 
+        fontSize: 11,
+        formatter: '{value}%'
+      },
+      splitLine: { lineStyle: { color: 'var(--border-line)', type: 'dashed' } }
+    },
+    series: [
+      { 
+        name: '配置效应', 
+        type: 'bar', 
+        data: periods.map(p => p.allocation_effect),
+        itemStyle: { color: 'var(--brand-navy-dark)' }
+      },
+      { 
+        name: '选择效应', 
+        type: 'bar', 
+        data: periods.map(p => p.selection_effect),
+        itemStyle: { color: 'var(--market-up)' }
+      },
+      { 
+        name: '交互效应', 
+        type: 'bar', 
+        data: periods.map(p => p.interaction_effect),
+        itemStyle: { color: 'var(--market-flat)' }
+      }
+    ]
+  }
+})
+
 // ==================== Methods ====================
 
 /**
@@ -419,7 +498,9 @@ const runBacktestHandler = async () => {
     const config: BacktestConfig = {
       start_date: startDate.value,
       end_date: endDate.value,
-      benchmark: selectedBenchmark.value
+      benchmark: selectedBenchmark.value,
+      linking_method: linkingMethod.value,
+      period_granularity: periodGranularity.value
     }
     
     backtestResult.value = await runBacktest(activePortfolioId.value, config)
@@ -476,7 +557,7 @@ onMounted(() => {
 })
 
 // Clear results when config changes
-watch([startDate, endDate, selectedBenchmark], () => {
+watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity], () => {
   backtestResult.value = null
 })
 </script>
@@ -666,6 +747,25 @@ watch([startDate, endDate, selectedBenchmark], () => {
               </el-select>
             </div>
             
+            <div class="form-item">
+              <label>多期链接方法</label>
+              <el-radio-group v-model="linkingMethod" class="linking-method-group">
+                <el-radio-button value="auto">自动</el-radio-button>
+                <el-radio-button value="carino">Carino</el-radio-button>
+                <el-radio-button value="menchero">Menchero</el-radio-button>
+              </el-radio-group>
+              <div class="hint-text">当超额收益接近零时自动切换Menchero</div>
+            </div>
+            
+            <div class="form-item">
+              <label>期间粒度</label>
+              <el-select v-model="periodGranularity" style="width: 100%">
+                <el-option value="daily" label="日度" />
+                <el-option value="weekly" label="周度" />
+                <el-option value="monthly" label="月度" />
+              </el-select>
+            </div>
+            
             <el-button
               type="primary"
               size="large"
@@ -815,6 +915,56 @@ watch([startDate, endDate, selectedBenchmark], () => {
                   </el-table-column>
                 </el-table>
               </div>
+            </div>
+            
+            <!-- Multi-Period Brinson Attribution -->
+            <div v-if="backtestResult?.multi_period_brinson_attribution" class="chart-section">
+              <h3 class="chart-title">
+                多期归因分析
+                <el-tag size="small" type="info" style="margin-left: 8px">
+                  {{ backtestResult.multi_period_brinson_attribution.linking_method }}
+                </el-tag>
+              </h3>
+              
+              <!-- Attribution Summary -->
+              <div class="attribution-summary">
+                <div class="attribution-item">
+                  <span class="label">配置效应:</span>
+                  <span class="value" :class="getValueClass(backtestResult.multi_period_brinson_attribution.allocation_effect)">
+                    {{ formatPercent(backtestResult.multi_period_brinson_attribution.allocation_effect) }}
+                  </span>
+                </div>
+                <div class="attribution-item">
+                  <span class="label">选择效应:</span>
+                  <span class="value" :class="getValueClass(backtestResult.multi_period_brinson_attribution.selection_effect)">
+                    {{ formatPercent(backtestResult.multi_period_brinson_attribution.selection_effect) }}
+                  </span>
+                </div>
+                <div class="attribution-item">
+                  <span class="label">交互效应:</span>
+                  <span class="value" :class="getValueClass(backtestResult.multi_period_brinson_attribution.interaction_effect)">
+                    {{ formatPercent(backtestResult.multi_period_brinson_attribution.interaction_effect) }}
+                  </span>
+                </div>
+                <div class="attribution-item residual">
+                  <span class="label">残差:</span>
+                  <span class="value">{{ backtestResult.multi_period_brinson_attribution.residual.toExponential(2) }}</span>
+                  <el-tag 
+                    v-if="Math.abs(backtestResult.multi_period_brinson_attribution.residual) < 1e-12" 
+                    type="success" 
+                    size="small"
+                  >
+                    ✓ 精度达标
+                  </el-tag>
+                </div>
+              </div>
+              
+              <!-- Period Breakdown Chart -->
+              <EChartsWrapper 
+                v-if="periodChartOption" 
+                :option="periodChartOption" 
+                height="300px" 
+              />
             </div>
           </template>
         </div>
@@ -1158,6 +1308,58 @@ watch([startDate, endDate, selectedBenchmark], () => {
 .brinson-details {
   margin-top: 16px;
   overflow-x: auto;
+}
+
+/* Linking Method Controls */
+.linking-method-group {
+  width: 100%;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Multi-Period Attribution Summary */
+.attribution-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--bg-system);
+  border-radius: 4px;
+}
+
+.attribution-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attribution-item .label {
+  font-size: 13px;
+  color: var(--text-regular);
+}
+
+.attribution-item .value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.attribution-item.residual {
+  grid-column: 1 / -1;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-line);
+  margin-top: 8px;
+}
+
+.attribution-item.residual .value {
+  font-size: 13px;
+  font-family: 'Courier New', monospace;
+  color: var(--text-muted);
 }
 
 /* Responsive */

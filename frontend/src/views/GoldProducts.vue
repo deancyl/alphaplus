@@ -3,6 +3,8 @@ import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import { useBreakpoint } from '@/composables/useBreakpoint'
+import type { EChartsOption } from 'echarts'
 
 interface GoldSpotData {
   shanghai_gold: {
@@ -28,6 +30,7 @@ interface GoldHistoryItem {
   date: string
   shanghai_price: number
   london_price: number
+  spread_pct: number
 }
 
 interface GoldHistoryData {
@@ -36,28 +39,39 @@ interface GoldHistoryData {
   is_simulated: boolean
 }
 
+// Responsive breakpoint
+const { isMobile } = useBreakpoint()
+
 // Reactive state
 const loading = ref(false)
 const goldData = ref<GoldSpotData | null>(null)
 const historyData = ref<GoldHistoryItem[]>([])
 
-// Computed chart options
+// Computed chart options - Dual Y-axis configuration
 const chartOptions = computed(() => {
   if (historyData.value.length === 0) {
     return {
       title: { text: '黄金价格走势', left: 'center' },
-      xAxis: { type: 'category', data: [] },
-      yAxis: { type: 'value', name: '价格 (元/克)' },
+      xAxis: { type: 'category' as const, data: [] },
+      yAxis: [
+        { type: 'value' as const, name: '上海金 (CNY/g)' },
+        { type: 'value' as const, name: '伦敦金 (USD/oz)' }
+      ],
       series: []
     }
   }
+
+  const dates = historyData.value.map(h => h.date)
+  const shanghaiPrices = historyData.value.map(h => h.shanghai_price)
+  const londonPrices = historyData.value.map(h => h.london_price)
+  const spreadPcts = historyData.value.map(h => h.spread_pct)
 
   return {
     title: {
       text: '黄金价格走势',
       left: 'center',
       textStyle: {
-        fontSize: 16,
+        fontSize: isMobile.value ? 14 : 16,
         fontWeight: 600,
         color: '#1A1A1A'
       }
@@ -70,53 +84,81 @@ const chartOptions = computed(() => {
       textStyle: { color: '#1A1A1A' },
       formatter: (params: any) => {
         if (!params || params.length === 0) return ''
-        const date = params[0].axisValue
-        let html = `<div style="font-weight: 600; margin-bottom: 6px;">${date}</div>`
-        params.forEach((item: any) => {
-          html += `<div>${item.marker} ${item.seriesName}: <strong>${item.value.toFixed(2)}</strong> 元/克</div>`
-        })
-        return html
+        const idx = params[0].dataIndex
+        const date = dates[idx]
+        const shanghai = shanghaiPrices[idx]
+        const london = londonPrices[idx]
+        const spread = spreadPcts[idx]
+        
+        return `
+          <div style="font-weight: 600; margin-bottom: 8px;">${date}</div>
+          <div style="margin-bottom: 4px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#1565C0;margin-right:6px;"></span>
+            上海金: <strong>${shanghai.toFixed(2)}</strong> CNY/g
+          </div>
+          <div style="margin-bottom: 4px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FF9800;margin-right:6px;"></span>
+            伦敦金: <strong>${london.toFixed(2)}</strong> USD/oz
+          </div>
+          <div>
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#E63935;margin-right:6px;"></span>
+            溢价率: <strong>${spread?.toFixed(2) ?? '0.00'}%</strong>
+          </div>
+        `
       }
     },
     legend: {
-      data: ['上海金', '伦敦金'],
-      bottom: 10,
-      textStyle: { fontSize: 12 }
+      data: ['上海金', '伦敦金', '溢价率'],
+      top: 30,
+      textStyle: { fontSize: isMobile.value ? 11 : 12 }
     },
     grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '15%',
-      top: '15%',
+      left: isMobile.value ? '8%' : '3%',
+      right: isMobile.value ? '8%' : '4%',
+      bottom: isMobile.value ? '18%' : '12%',
+      top: '18%',
       containLabel: true
     },
     xAxis: {
-      type: 'category',
-      data: historyData.value.map(h => h.date),
+      type: 'category' as const,
+      data: dates,
       boundaryGap: false,
       axisLine: { lineStyle: { color: '#E5E8ED' } },
       axisLabel: { 
         color: '#4A4A4A', 
-        fontSize: 11,
-        rotate: 45
+        fontSize: isMobile.value ? 10 : 11,
+        rotate: isMobile.value ? 45 : 0
       }
     },
-    yAxis: {
-      type: 'value',
-      name: '价格 (元/克)',
-      nameTextStyle: { color: '#666', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#E5E8ED', type: 'dashed' } },
-      axisLine: { show: false },
-      axisLabel: { color: '#4A4A4A', fontSize: 11 }
-    },
+    yAxis: [
+      {
+        type: 'value' as const,
+        name: isMobile.value ? '' : '上海金 (CNY/g)',
+        position: 'left',
+        nameTextStyle: { color: '#1565C0', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#E5E8ED', type: 'dashed' } },
+        axisLine: { show: true, lineStyle: { color: '#1565C0' } },
+        axisLabel: { color: '#1565C0', fontSize: isMobile.value ? 10 : 11 }
+      },
+      {
+        type: 'value' as const,
+        name: isMobile.value ? '' : '伦敦金 (USD/oz)',
+        position: 'right',
+        nameTextStyle: { color: '#FF9800', fontSize: 11 },
+        splitLine: { show: false },
+        axisLine: { show: true, lineStyle: { color: '#FF9800' } },
+        axisLabel: { color: '#FF9800', fontSize: isMobile.value ? 10 : 11 }
+      }
+    ],
     series: [
       {
         name: '上海金',
-        type: 'line',
-        data: historyData.value.map(h => h.shanghai_price),
+        type: 'line' as const,
+        yAxisIndex: 0,
+        data: shanghaiPrices,
         smooth: true,
         symbol: 'circle',
-        symbolSize: 6,
+        symbolSize: isMobile.value ? 4 : 6,
         lineStyle: { width: 2.5, color: '#1565C0' },
         itemStyle: { color: '#1565C0' },
         areaStyle: {
@@ -132,26 +174,93 @@ const chartOptions = computed(() => {
       },
       {
         name: '伦敦金',
-        type: 'line',
-        data: historyData.value.map(h => h.london_price),
+        type: 'line' as const,
+        yAxisIndex: 1,
+        data: londonPrices,
         smooth: true,
         symbol: 'circle',
-        symbolSize: 6,
+        symbolSize: isMobile.value ? 4 : 6,
         lineStyle: { width: 2.5, color: '#FF9800' },
-        itemStyle: { color: '#FF9800' },
-        areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(255, 152, 0, 0.25)' },
-              { offset: 1, color: 'rgba(255, 152, 0, 0.02)' }
+        itemStyle: { color: '#FF9800' }
+      },
+      {
+        name: '溢价率',
+        type: 'line' as const,
+        yAxisIndex: 0,
+        data: spreadPcts,
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: isMobile.value ? 3 : 4,
+        lineStyle: { width: 1.5, color: '#E63935', type: 'dashed' },
+        itemStyle: { color: '#E63935' },
+        markLine: {
+          silent: true,
+          data: [
+            { 
+              yAxis: 0, 
+              label: { 
+                formatter: '平价线',
+                position: 'insideEndTop',
+                fontSize: isMobile.value ? 10 : 11
+              },
+              lineStyle: { color: '#999', type: 'solid', width: 1 }
+            }
+          ]
+        },
+        markArea: {
+          silent: true,
+          data: [
+            [
+              { 
+                yAxis: 0.5, 
+                name: '低溢价区',
+                itemStyle: { color: 'rgba(46, 125, 50, 0.15)' }
+              },
+              { yAxis: 1.0 }
+            ],
+            [
+              { 
+                yAxis: 1.5, 
+                name: '高溢价区',
+                itemStyle: { color: 'rgba(230, 57, 53, 0.15)' }
+              },
+              { yAxis: 2.0 }
             ]
-          }
+          ]
+        }
+      }
+    ],
+    dataZoom: [
+      {
+        type: 'inside',
+        xAxisIndex: [0],
+        filterMode: 'none',
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: true,
+        preventDefaultMouseMove: false
+      },
+      {
+        type: 'slider',
+        xAxisIndex: [0],
+        show: !isMobile.value,
+        bottom: 10,
+        height: 20,
+        start: 70,
+        end: 100,
+        borderColor: 'transparent',
+        backgroundColor: 'rgba(0, 0, 0, 0.05)',
+        fillerColor: 'rgba(0, 0, 0, 0.1)',
+        handleStyle: {
+          color: '#1565C0',
+          borderColor: '#1565C0'
+        },
+        textStyle: {
+          color: '#4A4A4A'
         }
       }
     ]
-  }
+  } as EChartsOption
 })
 
 // Fetch gold spot price
@@ -448,6 +557,7 @@ onMounted(() => {
   padding: var(--spacing-md);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   margin-bottom: var(--spacing-lg);
+  touch-action: pan-y pinch-zoom;
 }
 
 .card-title {

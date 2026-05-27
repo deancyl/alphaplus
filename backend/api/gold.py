@@ -223,10 +223,29 @@ async def get_gold_price_history(days: int = 30):
         all_dates = sorted(set(shanghai_prices.keys()) | set(london_prices.keys()))
         
         for date in all_dates:
+            shanghai_price = shanghai_prices.get(date, 0.0)
+            london_price = london_prices.get(date, 0.0)
+            
+            # Calculate spread_pct (premium percentage)
+            spread_pct = 0.0
+            if shanghai_price > 0 and london_price > 0:
+                # Convert London to theoretical Shanghai price
+                theoretical_conversion = convert_london_to_shanghai(
+                    london_price,
+                    usdcny_rate,
+                    include_vat=True
+                )
+                theoretical_shanghai = theoretical_conversion["shanghai_with_vat"]
+                
+                # Calculate premium
+                premium_result = calculate_premium(shanghai_price, theoretical_shanghai)
+                spread_pct = premium_result["percent_premium"]
+            
             history.append({
                 "date": date,
-                "shanghai_price": round(shanghai_prices.get(date, 0.0), 2),
-                "london_price": round(london_prices.get(date, 0.0), 2)
+                "shanghai_price": round(shanghai_price, 2),
+                "london_price": round(london_price, 2),
+                "spread_pct": round(spread_pct, 2)
             })
         
         return {
@@ -255,10 +274,21 @@ async def get_gold_price_history(days: int = 30):
             )
             london_price = conversion["london_usd_per_oz"]
             
+            # Calculate spread_pct (premium percentage)
+            theoretical_conversion = convert_london_to_shanghai(
+                london_price,
+                usdcny_rate,
+                include_vat=True
+            )
+            theoretical_shanghai = theoretical_conversion["shanghai_with_vat"]
+            premium_result = calculate_premium(shanghai_price, theoretical_shanghai)
+            spread_pct = premium_result["percent_premium"]
+            
             history.append({
                 "date": date,
                 "shanghai_price": round(shanghai_price, 2),
-                "london_price": round(london_price, 2)
+                "london_price": round(london_price, 2),
+                "spread_pct": round(spread_pct, 2)
             })
         
         return {

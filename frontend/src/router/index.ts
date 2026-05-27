@@ -161,6 +161,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/FundPoolManagement.vue'),
     meta: { title: '基金池管理' },
   },
+  {
+    path: '/fof/stockReverse',
+    name: 'StockReverse',
+    component: () => import('@/views/StockReverseHolding.vue'),
+    meta: { title: '机构抱团分析' },
+  },
 ]
 
 const router = createRouter({

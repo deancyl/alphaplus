@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.7-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.7)
+[![Version](https://img.shields.io/badge/version-0.1.8-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.8)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -248,6 +248,58 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.8 (2026-05-27)
+
+**M1-M4 里程碑实现 - 四大核心功能增强:**
+
+**M1: 穿透持仓因子数据库表与自动加载管道**
+- 新增 `GET /api/v1/fund/stock-reverse` 反向持仓查询端点
+- 添加 `idx_stock_reverse` 索引优化查询性能
+- 创建 `StockReverseHolding.vue` 机构抱团分析视图
+- 支持按股票代码查询所有持有该股票的基金
+- 计算加总暴露用于拥挤度分析
+
+**M2: FOF组合归因多期Carino/Menchero几何连结**
+- 新增 `linking_method` 参数 (auto/carino/menchero)
+- 新增 `period_granularity` 参数 (daily/weekly/monthly)
+- 返回多期归因结果含残差验证 (< 1e-12)
+- FOFBacktest.vue 添加链接方法选择器
+- 期间分解瀑布图可视化
+
+**M3: 存款配置研究看板与大类资产配置面板**
+- ERP计算支持可切换无风险利率
+- 三种利率类型: 国债10年 / 国开债10年 / DR007
+- 创建 `risk_free_rates.py` 利率查询服务
+- ERPSpread.vue 添加利率类型选择器
+- 利率对比表展示不同基准下的ERP
+
+**M4: 贵金属黄金跨境实时套利溢价曲线前端绑定**
+- 金价历史API增加 `spread_pct` 溢价百分比字段
+- 双轴图表: 上海金(CNY/g)左轴 + 伦敦金(USD/oz)右轴
+- 溢价率虚线 + 平价线标记
+- 触控友好 dataZoom (双指缩放 + 单指滑动)
+- 响应式设计支持 320px-3840px
+
+**新增文件:**
+- `frontend/src/views/StockReverseHolding.vue` - 机构抱团分析 (282行)
+- `backend/services/risk_free_rates.py` - 无风险利率服务 (142行)
+
+**修改文件:**
+- `backend/api/fund.py` - 反向持仓查询端点
+- `backend/api/analytics.py` - ERP risk_free_type参数
+- `backend/api/gold.py` - spread_pct字段
+- `backend/api/portfolio.py` - 多期Brinson集成
+- `backend/models/fund.py` - idx_stock_reverse索引
+- `backend/schemas/portfolio.py` - 多期归因schema
+- `frontend/src/views/FOFBacktest.vue` - 链接方法选择器
+- `frontend/src/views/ERPSpread.vue` - 利率类型选择器
+- `frontend/src/views/GoldProducts.vue` - 双轴图表+dataZoom
+
+**测试覆盖:**
+- 182 tests passed (10 pre-existing failures unrelated to changes)
+- Brinson: 50+ tests all passed
+- 残差验证: < 1e-12
 
 ### v0.1.7 (2026-05-27)
 

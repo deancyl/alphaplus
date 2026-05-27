@@ -1,8 +1,8 @@
 """
 Pydantic schemas for portfolio API request/response validation.
 """
-from datetime import datetime
-from typing import Optional, List, Dict
+from datetime import datetime, date
+from typing import Optional, List, Dict, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -81,6 +81,14 @@ class BacktestRequest(BaseModel):
     start_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="开始日期 YYYY-MM-DD")
     end_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="结束日期 YYYY-MM-DD")
     benchmark: str = Field(default="000300", description="基准指数代码 (默认沪深300)")
+    linking_method: Literal["auto", "carino", "menchero"] = Field(
+        default="auto",
+        description="多期Brinson归因链接方法: auto(自动选择), carino, menchero"
+    )
+    period_granularity: Literal["daily", "weekly", "monthly"] = Field(
+        default="monthly",
+        description="期间粒度: daily(日度), weekly(周度), monthly(月度)"
+    )
 
 
 class DailyReturn(BaseModel):
@@ -102,11 +110,38 @@ class BacktestStatistics(BaseModel):
 
 
 class BrinsonAttribution(BaseModel):
-    """Brinson归因结果."""
+    """Brinson归因结果 (单期)."""
     allocation_effect: float = Field(..., description="配置效应 (%)")
     selection_effect: float = Field(..., description="选择效应 (%)")
     interaction_effect: float = Field(..., description="交互效应 (%)")
     total_effect: float = Field(..., description="总效应 (%)")
+
+
+class PeriodAttribution(BaseModel):
+    """单期归因明细."""
+    period_start: date = Field(..., description="期间开始日期")
+    period_end: date = Field(..., description="期间结束日期")
+    allocation_effect: float = Field(..., description="配置效应 (%)")
+    selection_effect: float = Field(..., description="选择效应 (%)")
+    interaction_effect: float = Field(..., description="交互效应 (%)")
+    linking_coefficient: float = Field(..., description="链接系数 k_t")
+    portfolio_return: float = Field(..., description="组合收益率 (%)")
+    benchmark_return: float = Field(..., description="基准收益率 (%)")
+    excess_return: float = Field(..., description="超额收益率 (%)")
+
+
+class MultiPeriodBrinsonAttribution(BaseModel):
+    """多期Brinson归因结果."""
+    method: str = Field(..., description="链接方法: carino 或 menchero")
+    allocation_effect: float = Field(..., description="累计配置效应 (%)")
+    selection_effect: float = Field(..., description="累计选择效应 (%)")
+    interaction_effect: float = Field(..., description="累计交互效应 (%)")
+    total_effect: float = Field(..., description="累计总效应 (%)")
+    residual: float = Field(..., description="残差 (应 < 1e-12)")
+    portfolio_compound_return: float = Field(..., description="组合复合收益率 (%)")
+    benchmark_compound_return: float = Field(..., description="基准复合收益率 (%)")
+    excess_return: float = Field(..., description="复合超额收益率 (%)")
+    periods: List[PeriodAttribution] = Field(..., description="各期归因明细")
 
 
 class BacktestResultResponse(BaseModel):
@@ -119,6 +154,7 @@ class BacktestResultResponse(BaseModel):
     benchmark_returns: Optional[List[DailyReturn]] = None
     statistics: BacktestStatistics
     brinson_attribution: Optional[BrinsonAttribution] = None
+    multi_period_brinson_attribution: Optional[MultiPeriodBrinsonAttribution] = None
     created_at: datetime
 
 

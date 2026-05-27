@@ -20,10 +20,28 @@ interface ERPDataItem {
 // 分析模式类型
 type AnalysisMode = 'sd' | 'percentile'
 
+// 无风险利率类型
+type RiskFreeType = 'treasury_10y' | 'cdb_10y' | 'dr007'
+
 // 响应式数据
 const erpData = ref<ERPDataItem[]>([])
 const loading = ref(false)
 const selectedIndex = ref('000300')
+
+// 无风险利率选择 - 从 localStorage 恢复
+const riskFreeType = ref<RiskFreeType>(
+  (localStorage.getItem('erp-risk-free-type') as RiskFreeType) || 'treasury_10y'
+)
+
+// 当前无风险利率值
+const currentRiskFreeRate = ref<number | null>(null)
+
+// 对比数据
+const comparisonData = ref<Array<{
+  type: string
+  rate: number | null
+  erp: number | null
+}>>([])
 
 // 分析模式 - 从 localStorage 恢复
 const analysisMode = ref<AnalysisMode>(
@@ -33,6 +51,11 @@ const analysisMode = ref<AnalysisMode>(
 // 监听模式变化，保存到 localStorage
 watch(analysisMode, (newMode) => {
   localStorage.setItem('erp-analysis-mode', newMode)
+})
+
+// 监听无风险利率类型变化，保存到 localStorage
+watch(riskFreeType, (newType) => {
+  localStorage.setItem('erp-risk-free-type', newType)
 })
 
 // 指数选项
@@ -382,18 +405,56 @@ const scatterChartOption = computed<EChartsOption>(() => {
   }
 })
 
+// 无风险利率类型标签映射
+const riskFreeTypeLabels: Record<RiskFreeType, string> = {
+  treasury_10y: '国债10年',
+  cdb_10y: '国开债10年',
+  dr007: 'DR007',
+}
+
 // 获取数据
 const fetchData = async () => {
   loading.value = true
   try {
-    const response = await getERPSpread(selectedIndex.value)
+    const response = await getERPSpread(selectedIndex.value, riskFreeType.value)
     erpData.value = response.sort((a, b) => a.trade_date.localeCompare(b.trade_date))
+    // 从最新数据中获取当前无风险利率
+    if (response.length > 0) {
+      const latest = response[response.length - 1]
+      currentRiskFreeRate.value = latest.risk_free_rate ?? latest.treasury_yield_10y
+    }
   } catch (error) {
     ElMessage.error('获取ERP数据失败')
     console.error(error)
   } finally {
     loading.value = false
   }
+}
+
+// 获取对比数据
+const fetchComparison = async () => {
+  const types: RiskFreeType[] = ['treasury_10y', 'cdb_10y', 'dr007']
+  const results = await Promise.all(
+    types.map(async (type) => {
+      try {
+        const response = await getERPSpread(selectedIndex.value, type)
+        const sorted = response.sort((a, b) => a.trade_date.localeCompare(b.trade_date))
+        const latest = sorted[sorted.length - 1]
+        return {
+          type: riskFreeTypeLabels[type],
+          rate: latest?.risk_free_rate ?? latest?.treasury_yield_10y ?? null,
+          erp: latest?.erp_spread ?? null,
+        }
+      } catch {
+        return {
+          type: riskFreeTypeLabels[type],
+          rate: null,
+          erp: null,
+        }
+      }
+    })
+  )
+  comparisonData.value = results
 }
 
 // 格式化数字
@@ -405,10 +466,17 @@ const formatNumber = (val: number | null | undefined, suffix = ''): string => {
 // 监听指数切换
 watch(selectedIndex, () => {
   fetchData()
+  fetchComparison()
+})
+
+// 监听无风险利率切换
+watch(riskFreeType, () => {
+  fetchData()
 })
 
 onMounted(() => {
   fetchData()
+  fetchComparison()
 })
 </script>
 
@@ -437,6 +505,15 @@ onMounted(() => {
         <el-radio-group v-model="analysisMode" size="small">
           <el-radio-button value="sd">标准差视角</el-radio-button>
           <el-radio-button value="percentile">百分位视角</el-radio-button>
+        </el-radio-group>
+      </div>
+      
+      <div class="rf-toggle">
+        <span class="label">无风险利率：</span>
+        <el-radio-group v-model="riskFreeType" size="small">
+          <el-radio-button value="treasury_10y">国债10年</el-radio-button>
+          <el-radio-button value="cdb_10y">国开债10年</el-radio-button>
+          <el-radio-button value="dr007">DR007</el-radio-button>
         </el-radio-group>
       </div>
     </div>
@@ -487,8 +564,8 @@ onMounted(() => {
       </div>
 
       <div class="metric-card">
-        <div class="metric-label">10年期国债收益率</div>
-        <div class="metric-value">{{ formatNumber(currentERP?.treasury_yield_10y, '%') }}</div>
+        <div class="metric-label">{{ riskFreeTypeLabels[riskFreeType] }}</div>
+        <div class="metric-value">{{ currentRiskFreeRate?.toFixed(2) ?? formatNumber(currentERP?.treasury_yield_10y) }}%</div>
         <div class="metric-desc">无风险利率</div>
       </div>
 
@@ -604,6 +681,41 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 不同无风险利率下的ERP对比 -->
+    <div class="comparison-section">
+      <h3>不同无风险利率下的ERP对比</h3>
+      <el-table 
+        :data="comparisonData" 
+        size="small"
+        :border="true"
+        style="width: 100%"
+      >
+        <el-table-column prop="type" label="利率类型" width="120" align="center" />
+        <el-table-column prop="rate" label="当前利率 (%)" width="120" align="center">
+          <template #default="{ row }">
+            <span class="rate-value">{{ row.rate?.toFixed(2) ?? '-' }}%</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="erp" label="ERP (%)" align="center">
+          <template #default="{ row }">
+            <span 
+              class="erp-value" 
+              :style="{ color: getERPZone(row.erp ?? 0)?.color ?? '#1A1A1A' }"
+            >
+              {{ row.erp?.toFixed(2) ?? '-' }}%
+            </span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="comparison-note">
+        <span class="note-icon">💡</span>
+        <span class="note-text">
+          当前使用 <strong>{{ riskFreeTypeLabels[riskFreeType] }}</strong> 计算ERP。
+          不同无风险利率基准会影响ERP数值，投资者可根据偏好选择参考基准。
+        </span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -644,6 +756,12 @@ onMounted(() => {
 }
 
 .mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rf-toggle {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -851,6 +969,50 @@ onMounted(() => {
   color: var(--text-muted);
 }
 
+.comparison-section {
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-top: 20px;
+}
+
+.comparison-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.rate-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.erp-value {
+  font-weight: 700;
+}
+
+.comparison-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-system);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.note-icon {
+  font-size: 14px;
+}
+
+.note-text strong {
+  color: var(--brand-navy-dark);
+}
+
 @media (max-width: 1200px) {
   .metrics-row {
     grid-template-columns: repeat(3, 1fr);
@@ -876,6 +1038,16 @@ onMounted(() => {
 
   .legend-items {
     flex-wrap: wrap;
+  }
+  
+  .index-selector {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .mode-toggle,
+  .rf-toggle {
+    width: 100%;
   }
 }
 </style>
