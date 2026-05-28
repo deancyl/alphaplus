@@ -66,7 +66,7 @@ onMounted(() => {
 .app-header {
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: var(--z-sticky);
   background-color: var(--brand-navy-dark);
 }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { getCrowdingAnalysis, getRotationVectors } from '@/api/analytics'
 
@@ -84,6 +85,31 @@ const getCrowdingBgClass = (score: number): string => {
   return 'status-extreme'
 }
 
+// Z-Score calculation function
+const calculateZScore = (value: number, historicalValues: number[]): number => {
+  if (historicalValues.length === 0) return 0
+  const mean = historicalValues.reduce((a, b) => a + b, 0) / historicalValues.length
+  const variance = historicalValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / historicalValues.length
+  const std = Math.sqrt(variance)
+  return std > 0 ? (value - mean) / std : 0
+}
+
+// Z-Score alert level helper
+const getZScoreAlertLevel = (zScore: number): 'alert' | 'warning' | 'underflow' | 'normal' => {
+  if (zScore >= 2.0) return 'alert'      // HIGH ALERT - 极度拥挤
+  if (zScore >= 1.5) return 'warning'    // WARNING - 拥挤警告
+  if (zScore <= -2.0) return 'underflow' // UNDERFLOW - 极度冷清
+  return 'normal'
+}
+
+const getZScoreLabel = (zScore: number): string => {
+  const level = getZScoreAlertLevel(zScore)
+  if (level === 'alert') return '极度拥挤'
+  if (level === 'warning') return '拥挤警告'
+  if (level === 'underflow') return '极度冷清'
+  return '正常'
+}
+
 // Get unique dates (sorted)
 const uniqueDates = computed(() => {
   const dates = [...new Set(crowdingData.value.map(d => d.trade_date))]
@@ -115,12 +141,38 @@ const top10Concentration = computed(() => {
   return [...latestData.value]
     .sort((a, b) => b.crowding_score - a.crowding_score)
     .slice(0, 10)
-    .map(d => ({
-      asset_code: d.asset_code,
-      crowding_score: d.crowding_score,
-      pe_percentile: d.pe_percentile,
-    }))
+    .map(d => {
+      // Calculate Z-Score for this asset
+      const assetHistory = crowdingData.value.filter(item => item.asset_code === d.asset_code)
+      const historicalScores = assetHistory.map(item => item.crowding_score)
+      const zScore = calculateZScore(d.crowding_score, historicalScores)
+      const zScoreLevel = getZScoreAlertLevel(zScore)
+      const zScoreLabel = getZScoreLabel(zScore)
+      
+      return {
+        asset_code: d.asset_code,
+        crowding_score: d.crowding_score,
+        pe_percentile: d.pe_percentile,
+        zScore,
+        zScoreLevel,
+        zScoreLabel,
+      }
+    })
 })
+
+// Composite Z-Score for overall market
+const compositeZScore = computed(() => {
+  if (uniqueDates.value.length === 0 || uniqueDates.value.length < 10) return 0
+  const historicalScores = uniqueDates.value.map(date => {
+    const dayData = crowdingData.value.filter(d => d.trade_date === date)
+    if (dayData.length === 0) return 0
+    return dayData.reduce((sum, d) => sum + d.crowding_score, 0) / dayData.length
+  })
+  return calculateZScore(compositeScore.value, historicalScores)
+})
+
+const compositeZScoreLevel = computed(() => getZScoreAlertLevel(compositeZScore.value))
+const compositeZScoreLabel = computed(() => getZScoreLabel(compositeZScore.value))
 
 // Format date
 const formatDate = (dateStr: string): string => {
@@ -369,11 +421,15 @@ const initBarChart = () => {
         const p = params as Array<{ name: string; value: number; marker: string }>
         if (!p || p.length === 0) return ''
         const item = data.find(d => d.asset_code === p[0].name)
+        const zScoreInfo = item?.zScoreLevel !== 'normal' 
+          ? `<div style="color: ${item?.zScoreLevel === 'alert' ? '#E63935' : item?.zScoreLevel === 'warning' ? '#FFB300' : '#2E7D32'};">⚠️ Z-Score: ${item?.zScore.toFixed(2)} (${item?.zScoreLabel})</div>`
+          : ''
         return `
           <div style="padding: 8px;">
             <div style="font-weight: 600; margin-bottom: 4px;">${p[0].name}</div>
             <div>${p[0].marker} 拥挤度: <strong>${p[0].value}</strong></div>
             <div>PE分位: ${item?.pe_percentile.toFixed(1) || '-'}%</div>
+            ${zScoreInfo}
           </div>
         `
       },
@@ -416,6 +472,13 @@ const initBarChart = () => {
       axisLabel: {
         color: '#4A4A4A',
         fontSize: 11,
+        formatter: (value: string) => {
+          const item = data.find(d => d.asset_code === value)
+          if (item && item.zScoreLevel !== 'normal') {
+            return `${value} ⚠️`
+          }
+          return value
+        },
       },
     },
     series: [
@@ -1034,6 +1097,28 @@ onUnmounted(() => {
           {{ getCrowdingLabel(compositeScore) }}
         </el-tag>
       </div>
+      <div class="summary-card" :class="[`z-score-${compositeZScoreLevel}`]">
+        <div class="summary-label">
+          Z-Score
+          <el-tooltip 
+            content="Z-Score表示当前拥挤度偏离历史均值的标准差倍数。≥2.0表示极度异常拥挤，≤-2.0表示极度冷清。"
+            placement="top"
+          >
+            <el-icon class="help-icon"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+        <div class="summary-value" :class="`z-score-value-${compositeZScoreLevel}`">
+          {{ compositeZScore.toFixed(2) }}
+          <span v-if="compositeZScoreLevel !== 'normal'" class="warning-icon">⚠️</span>
+        </div>
+        <el-tag 
+          v-if="compositeZScoreLevel !== 'normal'"
+          :class="['z-score-tag', `z-score-tag-${compositeZScoreLevel}`]"
+          size="small"
+        >
+          {{ compositeZScoreLabel }}
+        </el-tag>
+      </div>
       <div class="summary-card">
         <div class="summary-label">监控资产数</div>
         <div class="summary-value">{{ uniqueAssets.length }}</div>
@@ -1278,6 +1363,80 @@ onUnmounted(() => {
 
 .text-warning {
   color: #FF9800;
+}
+
+/* Z-Score Alert Styles */
+.summary-card.z-score-alert {
+  background: rgba(230, 57, 53, 0.1);
+  border: 2px solid #E63935;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.summary-card.z-score-warning {
+  background: rgba(255, 179, 0, 0.1);
+  border: 2px solid #FFB300;
+}
+
+.summary-card.z-score-underflow {
+  background: rgba(46, 125, 50, 0.1);
+  border: 2px solid #2E7D32;
+}
+
+.z-score-value-alert {
+  color: #E63935 !important;
+  font-weight: 700;
+}
+
+.z-score-value-warning {
+  color: #FFB300 !important;
+  font-weight: 600;
+}
+
+.z-score-value-underflow {
+  color: #2E7D32 !important;
+  font-weight: 600;
+}
+
+.z-score-tag {
+  font-weight: 600;
+  border: none;
+  margin-top: 8px;
+}
+
+.z-score-tag-alert {
+  background-color: #E63935;
+  color: white;
+}
+
+.z-score-tag-warning {
+  background-color: #FFB300;
+  color: white;
+}
+
+.z-score-tag-underflow {
+  background-color: #2E7D32;
+  color: white;
+}
+
+.warning-icon {
+  font-size: 18px;
+  margin-left: 4px;
+}
+
+.help-icon {
+  font-size: 14px;
+  margin-left: 4px;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 /* Content grid */

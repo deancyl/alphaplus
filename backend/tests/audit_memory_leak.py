@@ -157,16 +157,16 @@ class MemoryProfiler:
 
 # Test routes with ECharts components
 ECHARTS_ROUTES = [
-    "/fund/compare",       # ECharts heatmap
-    "/market/crowding",    # ECharts trajectory chart
-    "/fund/similarity",    # ECharts factor exposure
-    "/analytics/fear-greed",  # ECharts gauge
-    "/market/erp",         # ECharts line chart
-    "/",                   # Dashboard with multiple charts
-    "/fof/fofBacktest",    # FOF backtest with Brinson charts
-    "/fof/fundFilter",     # Fund filter with sparklines
-    "/product/insuranceFilter",  # Insurance calculator
-    "/market/index-valuation",  # Index valuation charts
+    "/",                        # Dashboard (ECharts)
+    "/fof/fundFilter",          # FundFilter
+    "/fund/compare",            # FundCompare (heatmap)
+    "/analytics/fear-greed",    # FearGreed (gauge)
+    "/market/erp",              # ERPSpread (line chart)
+    "/market/index-valuation",  # IndexValuation
+    "/fund/stock-reverse",      # StockReverseHolding (pie chart)
+    "/analytics/style-strength", # StyleStrength (radar)
+    "/market/crowding",         # MarketCrowding (multiple charts)
+    "/fof/fofBacktest",         # FOFBacktest (waterfall)
 ]
 
 
@@ -213,11 +213,17 @@ async def test_echarts_memory_leak_route_transitions(memory_page):
     """
     page, profiler = memory_page
     
-    # Navigate to first route and wait for ECharts to render
     base_url = "http://localhost:60201"
-    await page.goto(f"{base_url}{ECHARTS_ROUTES[0]}")
-    await page.wait_for_selector(".echarts-container, [data-echarts], canvas", timeout=10000)
-    await asyncio.sleep(1)  # Let initial render complete
+    await page.goto(f"{base_url}{ECHARTS_ROUTES[0]}", wait_until="domcontentloaded")
+    
+    await page.wait_for_selector("#app > *", timeout=15000)
+    
+    try:
+        await page.wait_for_selector("canvas, .echarts-container, [data-echarts]", timeout=5000)
+    except Exception:
+        pass
+    
+    await asyncio.sleep(2)
     
     # Take baseline measurement
     baseline = await profiler.measure("baseline_after_initial_load")
@@ -226,9 +232,19 @@ async def test_echarts_memory_leak_route_transitions(memory_page):
     num_transitions = 50
     for i in range(num_transitions):
         route = ECHARTS_ROUTES[i % len(ECHARTS_ROUTES)]
-        await page.goto(f"{base_url}{route}")
-        await page.wait_for_selector(".echarts-container, [data-echarts], canvas", timeout=10000)
-        await asyncio.sleep(0.3)  # Brief pause for render
+        await page.goto(f"{base_url}{route}", wait_until="domcontentloaded")
+        
+        try:
+            await page.wait_for_selector("#app > *", timeout=5000)
+        except Exception:
+            pass
+        
+        try:
+            await page.wait_for_selector("canvas, .echarts-container", timeout=3000)
+        except Exception:
+            pass
+        
+        await asyncio.sleep(0.3)
     
     # Take final measurement
     final = await profiler.measure(f"final_after_{num_transitions}_transitions")

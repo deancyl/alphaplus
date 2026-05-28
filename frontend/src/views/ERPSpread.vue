@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import type { EChartsOption } from 'echarts'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import { getERPSpread } from '@/api/analytics'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 
 // ERP数据类型
 interface ERPDataItem {
@@ -21,12 +22,15 @@ interface ERPDataItem {
 type AnalysisMode = 'sd' | 'percentile'
 
 // 无风险利率类型
-type RiskFreeType = 'treasury_10y' | 'cdb_10y' | 'dr007'
+type RiskFreeType = 'treasury_10y' | 'cdb_10y' | 'dr007' | 'deposit_1y' | 'deposit_3y' | 'deposit_5y'
 
 // 响应式数据
 const erpData = ref<ERPDataItem[]>([])
 const loading = ref(false)
 const selectedIndex = ref('000300')
+
+// Mobile breakpoint detection
+const { isMobile } = useBreakpoint()
 
 // 无风险利率选择 - 从 localStorage 恢复
 const riskFreeType = ref<RiskFreeType>(
@@ -185,9 +189,9 @@ const lineChartOption = computed<EChartsOption>(() => {
 
   return {
     tooltip: {
-      trigger: 'axis',
+      trigger: isMobile.value ? 'none' : 'axis',
       axisPointer: { type: 'cross' },
-      formatter: (params: unknown) => {
+      formatter: isMobile.value ? undefined : (params: unknown) => {
         const p = params as { axisValue: string; value: number; seriesName: string }[]
         const date = p[0]?.axisValue ?? ''
         const erp = p.find(item => item.seriesName === 'ERP收益差')?.value?.toFixed(2) ?? '-'
@@ -410,6 +414,9 @@ const riskFreeTypeLabels: Record<RiskFreeType, string> = {
   treasury_10y: '国债10年',
   cdb_10y: '国开债10年',
   dr007: 'DR007',
+  deposit_1y: '大额存款1年',
+  deposit_3y: '大额存款3年',
+  deposit_5y: '大额存款5年',
 }
 
 // 获取数据
@@ -433,7 +440,7 @@ const fetchData = async () => {
 
 // 获取对比数据
 const fetchComparison = async () => {
-  const types: RiskFreeType[] = ['treasury_10y', 'cdb_10y', 'dr007']
+  const types: RiskFreeType[] = ['treasury_10y', 'cdb_10y', 'dr007', 'deposit_1y', 'deposit_3y', 'deposit_5y']
   const results = await Promise.all(
     types.map(async (type) => {
       try {
@@ -510,11 +517,18 @@ onMounted(() => {
       
       <div class="rf-toggle">
         <span class="label">无风险利率：</span>
-        <el-radio-group v-model="riskFreeType" size="small">
-          <el-radio-button value="treasury_10y">国债10年</el-radio-button>
-          <el-radio-button value="cdb_10y">国开债10年</el-radio-button>
-          <el-radio-button value="dr007">DR007</el-radio-button>
-        </el-radio-group>
+        <el-select v-model="riskFreeType" placeholder="选择利率类型" style="width: 140px">
+          <el-option-group label="国债/货币市场">
+            <el-option value="treasury_10y" label="国债10年" />
+            <el-option value="cdb_10y" label="国开债10年" />
+            <el-option value="dr007" label="DR007" />
+          </el-option-group>
+          <el-option-group label="大额存款">
+            <el-option value="deposit_1y" label="1年期" />
+            <el-option value="deposit_3y" label="3年期" />
+            <el-option value="deposit_5y" label="5年期" />
+          </el-option-group>
+        </el-select>
       </div>
     </div>
     
@@ -586,6 +600,30 @@ onMounted(() => {
     <div class="charts-container">
       <!-- 历史ERP折线图 -->
       <div class="chart-card full-width">
+        <!-- Mobile Dynamic Text Header -->
+        <div class="mobile-text-header" v-if="isMobile && currentERP">
+          <div class="mobile-header-item">
+            <span class="mobile-header-label">当前ERP</span>
+            <span class="mobile-header-value" :style="{ color: getERPZone(currentERP.erp_spread)?.color ?? '#1A1A1A' }">
+              {{ currentERP.erp_spread?.toFixed(2) }}%
+            </span>
+          </div>
+          <div class="mobile-header-item">
+            <span class="mobile-header-label">估值状态</span>
+            <span class="mobile-header-status" :style="{ backgroundColor: getERPZone(currentERP.erp_spread)?.color }">
+              {{ getERPZone(currentERP.erp_spread)?.label }}
+            </span>
+          </div>
+          <div class="mobile-header-item">
+            <span class="mobile-header-label">历史百分位</span>
+            <span class="mobile-header-value">{{ currentERP.percentile_rank_10y?.toFixed(1) ?? '-' }}%</span>
+          </div>
+          <div class="mobile-header-item">
+            <span class="mobile-header-label">更新日期</span>
+            <span class="mobile-header-value">{{ currentERP.trade_date }}</span>
+          </div>
+        </div>
+        
         <div class="chart-header">
           <h3>ERP历史走势 (近500天) - {{ analysisMode === 'sd' ? '标准差视角' : '百分位视角' }}</h3>
           <div class="legend-items" v-if="analysisMode === 'sd'">
@@ -872,6 +910,49 @@ onMounted(() => {
   border-radius: 4px;
   padding: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Mobile Dynamic Text Header */
+.mobile-text-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-system);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.mobile-header-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 70px;
+}
+
+.mobile-header-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.mobile-header-value {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'DIN Alternate', -apple-system, sans-serif;
+  color: var(--text-primary);
+}
+
+.mobile-header-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
 }
 
 .chart-card.full-width {

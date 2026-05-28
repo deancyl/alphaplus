@@ -37,7 +37,7 @@ const menuItems = [
       { label: '基金发行', path: '/fof/fundIssue', group: '公募基金研究' },
       { label: '基金公司', path: '/fof/fundCompany', group: '公募基金研究' },
       { label: '定投计算器', path: '/fof/fundCalcAIP', group: '公募基金研究', isNew: true },
-      { label: '理财筛选', path: '/product/wmpFilter', group: '理财产品', isNew: true },
+      { label: '银行理财筛选', path: '/product/wmpFilter', group: '理财产品', isNew: true },
       { label: '理财对比', path: '/product/wmpCompare', group: '理财产品', isNew: true },
       { label: '保险筛选', path: '/product/insuranceFilter', group: '其他产品', isNew: true },
       { label: '存款产品', path: '/product/deposit', group: '其他产品', isNew: true },
@@ -413,7 +413,7 @@ onUnmounted(() => {
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   padding: 8px 0;
-  z-index: 1000;
+  z-index: var(--z-dropdown);
 }
 
 .dropdown-panel.has-groups {
@@ -514,7 +514,7 @@ onUnmounted(() => {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 998;
+  z-index: var(--z-modal);
 }
 
 /* Mobile Drawer */
@@ -526,7 +526,7 @@ onUnmounted(() => {
   max-width: 85vw;
   height: 100vh;
   background: white;
-  z-index: 999;
+  z-index: var(--z-modal);
   overflow-y: auto;
   box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
 }

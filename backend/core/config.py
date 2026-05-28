@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     akshare_retry_count: int = 3
     akshare_retry_delay: float = 1.0
     
+    # AData Direct Mode
+    adata_enabled: bool = True
+    adata_fallback_to_akshare: bool = True
+    adata_cache_ttl_ms: int = 100
+    adata_batch_size: int = 50
+    adata_coalesce_window_ms: int = 50
+    
     # Server
     host: str = "0.0.0.0"
     port: int = 60200

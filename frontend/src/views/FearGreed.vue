@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getFearGreedIndex } from '@/api/analytics'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 
 // Fear/Greed data type
 interface FearGreedData {
@@ -31,6 +32,9 @@ const loading = ref(false)
 const fearGreedData = ref<FearGreedData[]>([])
 const gaugeChart = ref<echarts.ECharts | null>(null)
 const trendChart = ref<echarts.ECharts | null>(null)
+
+// Mobile breakpoint detection
+const { isMobile } = useBreakpoint()
 
 // Chart DOM refs
 const gaugeChartRef = ref<HTMLElement | null>(null)
@@ -226,14 +230,14 @@ const initTrendChart = () => {
 
   const option: echarts.EChartsOption = {
     tooltip: {
-      trigger: 'axis',
+      trigger: isMobile.value ? 'none' : 'axis',
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
       borderColor: '#E5E8ED',
       borderWidth: 1,
       textStyle: {
         color: '#1A1A1A',
       },
-      formatter: (params: unknown) => {
+      formatter: isMobile.value ? undefined : (params: unknown) => {
         const p = params as Array<{ axisValue: string; value: number; marker: string; dataIndex: number }>
         if (!p || p.length === 0) return ''
         const data = p[0]
@@ -526,6 +530,26 @@ onUnmounted(() => {
 
       <!-- Historical Trend Section -->
       <div class="trend-section card">
+        <!-- Mobile Dynamic Text Header -->
+        <div class="mobile-text-header" v-if="isMobile && currentData">
+          <div class="mobile-header-item">
+            <span class="mobile-header-label">当前指数</span>
+            <span class="mobile-header-value" :style="{ color: getSentimentColor(currentData.composite_score) }">
+              {{ currentData.composite_score }}
+            </span>
+          </div>
+          <div class="mobile-header-item">
+            <span class="mobile-header-label">情绪状态</span>
+            <span class="mobile-header-status" :style="{ backgroundColor: getSentimentColor(currentData.composite_score) }">
+              {{ getSentimentLabel(currentData.composite_score) }}
+            </span>
+          </div>
+          <div class="mobile-header-item">
+            <span class="mobile-header-label">更新日期</span>
+            <span class="mobile-header-value">{{ formatDate(currentData.trade_date) }}</span>
+          </div>
+        </div>
+        
         <div class="card-title">
           <span>历史趋势 (近30天)</span>
           <div class="trend-legend">
@@ -710,7 +734,7 @@ onUnmounted(() => {
   box-shadow: 
     0 4px 20px rgba(0, 51, 153, 0.15),
     0 0 0 1px rgba(0, 51, 153, 0.1);
-  z-index: 10;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -788,6 +812,49 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: var(--spacing-md);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Mobile Dynamic Text Header */
+.mobile-text-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-system);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.mobile-header-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 80px;
+}
+
+.mobile-header-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.mobile-header-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: 'DIN Alternate', -apple-system, sans-serif;
+  color: var(--text-primary);
+}
+
+.mobile-header-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
 }
 
 .card-title {

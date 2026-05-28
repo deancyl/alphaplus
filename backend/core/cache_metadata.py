@@ -29,7 +29,7 @@ class CacheMetadataManager:
     Thread-safe via connection-per-thread pattern.
     """
     
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: Optional[str] = None):
         """
         Initialize metadata manager.
         
@@ -86,7 +86,7 @@ class CacheMetadataManager:
         path: str,
         ttl_seconds: int = 300,
         size_bytes: int = 0,
-        metadata: Dict[str, Any] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Insert a new cache entry metadata.

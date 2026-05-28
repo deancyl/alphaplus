@@ -14,6 +14,7 @@ from backend.services.circuit_breaker import (
     CircuitState,
     Result,
 )
+from backend.services.tiered_cache import tiered_cache
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +41,11 @@ class FetchResult(Generic[T]):
     fallback_chain: list[str] = field(default_factory=list)  # Sources tried
 
     @classmethod
-    def ok(cls, value: T, source: str, fallback_chain: list[str] = None) -> "FetchResult[T]":
+    def ok(cls, value: T, source: str, fallback_chain: Optional[list[str]] = None) -> "FetchResult[T]":
         return cls(success=True, value=value, source=source, fallback_chain=fallback_chain or [])
 
     @classmethod
-    def err(cls, error: Exception, fallback_chain: list[str] = None) -> "FetchResult[T]":
+    def err(cls, error: Exception, fallback_chain: Optional[list[str]] = None) -> "FetchResult[T]":
         return cls(success=False, error=error, fallback_chain=fallback_chain or [])
 
 
@@ -167,7 +168,12 @@ class MarketDataGateway:
 
     def get_all_sources_status(self) -> list[dict]:
         """Get status for all registered sources."""
-        return [self.get_source_status(name) for name in self._sources.keys()]
+        statuses = []
+        for name in self._sources.keys():
+            status = self.get_source_status(name)
+            if status is not None:
+                statuses.append(status)
+        return statuses
 
     def _get_ordered_sources(self) -> list[SourceConfig]:
         """Get sources sorted by priority (ascending), excluding disabled and open circuits."""
@@ -193,31 +199,12 @@ class MarketDataGateway:
         sources.sort(key=lambda s: s.priority)
 
         return sources
-    
-    def _make_cache_key(self, endpoint: str, params: Optional[dict] = None) -> str:
-        """
-        Create a cache key from endpoint and params.
-        
-        Args:
-            endpoint: Data endpoint
-            params: Request parameters
-        
-        Returns:
-            Cache key string
-        """
-        if params:
-            import json
-            params_str = json.dumps(params, sort_keys=True)
-            return f"gateway:{endpoint}:{hash(params_str)}"
-        return f"gateway:{endpoint}"
 
     async def fetch(
         self,
         endpoint: str,
         params: Optional[dict] = None,
         preferred_source: Optional[str] = None,
-        use_cache: bool = True,
-        cache_ttl: Optional[int] = None,
     ) -> FetchResult:
         """
         Fetch data with automatic failover across sources.
@@ -230,29 +217,11 @@ class MarketDataGateway:
             endpoint: Data endpoint to fetch
             params: Parameters for the fetch
             preferred_source: Try this source first (optional)
-            use_cache: Whether to use tiered cache (default: True)
-            cache_ttl: Cache TTL in seconds (optional, uses default if None)
 
         Returns:
             FetchResult with success status, data/error, and source name
         """
         params = params or {}
-        
-        # Try cache first if enabled
-        if use_cache:
-            cache_key = self._make_cache_key(endpoint, params)
-            cached_value = tiered_cache.get(cache_key)
-            if cached_value is not None:
-                logger.debug(
-                    f"Cache hit for '{endpoint}'",
-                    extra={"endpoint": endpoint, "cache_key": cache_key}
-                )
-                return FetchResult.ok(
-                    cached_value,
-                    source="cache",
-                    fallback_chain=["cache"]
-                )
-        
         fallback_chain = []
 
         # Build source order
@@ -306,12 +275,6 @@ class MarketDataGateway:
                         f"Successfully fetched '{endpoint}' from '{source.name}'",
                         extra={"endpoint": endpoint, "source": source.name}
                     )
-                    
-                    # Cache the result if caching is enabled
-                    if use_cache:
-                        cache_key = self._make_cache_key(endpoint, params)
-                        tiered_cache.set(cache_key, result.value, ttl=cache_ttl)
-                    
                     return FetchResult.ok(
                         result.value,
                         source=source.name,
@@ -407,7 +370,8 @@ class MarketDataGateway:
             if result.success:
                 return FetchResult.ok(result.value, source=source_name)
             else:
-                return FetchResult.err(result.error, fallback_chain=[source_name])
+                error = result.error or Exception("Unknown error")
+                return FetchResult.err(error, fallback_chain=[source_name])
 
         except Exception as e:
             return FetchResult.err(e, fallback_chain=[source_name])
@@ -436,23 +400,48 @@ def init_gateway() -> None:
 
     Called during application startup.
     """
+    from backend.core.config import settings
+    from backend.services.sources.adata_client import ADataClient
     from backend.services.sources.akshare_source import AkshareSource
     from backend.services.sources.eastmoney_source import EastmoneySource
     from backend.services.sources.sina_source import SinaSource
 
-    # Register sources with priority ordering
-    market_gateway.register_source(
-        "akshare",
-        AkshareSource(),
-        priority=1,  # Primary source
-        failure_threshold=3,
-        recovery_timeout=60.0,
-    )
+    priority = 1
 
+    # Register AData Direct Mode as primary source if enabled
+    if settings.adata_enabled:
+        market_gateway.register_source(
+            "adata",
+            ADataClient(
+                timeout=10.0,
+                max_batch_size=settings.adata_batch_size,
+                cache_ttl_ms=settings.adata_cache_ttl_ms,
+                coalesce_window_ms=settings.adata_coalesce_window_ms,
+            ),
+            priority=priority,
+            failure_threshold=3,
+            recovery_timeout=30.0,
+        )
+        priority += 1
+        logger.info("AData Direct Mode enabled as primary source")
+
+    # Register AkShare as primary or fallback based on config
+    akshare_priority = priority if not settings.adata_enabled else priority + 1
+    if settings.adata_fallback_to_akshare or not settings.adata_enabled:
+        market_gateway.register_source(
+            "akshare",
+            AkshareSource(),
+            priority=akshare_priority,
+            failure_threshold=3,
+            recovery_timeout=60.0,
+        )
+        logger.info(f"AkShare registered at priority {akshare_priority}")
+
+    # Register secondary sources
     market_gateway.register_source(
         "eastmoney",
         EastmoneySource(),
-        priority=2,  # Secondary source (API-based, faster)
+        priority=akshare_priority + 1,
         failure_threshold=5,
         recovery_timeout=30.0,
     )
@@ -460,9 +449,10 @@ def init_gateway() -> None:
     market_gateway.register_source(
         "sina",
         SinaSource(),
-        priority=3,  # Tertiary source (lightweight)
+        priority=akshare_priority + 2,
         failure_threshold=5,
         recovery_timeout=30.0,
     )
 
-    logger.info("Market data gateway initialized with 3 sources")
+    source_count = len(market_gateway._sources)
+    logger.info(f"Market data gateway initialized with {source_count} sources")

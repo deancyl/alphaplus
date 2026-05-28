@@ -3,6 +3,7 @@ import { ref, computed, onMounted, nextTick, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { calculateInsurance, type InsurancePolicyRequest, type InsuranceCalculateResponse } from '@/api/insurance'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 
 // Form state
 const formData = ref<InsurancePolicyRequest>({
@@ -21,6 +22,12 @@ const loading = ref(false)
 // Chart ref
 const chartRef = ref<HTMLElement | null>(null)
 let chart: echarts.ECharts | null = null
+
+// Mobile detection
+const { isMobile } = useBreakpoint()
+
+// Chart visibility for soft keyboard handling
+const chartVisible = ref(true)
 
 // Payment years options
 const paymentYearsOptions = [
@@ -118,13 +125,29 @@ const getValueClass = (val: number | null | undefined): string => {
   return val >= 0 ? 'text-up' : 'text-down'
 }
 
-// Handle numeric input focus with scroll for keyboard occlusion
+// Handle numeric input focus - hide chart on mobile to prevent keyboard deformation
 const handleNumericInputFocus = (e: FocusEvent) => {
   const target = e.target as HTMLElement
   if (target) {
+    // Hide chart on mobile when keyboard appears
+    if (isMobile.value) {
+      chartVisible.value = false
+    }
+    // Scroll input into view
     setTimeout(() => {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 100)
+  }
+}
+
+// Handle numeric input blur - restore chart after keyboard hidden
+const handleNumericInputBlur = () => {
+  if (isMobile.value) {
+    chartVisible.value = true
+    // Trigger resize after keyboard fully hidden (150ms debounce)
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'))
+    }, 150)
   }
 }
 
@@ -132,9 +155,23 @@ const handleNumericInputFocus = (e: FocusEvent) => {
 const handleSelectFocus = (e: FocusEvent) => {
   const target = e.target as HTMLElement
   if (target) {
+    // Hide chart on mobile when keyboard appears
+    if (isMobile.value) {
+      chartVisible.value = false
+    }
     setTimeout(() => {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 100)
+  }
+}
+
+// Handle select blur - restore chart after keyboard hidden
+const handleSelectBlur = () => {
+  if (isMobile.value) {
+    chartVisible.value = true
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'))
+    }, 150)
   }
 }
 
@@ -307,12 +344,18 @@ onUnmounted(() => {
               autocomplete="off"
               enterkeyhint="next"
               @focus="handleNumericInputFocus"
+              @blur="handleNumericInputBlur"
             />
           </el-form-item>
 
           <!-- Payment Years -->
           <el-form-item label="交费年期" required>
-            <el-select v-model="formData.payment_years" placeholder="选择交费年期" @focus="handleSelectFocus">
+            <el-select 
+              v-model="formData.payment_years" 
+              placeholder="选择交费年期" 
+              @focus="handleSelectFocus"
+              @blur="handleSelectBlur"
+            >
               <el-option
                 v-for="opt in paymentYearsOptions"
                 :key="opt.value"
@@ -334,6 +377,7 @@ onUnmounted(() => {
               autocomplete="off"
               enterkeyhint="next"
               @focus="handleNumericInputFocus"
+              @blur="handleNumericInputBlur"
             />
           </el-form-item>
 
@@ -352,7 +396,12 @@ onUnmounted(() => {
 
           <!-- Assumed Growth -->
           <el-form-item label="假设年化收益率">
-            <el-select v-model="formData.assumed_growth" placeholder="选择收益率" @focus="handleSelectFocus">
+            <el-select 
+              v-model="formData.assumed_growth" 
+              placeholder="选择收益率" 
+              @focus="handleSelectFocus"
+              @blur="handleSelectBlur"
+            >
               <el-option
                 v-for="opt in growthRateOptions"
                 :key="opt.value"
@@ -374,6 +423,7 @@ onUnmounted(() => {
               autocomplete="off"
               enterkeyhint="done"
               @focus="handleNumericInputFocus"
+              @blur="handleNumericInputBlur"
             />
           </el-form-item>
 
@@ -456,7 +506,13 @@ onUnmounted(() => {
             <div class="panel-header">
               <h3>现金价值增长曲线</h3>
             </div>
-            <div ref="chartRef" class="chart-container" />
+            <div v-if="chartVisible" ref="chartRef" class="chart-container" />
+            <div v-else class="chart-placeholder">
+              <el-icon :size="32" color="var(--text-muted)">
+                <i-ep-hide />
+              </el-icon>
+              <p>图表已隐藏以适应键盘</p>
+            </div>
           </div>
 
           <!-- Projection Table -->
@@ -649,6 +705,25 @@ onUnmounted(() => {
 .chart-container {
   width: 100%;
   height: 400px;
+}
+
+.chart-placeholder {
+  width: 100%;
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  background: var(--bg-system);
+  border-radius: 6px;
+  border: 1px dashed var(--border-line);
+  color: var(--text-muted);
+}
+
+.chart-placeholder p {
+  font-size: 14px;
+  margin: 0;
 }
 
 /* Table Section */

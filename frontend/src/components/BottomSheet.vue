@@ -213,7 +213,7 @@ onUnmounted(() => {
 .bottom-sheet-container {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-modal);
   pointer-events: none;
 }
 

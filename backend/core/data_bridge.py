@@ -112,25 +112,26 @@ class DataBridge:
             except ImportError:
                 raise ValueError(f"Unsupported data type: {type(data)}")
         
-        # Add custom metadata
+        assert isinstance(table, pa.Table), f"Expected pa.Table, got {type(table)}"
+        
+        pyarrow_table: pa.Table = table
+        
         custom_metadata = {
             'task_id': task_id,
             'chunk_name': chunk_name,
             'created_at': datetime.utcnow().isoformat(),
-            'row_count': str(len(table)),
+            'row_count': str(len(pyarrow_table)),
             'compression': compression,
         }
         
         if metadata:
             custom_metadata.update({k: str(v) for k, v in metadata.items()})
         
-        # Encode metadata for Parquet
-        existing_metadata = table.schema.metadata or {}
+        existing_metadata = pyarrow_table.schema.metadata or {}
         merged_metadata = {**existing_metadata, **{k.encode(): v.encode() for k, v in custom_metadata.items()}}
-        table = table.replace_schema_metadata(merged_metadata)
+        pyarrow_table = pyarrow_table.replace_schema_metadata(merged_metadata)
         
-        # Write to temp file first (atomic write)
-        pq.write_table(table, temp_path, compression=compression)
+        pq.write_table(pyarrow_table, temp_path, compression=compression)
         
         # Atomic rename
         temp_path.rename(output_path)

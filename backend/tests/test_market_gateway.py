@@ -445,18 +445,21 @@ class TestGatewayIntegration:
     @pytest.mark.asyncio
     async def test_gateway_initialization(self):
         """Test gateway initialization with all sources."""
-        from backend.services.market_gateway import MarketDataGateway, init_gateway
+        from backend.services.market_gateway import market_gateway, init_gateway
 
-        gateway = MarketDataGateway()
+        market_gateway._sources.clear()
         init_gateway()
 
-        # Should have 3 sources registered
-        assert len(gateway._sources) == 3
-        assert "akshare" in gateway._sources
-        assert "eastmoney" in gateway._sources
-        assert "sina" in gateway._sources
+        # Now includes AData as primary source (4 total)
+        assert len(market_gateway._sources) == 4
+        assert "adata" in market_gateway._sources
+        assert "akshare" in market_gateway._sources
+        assert "eastmoney" in market_gateway._sources
+        assert "sina" in market_gateway._sources
 
-        # Check priorities
-        assert gateway._sources["akshare"].priority == 1
-        assert gateway._sources["eastmoney"].priority == 2
-        assert gateway._sources["sina"].priority == 3
+        # AData is primary (priority 1)
+        assert market_gateway._sources["adata"].priority == 1
+        # AkShare is fallback (priority 3 when adata enabled)
+        assert market_gateway._sources["akshare"].priority == 3
+        assert market_gateway._sources["eastmoney"].priority == 4
+        assert market_gateway._sources["sina"].priority == 5

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getStockReverseHolding, type StockReverseHoldingResponse } from '@/api/fund'
+import { 
+  getStockReverseHolding, 
+  getCrowdingAnalysis,
+  exportStockReverseHolding,
+  type StockReverseHoldingResponse,
+  type CrowdingAnalysisResponse 
+} from '@/api/fund'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import type { EChartsOption } from 'echarts'
@@ -10,6 +16,8 @@ const { isMobile } = useBreakpoint()
 const searchCode = ref('')
 const loading = ref(false)
 const result = ref<StockReverseHoldingResponse | null>(null)
+const crowdingData = ref<CrowdingAnalysisResponse | null>(null)
+const exporting = ref(false)
 
 const handleSearch = async () => {
   if (!searchCode.value.trim()) {
@@ -20,11 +28,33 @@ const handleSearch = async () => {
   loading.value = true
   try {
     result.value = await getStockReverseHolding(searchCode.value.trim())
+    crowdingData.value = await getCrowdingAnalysis(searchCode.value.trim())
   } catch (error) {
     console.error('Failed to fetch stock reverse holding:', error)
     ElMessage.error('查询失败，请检查股票代码')
   } finally {
     loading.value = false
+  }
+}
+
+const handleExport = async (format: 'csv' | 'excel') => {
+  if (!searchCode.value.trim()) return
+  
+  exporting.value = true
+  try {
+    const blob = await exportStockReverseHolding(searchCode.value.trim(), format)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `stock_reverse_${searchCode.value.trim()}.${format === 'csv' ? 'csv' : 'xlsx'}`
+    link.click()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch (error) {
+    console.error('Export failed:', error)
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -115,6 +145,87 @@ const pieChartOption = computed<EChartsOption>(() => {
   }
 })
 
+const heatmapOption = computed<EChartsOption>(() => {
+  if (!crowdingData.value) {
+    return {}
+  }
+
+  const metrics = [
+    { name: '拥挤度得分', value: crowdingData.value.crowding_score },
+    { name: '集中度指数', value: crowdingData.value.hhi_index / 100 },
+    { name: '重叠系数', value: crowdingData.value.overlap_coefficient * 100 },
+    { name: 'Top5占比', value: crowdingData.value.top_5_weight_pct },
+  ]
+
+  return {
+    tooltip: {
+      trigger: 'item' as const,
+      formatter: (params: any) => {
+        return `${params.name}: ${params.value.toFixed(2)}`
+      },
+      confine: true,
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      top: '10%',
+      containLabel: true,
+    },
+    xAxis: {
+      type: 'category' as const,
+      data: metrics.map(m => m.name),
+      axisLabel: {
+        fontSize: 11,
+        color: 'var(--text-regular)',
+      },
+      axisLine: {
+        lineStyle: {
+          color: 'var(--border-line)',
+        }
+      }
+    },
+    yAxis: {
+      type: 'value' as const,
+      max: 100,
+      axisLabel: {
+        fontSize: 11,
+        color: 'var(--text-muted)',
+      },
+      splitLine: {
+        lineStyle: {
+          color: 'var(--border-line)',
+          type: 'dashed' as const,
+        }
+      }
+    },
+    series: [{
+      type: 'bar' as const,
+      data: metrics.map(m => ({
+        value: m.value,
+        itemStyle: {
+          color: getHeatmapColor(m.value)
+        }
+      })),
+      barWidth: '40%',
+      label: {
+        show: true,
+        position: 'top' as const,
+        fontSize: 12,
+        formatter: (params: any) => params.value.toFixed(1),
+      }
+    }]
+  }
+})
+
+function getHeatmapColor(value: number): string {
+  if (value < 20) return '#4CAF50'
+  if (value < 40) return '#8BC34A'
+  if (value < 60) return '#FFC107'
+  if (value < 80) return '#FF9800'
+  return '#F44336'
+}
+
 const formatHoldingRatio = (ratio: number): string => {
   return `${(ratio * 100).toFixed(2)}%`
 }
@@ -122,6 +233,28 @@ const formatHoldingRatio = (ratio: number): string => {
 const formatHoldingValue = (value?: number): string => {
   if (value === undefined || value === null) return '-'
   return value.toLocaleString()
+}
+
+const getConcentrationLabel = (level: string): string => {
+  const labels: Record<string, string> = {
+    none: '无持仓',
+    low: '低拥挤',
+    medium: '中等拥挤',
+    high: '高拥挤',
+    extreme: '极度拥挤'
+  }
+  return labels[level] || level
+}
+
+const getConcentrationClass = (level: string): string => {
+  const classes: Record<string, string> = {
+    none: 'concentration-none',
+    low: 'concentration-low',
+    medium: 'concentration-medium',
+    high: 'concentration-high',
+    extreme: 'concentration-extreme'
+  }
+  return classes[level] || ''
 }
 </script>
 
@@ -183,6 +316,90 @@ const formatHoldingValue = (value?: number): string => {
             {{ result.aggregate_exposure.toFixed(2) }}%
           </div>
           <div class="summary-note">合计持仓占净值</div>
+        </div>
+      </div>
+
+      <div v-if="crowdingData" class="crowding-section card">
+        <div class="section-header">
+          <h3>拥挤度分析</h3>
+          <div class="export-buttons">
+            <el-button size="small" :loading="exporting" @click="handleExport('csv')">
+              导出CSV
+            </el-button>
+            <el-button size="small" :loading="exporting" @click="handleExport('excel')">
+              导出Excel
+            </el-button>
+          </div>
+        </div>
+        
+        <div class="crowding-grid">
+          <div class="crowding-metric">
+            <div class="metric-label">拥挤度得分</div>
+            <div class="metric-value">{{ crowdingData.crowding_score.toFixed(2) }}</div>
+            <div class="metric-bar">
+              <div 
+                class="metric-bar-fill" 
+                :style="{ width: crowdingData.crowding_score + '%' }"
+                :class="getConcentrationClass(crowdingData.concentration_level)"
+              ></div>
+            </div>
+          </div>
+          
+          <div class="crowding-metric">
+            <div class="metric-label">集中度</div>
+            <div class="metric-value" :class="getConcentrationClass(crowdingData.concentration_level)">
+              {{ getConcentrationLabel(crowdingData.concentration_level) }}
+            </div>
+            <div class="metric-detail">HHI: {{ crowdingData.hhi_index.toFixed(2) }}</div>
+          </div>
+          
+          <div class="crowding-metric">
+            <div class="metric-label">重叠系数</div>
+            <div class="metric-value">{{ (crowdingData.overlap_coefficient * 100).toFixed(2) }}%</div>
+            <div class="metric-detail">基金持仓相似度</div>
+          </div>
+          
+          <div class="crowding-metric">
+            <div class="metric-label">Top 5 基金占比</div>
+            <div class="metric-value">{{ crowdingData.top_5_weight_pct.toFixed(2) }}%</div>
+            <div class="metric-detail">前5大基金权重</div>
+          </div>
+        </div>
+
+        <div class="heatmap-container">
+          <EChartsWrapper
+            :option="heatmapOption"
+            :height="isMobile ? '200px' : '250px'"
+          />
+        </div>
+      </div>
+
+      <div class="aggregation-section card">
+        <div class="section-header">
+          <h3>持仓汇总统计</h3>
+        </div>
+        
+        <div v-if="crowdingData" class="aggregation-table">
+          <div class="aggregation-row">
+            <span class="agg-label">平均权重</span>
+            <span class="agg-value">{{ (crowdingData.avg_weight * 100).toFixed(4) }}%</span>
+          </div>
+          <div class="aggregation-row">
+            <span class="agg-label">最大权重</span>
+            <span class="agg-value">{{ (crowdingData.max_weight * 100).toFixed(4) }}%</span>
+          </div>
+          <div class="aggregation-row">
+            <span class="agg-label">权重标准差</span>
+            <span class="agg-value">{{ (crowdingData.weight_std * 100).toFixed(4) }}%</span>
+          </div>
+          <div class="aggregation-row">
+            <span class="agg-label">总权重</span>
+            <span class="agg-value">{{ (crowdingData.total_weight * 100).toFixed(4) }}%</span>
+          </div>
+          <div class="aggregation-row">
+            <span class="agg-label">Top 基金</span>
+            <span class="agg-value agg-value--code">{{ crowdingData.top_fund }}</span>
+          </div>
         </div>
       </div>
 
@@ -379,8 +596,7 @@ const formatHoldingValue = (value?: number): string => {
   color: var(--text-muted);
 }
 
-.chart-section,
-.table-section {
+.crowding-section {
   padding: 0;
 }
 
@@ -410,6 +626,110 @@ const formatHoldingValue = (value?: number): string => {
 .section-count {
   font-size: 13px;
   color: var(--text-regular);
+}
+
+.export-buttons {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.crowding-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+}
+
+.crowding-metric {
+  text-align: center;
+  padding: var(--spacing-sm);
+  background: var(--bg-system);
+  border-radius: 8px;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-xs);
+}
+
+.metric-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.metric-bar {
+  height: 4px;
+  background: var(--border-line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.metric-bar-fill {
+  height: 100%;
+  transition: width 0.3s;
+}
+
+.metric-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.heatmap-container {
+  padding: 0 var(--spacing-md) var(--spacing-md);
+}
+
+.aggregation-section {
+  padding: 0;
+}
+
+.aggregation-table {
+  padding: var(--spacing-md);
+}
+
+.aggregation-row {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border-line);
+}
+
+.aggregation-row:last-child {
+  border-bottom: none;
+}
+
+.agg-label {
+  font-size: 13px;
+  color: var(--text-regular);
+}
+
+.agg-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.agg-value--code {
+  color: var(--brand-navy-dark);
+}
+
+.concentration-none { color: #9E9E9E; }
+.concentration-low { color: #4CAF50; }
+.concentration-medium { color: #8BC34A; }
+.concentration-high { color: #FF9800; }
+.concentration-extreme { color: #F44336; }
+
+.metric-bar-fill.concentration-low { background: #4CAF50; }
+.metric-bar-fill.concentration-medium { background: #8BC34A; }
+.metric-bar-fill.concentration-high { background: #FF9800; }
+.metric-bar-fill.concentration-extreme { background: #F44336; }
+
+.chart-section,
+.table-section {
+  padding: 0;
 }
 
 .ratio-cell {
@@ -489,16 +809,35 @@ const formatHoldingValue = (value?: number): string => {
 
   .section-header {
     padding: var(--spacing-sm);
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
   }
 
   .section-header h3 {
     font-size: 14px;
+  }
+
+  .crowding-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-sm);
+  }
+
+  .crowding-metric {
+    padding: var(--spacing-xs);
+  }
+
+  .metric-value {
+    font-size: 16px;
   }
 }
 
 @media (max-width: 480px) {
   .summary-value {
     font-size: 18px;
+  }
+
+  .crowding-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

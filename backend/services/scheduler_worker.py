@@ -64,8 +64,13 @@ class SchedulerWorker:
         self.worker_id = worker_id
         self._running = False
         self._stop_requested = False
-        self._state_manager = None
-        self._data_bridge = None
+        
+        # Initialize state manager and data bridge in __init__
+        from backend.core.state_manager import StateManager
+        from backend.core.data_bridge import DataBridge
+        
+        self._state_manager = StateManager()
+        self._data_bridge = DataBridge()
         
         # Task handlers registry
         self._task_handlers: Dict[str, Callable] = {}
@@ -109,19 +114,8 @@ class SchedulerWorker:
         
         Gracefully handles SIGTERM/SIGINT.
         """
-        # Import here to avoid circular imports
-        from backend.core.state_manager import StateManager
-        from backend.core.data_bridge import DataBridge
-        
-        self._state_manager = StateManager()
-        self._data_bridge = DataBridge()
-        
-        assert self._state_manager is not None
-        assert self._data_bridge is not None
-        
         self._state_manager.register_worker(self.worker_id, os.getpid())
         
-        # Setup signal handlers
         self._setup_signal_handlers()
         
         self._running = True
@@ -201,8 +195,7 @@ class SchedulerWorker:
     
     def heartbeat(self):
         """Send heartbeat to state manager."""
-        if self._state_manager:
-            self._state_manager.update_heartbeat(self.worker_id)
+        self._state_manager.update_heartbeat(self.worker_id)
     
     def process_task(self, task_id: str, payload: str) -> bool:
         """
@@ -406,38 +399,40 @@ class SchedulerWorker:
         from datetime import date
         
         try:
-            with PhysicalLock("holdings_ingestion"):
-                today = date.today()
-                cached = load_holdings_from_parquet(today)
-                
-                if cached:
-                    insert_holdings_batch(cached)
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                with PhysicalLock("holdings_ingestion"):
+                    today = date.today()
+                    cached = load_holdings_from_parquet(today)
+                    
+                    if cached:
+                        loop.run_until_complete(insert_holdings_batch(cached))
+                        records_count = len(cached)
+                    else:
+                        records_count = 0
                     
                     result_data = [{
                         'task_id': task_id,
                         'status': 'completed',
-                        'records_count': len(cached),
+                        'records_count': records_count,
                         'timestamp': datetime.utcnow().isoformat()
                     }]
-                else:
-                    result_data = [{
-                        'task_id': task_id,
-                        'status': 'completed',
-                        'records_count': 0,
-                        'message': 'No cached Parquet data available',
-                        'timestamp': datetime.utcnow().isoformat()
-                    }]
-                
-                result_path = self._data_bridge.write_parquet(
-                    result_data,
-                    task_id=task_id,
-                    chunk_name='result'
-                )
-                
-                return str(result_path)
+                    
+                    result_path = self._data_bridge.write_parquet(
+                        result_data,
+                        task_id=task_id,
+                        chunk_name='result'
+                    )
+                    
+                    return str(result_path)
+            
+            finally:
+                loop.close()
         
         except RuntimeError as e:
-            # Another process is running
             logger.warning(f"Holdings ingestion skipped: {e}")
             raise
         except Exception as e:

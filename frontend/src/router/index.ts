@@ -132,9 +132,8 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/product/wmpFilter',
     name: 'WMPFilter',
-    component: () => import('@/views/PlaceholderComingSoon.vue'),
-    props: { title: '理财筛选', description: '净值型理财、现金管理类、固收+理财产品筛选', expectedRelease: 'v0.2.0' },
-    meta: { title: '理财筛选' },
+    component: () => import('@/views/WMPFilter.vue'),
+    meta: { title: '银行理财筛选' },
   },
   {
     path: '/product/insuranceFilter',
@@ -166,6 +165,12 @@ const routes: RouteRecordRaw[] = [
     name: 'StockReverse',
     component: () => import('@/views/StockReverseHolding.vue'),
     meta: { title: '机构抱团分析' },
+  },
+  {
+    path: '/product/depositERPLinkage',
+    name: 'DepositERPLinkage',
+    component: () => import('@/views/DepositERPLinkage.vue'),
+    meta: { title: '存款-ERP联动' },
   },
 ]
 

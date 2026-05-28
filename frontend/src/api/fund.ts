@@ -263,3 +263,56 @@ export const getStockReverseHolding = async (
     params: { stock_code: stockCode, limit }
   })
 }
+
+export interface CrowdingAnalysisResponse {
+  stock_code: string
+  stock_name: string
+  total_funds: number
+  crowding_score: number
+  hhi_index: number
+  concentration_level: 'none' | 'low' | 'medium' | 'high' | 'extreme'
+  overlap_coefficient: number
+  avg_weight: number
+  total_weight: number
+  max_weight: number
+  weight_std: number
+  top_fund: string
+  top_5_weight_pct: number
+  quarter_distribution: Record<string, number>
+}
+
+export const getCrowdingAnalysis = async (
+  stockCode: string
+): Promise<CrowdingAnalysisResponse> => {
+  return api.get(`/fund/stock-reverse/${stockCode}/crowding`)
+}
+
+export interface AggregationResponse {
+  stock_code: string
+  stock_name: string
+  total_funds: number
+  total_weight: number
+  avg_weight: number
+  max_weight: number
+  weight_std: number
+  top_fund: string
+  quarter_distribution: Record<string, number>
+}
+
+export const getStockAggregation = async (
+  stockCode: string
+): Promise<AggregationResponse> => {
+  return api.get(`/fund/stock-reverse/${stockCode}/aggregation`)
+}
+
+export const exportStockReverseHolding = async (
+  stockCode: string,
+  format: 'csv' | 'excel' = 'csv',
+  limit: number = 100
+): Promise<Blob> => {
+  const response = await api.get(`/fund/stock-reverse/${stockCode}/export`, {
+    params: { format, limit },
+    responseType: 'blob'
+  })
+  return response
+}

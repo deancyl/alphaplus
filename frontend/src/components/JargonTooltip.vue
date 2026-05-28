@@ -154,7 +154,7 @@ const tooltipClasses = computed(() => [
 
 .jargon-tooltip {
   position: absolute;
-  z-index: 1000;
+  z-index: var(--z-tooltip);
   max-width: 280px;
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--text-primary);

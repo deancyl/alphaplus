@@ -42,6 +42,13 @@
 
   /* Touch target minimum (WCAG 2.5.5) */
   --touch-target-min: 44px;
+
+  /* Z-Index Domain Hierarchy */
+  --z-base: 1;        /* Normal elements */
+  --z-sticky: 10;     /* Sticky columns, fixed headers */
+  --z-dropdown: 30;   /* Select dropdowns, MegaMenu */
+  --z-modal: 50;      /* Dialogs, overlays, BottomSheet */
+  --z-tooltip: 100;   /* Tooltips, popover */
 }
 
 /* 全局重置 */
@@ -332,7 +339,7 @@ a, button, td, input, select, .clickable {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 999;
+  z-index: var(--z-modal);
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.3s, visibility 0.3s;
@@ -351,7 +358,7 @@ a, button, td, input, select, .clickable {
   width: 280px;
   height: 100vh;
   background: var(--bg-card);
-  z-index: 1000;
+  z-index: var(--z-modal);
   transition: left 0.3s ease;
   overflow-y: auto;
 }

@@ -1181,7 +1181,7 @@ onUnmounted(() => {
 .el-table .sticky-column {
   position: sticky;
   left: 0;
-  z-index: 10;
+  z-index: var(--z-sticky);
   background: var(--bg-card);
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
 }
@@ -1195,7 +1195,7 @@ onUnmounted(() => {
 .el-table .sticky-column-second {
   position: sticky;
   left: 150px;
-  z-index: 9;
+  z-index: calc(var(--z-sticky) - 1);
   background: var(--bg-card);
 }
 

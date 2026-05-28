@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { getStyleStrength } from '@/api/analytics'
 
@@ -60,7 +61,7 @@ const currentDimensionData = computed(() => {
   return dimensionData.value[selectedDimension.value] || []
 })
 
-// Latest values for radar
+// Latest values for radar with Z-Score alerts
 const latestStyleScores = computed(() => {
   const scores: number[] = []
   
@@ -79,12 +80,59 @@ const latestStyleScores = computed(() => {
   return scores
 })
 
+// Z-Score for each dimension
+const dimensionZScores = computed(() => {
+  const zScores: { zScore: number; level: 'alert' | 'warning' | 'underflow' | 'normal'; label: string }[] = []
+  
+  for (const dim of styleDimensions) {
+    const data = dimensionData.value[dim.key]
+    if (data.length > 0) {
+      const latest = data[data.length - 1]
+      const percentile = latest.percentile_rank_3y ?? 50
+      const historicalPercentiles = data.map(d => d.percentile_rank_3y ?? 50)
+      const zScore = calculateZScore(percentile, historicalPercentiles)
+      const level = getZScoreAlertLevel(zScore)
+      const label = getZScoreLabel(zScore)
+      zScores.push({ zScore, level, label })
+    } else {
+      zScores.push({ zScore: 0, level: 'normal', label: '正常' })
+    }
+  }
+  
+  return zScores
+})
+
 // Dominant style (highest percentile)
 const dominantStyle = computed(() => {
   const scores = latestStyleScores.value
   const maxIndex = scores.indexOf(Math.max(...scores))
   return styleDimensions[maxIndex]
 })
+
+// Z-Score calculation function
+const calculateZScore = (value: number, historicalValues: number[]): number => {
+  if (historicalValues.length === 0) return 0
+  const mean = historicalValues.reduce((a, b) => a + b, 0) / historicalValues.length
+  const variance = historicalValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / historicalValues.length
+  const std = Math.sqrt(variance)
+  return std > 0 ? (value - mean) / std : 0
+}
+
+// Z-Score alert level helper
+const getZScoreAlertLevel = (zScore: number): 'alert' | 'warning' | 'underflow' | 'normal' => {
+  if (zScore >= 2.0) return 'alert'      // HIGH ALERT - 极度拥挤
+  if (zScore >= 1.5) return 'warning'    // WARNING - 拥挤警告
+  if (zScore <= -2.0) return 'underflow' // UNDERFLOW - 极度冷清
+  return 'normal'
+}
+
+const getZScoreLabel = (zScore: number): string => {
+  const level = getZScoreAlertLevel(zScore)
+  if (level === 'alert') return '极度拥挤'
+  if (level === 'warning') return '拥挤警告'
+  if (level === 'underflow') return '极度冷清'
+  return '正常'
+}
 
 // Current style recommendation
 const styleRecommendation = computed(() => {
@@ -94,6 +142,11 @@ const styleRecommendation = computed(() => {
   const latest = currentData[currentData.length - 1]
   const percentile = latest.percentile_rank_3y ?? 50
   const ratio = latest.ratio_value
+  
+  // Calculate Z-Score from historical percentiles
+  const historicalPercentiles = currentData.map(d => d.percentile_rank_3y ?? 50)
+  const zScore = calculateZScore(percentile, historicalPercentiles)
+  const zScoreLevel = getZScoreAlertLevel(zScore)
   
   let recommendation = ''
   let strength = ''
@@ -115,7 +168,7 @@ const styleRecommendation = computed(() => {
     strength = 'extreme-weak'
   }
   
-  return { recommendation, strength, percentile, ratio }
+  return { recommendation, strength, percentile, ratio, zScore, zScoreLevel }
 })
 
 // Format date
@@ -376,10 +429,18 @@ onUnmounted(() => {
         </span>
         <el-tag 
           v-if="styleRecommendation"
-          :class="['recommendation-tag', `tag-${styleRecommendation.strength}`]"
+          :class="['recommendation-tag', `tag-${styleRecommendation.strength}`, `z-score-tag-${styleRecommendation.zScoreLevel}`]"
           size="large"
         >
+          <span v-if="styleRecommendation.zScoreLevel !== 'normal'" class="tag-warning-icon">⚠️</span>
           {{ styleRecommendation.recommendation }}
+          <el-tooltip 
+            v-if="styleRecommendation.zScoreLevel !== 'normal'"
+            :content="`Z-Score: ${styleRecommendation.zScore.toFixed(2)} (${styleRecommendation.zScoreLevel === 'alert' ? '极度拥挤' : styleRecommendation.zScoreLevel === 'warning' ? '拥挤警告' : '极度冷清'})`"
+            placement="bottom"
+          >
+            <el-icon class="info-icon"><QuestionFilled /></el-icon>
+          </el-tooltip>
         </el-tag>
       </div>
     </div>
@@ -401,22 +462,29 @@ onUnmounted(() => {
         <div class="card-title">风格维度选择</div>
         <div class="dimension-list">
           <div 
-            v-for="dim in styleDimensions" 
+            v-for="(dim, index) in styleDimensions" 
             :key="dim.key"
-            :class="['dimension-item', { active: selectedDimension === dim.key }]"
+            :class="['dimension-item', { active: selectedDimension === dim.key, [`z-score-${dimensionZScores[index].level}`]: dimensionZScores[index].level !== 'normal' }]"
             @click="handleDimensionChange(dim.key)"
           >
             <div class="dimension-header">
               <span class="dimension-label">{{ dim.label }}</span>
               <span class="dimension-score">
-                {{ latestStyleScores[styleDimensions.findIndex(d => d.key === dim.key)].toFixed(0) }}%
+                {{ latestStyleScores[index].toFixed(0) }}%
+                <el-tooltip 
+                  v-if="dimensionZScores[index].level !== 'normal'"
+                  :content="`Z-Score: ${dimensionZScores[index].zScore.toFixed(2)} - ${dimensionZScores[index].label}。Z-Score表示当前值偏离历史均值的标准差倍数，≥2.0表示极度异常。`"
+                  placement="top"
+                >
+                  <span class="warning-icon">⚠️</span>
+                </el-tooltip>
               </span>
             </div>
             <div class="dimension-desc">{{ dim.description }}</div>
             <div class="dimension-bar">
               <div 
                 class="bar-fill" 
-                :style="{ width: `${latestStyleScores[styleDimensions.findIndex(d => d.key === dim.key)]}%` }"
+                :style="{ width: `${latestStyleScores[index]}%` }"
               ></div>
             </div>
           </div>
@@ -645,6 +713,52 @@ onUnmounted(() => {
   background: linear-gradient(90deg, #003399, #1565C0);
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+
+/* Z-Score Alert Styles */
+.dimension-item.z-score-alert {
+  background: rgba(230, 57, 53, 0.1);
+  border-color: #E63935 !important;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.dimension-item.z-score-warning {
+  background: rgba(255, 179, 0, 0.1);
+  border-color: #FFB300 !important;
+}
+
+.dimension-item.z-score-underflow {
+  background: rgba(46, 125, 50, 0.1);
+  border-color: #2E7D32 !important;
+}
+
+.warning-icon {
+  font-size: 16px;
+  margin-left: 4px;
+  cursor: help;
+}
+
+.tag-warning-icon {
+  margin-right: 4px;
+}
+
+.info-icon {
+  margin-left: 4px;
+  font-size: 14px;
+  cursor: help;
+}
+
+.z-score-tag-alert {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 .rotation-section {

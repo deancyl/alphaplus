@@ -129,6 +129,119 @@ async def filter_funds(
     )
 
 
+@router.get("/stock-reverse/{stock_code}/export")
+async def export_stock_reverse_holding(
+    stock_code: str,
+    format: str = Query("csv", pattern="^(csv|excel)$", description="Export format"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum records to export"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Export stock reverse holding data to CSV or Excel.
+    
+    Returns file download response with all funds holding the specified stock.
+    """
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO, StringIO
+    import pandas as pd
+    
+    result = await db.execute(
+        select(FundPortfolioHoldings)
+        .where(FundPortfolioHoldings.stock_code == stock_code)
+        .order_by(FundPortfolioHoldings.holding_ratio.desc())
+        .limit(limit)
+    )
+    holdings = result.scalars().all()
+    
+    if not holdings:
+        raise HTTPException(status_code=404, detail=f"No holdings found for stock {stock_code}")
+    
+    fund_codes = list(set(h.fund_code for h in holdings))
+    result = await db.execute(
+        select(FundIndicators).where(FundIndicators.fund_code.in_(fund_codes))
+    )
+    funds_info = {f.fund_code: f.fund_name for f in result.scalars().all()}
+    
+    data = [
+        {
+            "fund_code": h.fund_code,
+            "fund_name": funds_info.get(h.fund_code, ""),
+            "stock_code": h.stock_code,
+            "stock_name": h.stock_name,
+            "holding_ratio_pct": round(h.holding_ratio * 100, 4) if h.holding_ratio else 0,
+            "holding_value": h.holding_value,
+            "report_date": h.report_date,
+        }
+        for h in holdings
+    ]
+    
+    df = pd.DataFrame(data)
+    
+    if format == "csv":
+        output = StringIO()
+        df.to_csv(output, index=False, encoding="utf-8-sig")
+        output.seek(0)
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=stock_reverse_{stock_code}.csv"
+            }
+        )
+    
+    else:
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="持仓明细")
+        output.seek(0)
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename=stock_reverse_{stock_code}.xlsx"
+            }
+        )
+
+
+@router.get("/stock-reverse/{stock_code}/crowding")
+async def get_stock_crowding_analysis(
+    stock_code: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get crowding analysis for a stock's institutional holdings.
+    
+    Returns comprehensive metrics:
+    - HHI index (Herfindahl-Hirschman Index)
+    - Concentration level
+    - Overlap coefficient
+    - Top fund analysis
+    """
+    from backend.services.crowding_analysis import get_crowding_score
+    
+    return await get_crowding_score(stock_code)
+
+
+@router.get("/stock-reverse/{stock_code}/aggregation")
+async def get_stock_aggregation(
+    stock_code: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get aggregated statistics for stock holdings across funds.
+    
+    Returns:
+    - Total funds count
+    - Weight statistics (total, avg, max, std)
+    - Quarter distribution
+    """
+    from backend.services.duckdb_ingestion import aggregate_by_stock
+    
+    return await aggregate_by_stock(stock_code)
+
+
 @router.get("/stock-reverse", response_model=StockReverseHoldingResponse)
 async def get_stock_reverse_holding(
     stock_code: str = Query(..., description="股票代码，如 600519"),

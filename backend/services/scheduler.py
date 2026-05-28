@@ -58,6 +58,7 @@ class SchedulerService:
     
     def _add_jobs(self):
         """Add all scheduled jobs."""
+        assert self._scheduler is not None, "Scheduler must be initialized"
         
         self._scheduler.add_job(
             self._refresh_pandas_cache,
@@ -113,16 +114,16 @@ class SchedulerService:
             max_instances=1,
         )
     
-    async def _schedule_worker_task(self, task_type: str, payload: dict = None):
+    async def _schedule_worker_task(self, task_type: str, payload: Optional[dict] = None):
         """Schedule a task to be executed by the isolated worker process."""
         try:
             process_manager = get_process_manager()
-            payload = payload or {}
-            payload['task_type'] = task_type
+            actual_payload = payload or {}
+            actual_payload['task_type'] = task_type
             
             task_id = process_manager.schedule_task(
                 task_type=task_type,
-                payload=payload,
+                payload=actual_payload,
                 priority=0
             )
             print(f"Scheduled worker task: {task_id} (type={task_type})")
