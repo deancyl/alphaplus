@@ -481,7 +481,8 @@ const getConcentrationClass = (level: string): string => {
 
 <style scoped>
 .stock-reverse-view {
-  min-height: calc(100vh - 100px);
+  min-height: calc(100vh - 100px); /* Fallback for older browsers */
+  min-height: calc(100dvh - 100px);
   padding: var(--spacing-md);
 }
 

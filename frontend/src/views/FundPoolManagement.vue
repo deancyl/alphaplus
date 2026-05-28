@@ -489,7 +489,8 @@ onMounted(() => {
 
 <style scoped>
 .fund-pool-management {
-  height: calc(100vh - 100px);
+  height: calc(100vh - 100px); /* Fallback for older browsers */
+  height: calc(100dvh - 100px);
   display: flex;
   flex-direction: column;
   padding: var(--spacing-md);
@@ -619,7 +620,8 @@ onMounted(() => {
   gap: var(--spacing-md);
   padding: var(--spacing-xs);
   overflow-y: auto;
-  max-height: calc(100vh - 260px);
+  max-height: calc(100vh - 260px); /* Fallback for older browsers */
+  max-height: calc(100dvh - 260px);
 }
 
 .pool-cards-grid.is-dragging {

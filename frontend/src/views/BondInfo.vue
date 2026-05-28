@@ -412,7 +412,8 @@ onMounted(() => {
 
 <style scoped>
 .bond-info {
-  height: calc(100vh - 100px);
+  height: calc(100vh - 100px); /* Fallback for older browsers */
+  height: calc(100dvh - 100px);
   display: flex;
   flex-direction: column;
   gap: 16px;

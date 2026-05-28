@@ -311,7 +311,7 @@ onMounted(() => {
           stripe
           highlight-current-row
           @current-change="handleSelectContract"
-          height="calc(100vh - 280px)"
+          height="calc(100dvh - 280px)"
         >
           <el-table-column prop="code" label="代码" width="70" fixed />
           <el-table-column prop="name" label="名称" width="90" />
@@ -420,7 +420,8 @@ onMounted(() => {
 
 <style scoped>
 .futures-info {
-  height: calc(100vh - 100px);
+  height: calc(100vh - 100px); /* Fallback for older browsers */
+  height: calc(100dvh - 100px);
   display: flex;
   flex-direction: column;
 }

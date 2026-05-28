@@ -182,12 +182,16 @@ onUnmounted(() => {
     <div
       class="bottom-sheet"
       :style="sheetStyle"
-      @touchstart="handleTouchStart"
-      @touchmove="handleTouchMove"
-      @touchend="handleTouchEnd"
     >
-      <!-- Drag handle -->
-      <div class="bottom-sheet-handle" />
+      <!-- Drag handle area (44px touch target) -->
+      <div
+        class="bottom-sheet-handle-area"
+        @touchstart="handleTouchStart"
+        @touchmove="handleTouchMove"
+        @touchend="handleTouchEnd"
+      >
+        <div class="bottom-sheet-handle" />
+      </div>
 
       <!-- Header -->
       <div v-if="title" class="bottom-sheet-header">
@@ -251,14 +255,26 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
+.bottom-sheet-handle-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: var(--spacing-sm) 0;
+  cursor: grab;
+  flex-shrink: 0;
+  touch-action: none;
+}
+
+.bottom-sheet-handle-area:active {
+  cursor: grabbing;
+}
+
 .bottom-sheet-handle {
   width: 36px;
   height: 4px;
   background: var(--border-line);
   border-radius: 2px;
-  margin: var(--spacing-sm) auto;
-  cursor: grab;
-  flex-shrink: 0;
 }
 
 .bottom-sheet-handle:active {
@@ -333,7 +349,8 @@ onUnmounted(() => {
 /* Mobile: Full width */
 @media (max-width: 768px) {
   .bottom-sheet-content {
-    max-height: calc(100vh - 120px);
+    max-height: calc(100vh - 120px); /* Fallback for older browsers */
+    max-height: calc(100dvh - 120px);
   }
 }
 </style>

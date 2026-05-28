@@ -191,6 +191,14 @@ a, button, td, input, select, .clickable {
   padding: var(--spacing-md);
 }
 
+/* Content constraint for ultra-wide screens */
+.content-constraint {
+  max-width: 1920px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
 /* Touch-friendly button/interactive element */
 .touch-target {
   min-height: var(--touch-target-min);
@@ -288,6 +296,27 @@ a, button, td, input, select, .clickable {
   
   .data-table {
     min-width: 600px;
+  }
+  
+  /* WCAG 2.5.5: Minimum 44px × 44px touch targets for mobile */
+  button,
+  [role="button"],
+  a,
+  input[type="checkbox"],
+  input[type="radio"],
+  select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Icon-only buttons need extra padding */
+  .el-button.is-circle,
+  .el-button--circle,
+  button[class*="circle"],
+  .icon-btn {
+    padding: 12px !important;
+    min-height: 44px !important;
+    min-width: 44px !important;
   }
 }
 

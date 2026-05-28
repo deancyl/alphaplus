@@ -327,7 +327,8 @@ onMounted(() => {
 
 <style scoped>
 .index-zone {
-  min-height: calc(100vh - 100px);
+  min-height: calc(100vh - 100px); /* Fallback for older browsers */
+  min-height: calc(100dvh - 100px);
 }
 
 /* Header */

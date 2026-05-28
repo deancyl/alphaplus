@@ -620,7 +620,8 @@ onUnmounted(() => {
 
 <style scoped>
 .fear-greed {
-  min-height: calc(100vh - 100px);
+  min-height: calc(100vh - 100px); /* Fallback for older browsers */
+  min-height: calc(100dvh - 100px);
   padding: var(--spacing-md);
   background: var(--bg-system);
 }

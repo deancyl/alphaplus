@@ -56,7 +56,7 @@ onMounted(() => {
 
 <style scoped>
 .app-container {
-  min-height: 100vh;
+  min-height: 100vh; /* Fallback for older browsers */
   min-height: 100dvh;
   display: flex;
   flex-direction: column;

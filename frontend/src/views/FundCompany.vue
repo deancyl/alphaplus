@@ -876,7 +876,7 @@ onMounted(() => {
         :data="filteredCompanies"
         :loading="loading"
         stripe
-        height="calc(100vh - 680px)"
+        height="calc(100dvh - 680px)"
         @row-click="handleRowClick"
         @sort-change="handleSortChange"
       >
@@ -1004,7 +1004,8 @@ onMounted(() => {
 
 <style scoped>
 .fund-company {
-  height: calc(100vh - 100px);
+  height: calc(100vh - 100px); /* Fallback for older browsers */
+  height: calc(100dvh - 100px);
   display: flex;
   flex-direction: column;
 }

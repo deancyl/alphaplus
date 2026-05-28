@@ -104,12 +104,19 @@ async def _warmup_cache():
             return 0
     
     async def warmup_fear_greed():
-        """Load fear-greed index data into cache."""
+        """Load fear-greed index data into cache with real calculation."""
         try:
+            from backend.api.analytics import get_fear_greed_index
             key = "fear_greed:latest"
-            tiered_cache.set(key, {"status": "warmup_placeholder"}, ttl=300)
-            logger.info("Warmed up fear-greed index placeholder")
-            return 1
+            
+            # Call the real analytics function (returns last 30 days by default)
+            data = await get_fear_greed_index()
+            
+            if data:
+                tiered_cache.set(key, data, ttl=300)
+                logger.info(f"Warmed up fear-greed index with {len(data)} records")
+                return len(data)
+            return 0
         except Exception as e:
             logger.warning(f"Failed to warmup fear-greed: {e}")
             return 0
@@ -136,11 +143,31 @@ async def _warmup_cache():
             logger.warning(f"Failed to warmup hot keys: {e}")
             return 0
     
+    async def warmup_hot_funds():
+        """Pre-warm top N funds from GLOBAL_FUND_DF."""
+        try:
+            df = GLOBAL_FUND_DF.df
+            if df is not None and not df.empty:
+                # Use settings.warmup_top_funds_count
+                top_funds = df.nlargest(settings.warmup_top_funds_count, 'scale') if 'scale' in df.columns else df.head(settings.warmup_top_funds_count)
+                warmed = 0
+                for _, fund in top_funds.iterrows():
+                    key = f"fund:{fund.get('fund_code', fund.get('code', ''))}"
+                    tiered_cache.set(key, fund.to_dict(), ttl=3600)
+                    warmed += 1
+                logger.info(f"Warmed up {warmed} hot funds")
+                return warmed
+            return 0
+        except Exception as e:
+            logger.warning(f"Failed to warmup hot funds: {e}")
+            return 0
+    
     warmup_tasks = [
         warmup_indices(),
         warmup_fear_greed(),
         warmup_index_quotes(),
         warmup_hot_keys(),
+        warmup_hot_funds(),  # NEW
     ]
     
     results = await asyncio.gather(*warmup_tasks, return_exceptions=True)

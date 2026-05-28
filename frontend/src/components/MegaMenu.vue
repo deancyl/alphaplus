@@ -355,9 +355,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 12px;
   cursor: pointer;
   transition: all 0.2s;
+  touch-action: manipulation;
 }
 
 .favorites-icon:hover {
@@ -524,7 +527,8 @@ onUnmounted(() => {
   right: 0;
   width: 280px;
   max-width: 85vw;
-  height: 100vh;
+  height: 100vh; /* Fallback for older browsers */
+  height: 100dvh;
   background: white;
   z-index: var(--z-modal);
   overflow-y: auto;
@@ -544,8 +548,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: none;
   background: transparent;
   color: white;

@@ -335,7 +335,7 @@ onMounted(() => {
             v-else
             :data="tableData"
             stripe
-            height="calc(100vh - 220px)"
+            height="calc(100dvh - 220px)"
             @sort-change="handleSortChange"
           >
             <el-table-column
@@ -447,7 +447,8 @@ onMounted(() => {
 <style scoped>
 /* ==================== Main Container ==================== */
 .wmp-filter {
-  height: calc(100vh - 100px);
+  height: calc(100vh - 100px); /* Fallback for older browsers */
+  height: calc(100dvh - 100px);
   padding: 0;
   background: var(--bg-system);
 }
@@ -763,7 +764,8 @@ onMounted(() => {
 @media (max-width: 768px) {
   .wmp-filter {
     height: auto;
-    min-height: calc(100vh - 100px);
+    min-height: calc(100vh - 100px); /* Fallback for older browsers */
+    min-height: calc(100dvh - 100px);
   }
   
   .filter-panel {

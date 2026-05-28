@@ -1020,7 +1020,8 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
 
 <style scoped>
 .fof-backtest {
-  height: calc(100vh - 100px);
+  height: calc(100vh - 100px); /* Fallback for older browsers */
+  height: calc(100dvh - 100px);
   padding: 0;
 }
 
@@ -1421,7 +1422,8 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
 @media (max-width: 768px) {
   .fof-backtest {
     height: auto;
-    min-height: calc(100vh - 100px);
+    min-height: calc(100vh - 100px); /* Fallback for older browsers */
+    min-height: calc(100dvh - 100px);
   }
   
   .config-panel {

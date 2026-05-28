@@ -11,33 +11,12 @@ import numpy as np
 
 from backend.services.resilience import retry_with_backoff, RetryConfig
 from backend.services.simulators import GBMSimulator
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Core indices configuration (17 total)
-CORE_INDICES = {
-    # 宽基指数
-    "000300": "沪深300",
-    "000905": "中证500",
-    "000852": "中证1000",
-    "000016": "上证50",
-    "000001": "上证指数",
-    "399001": "深证成指",
-    "399006": "创业板指",
-    "000688": "科创50",
-    # 红利指数
-    "000922": "中证红利",
-    # 主题指数
-    "399971": "中证传媒",
-    "399986": "中证银行",
-    "399997": "中证白酒",
-    # 其他
-    "000903": "中证100",
-    "000906": "中证800",
-    "399330": "深证100",
-    "399673": "创业板50",
-    "000015": "上证红利",
-}
+# Core indices configuration (17 total) - imported from config
+CORE_INDICES = settings.CORE_INDICES
 
 # Cache for valuation data (1 hour TTL)
 _valuation_cache: Dict[str, Dict[str, Any]] = {}

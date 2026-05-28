@@ -442,7 +442,7 @@ onMounted(() => {
             v-else
             :data="tableData"
             stripe
-            height="calc(100vh - 220px)"
+            height="calc(100dvh - 220px)"
           >
             <el-table-column
               prop="fund_code"
@@ -581,7 +581,8 @@ onMounted(() => {
 
 <style scoped>
 .fund-filter {
-  height: calc(100vh - 100px);
+  height: calc(100vh - 100px); /* Fallback for older browsers */
+  height: calc(100dvh - 100px);
   padding: 0;
 }
 
@@ -738,7 +739,8 @@ onMounted(() => {
 @media (max-width: 768px) {
   .fund-filter {
     height: auto;
-    min-height: calc(100vh - 100px);
+    min-height: calc(100vh - 100px); /* Fallback for older browsers */
+    min-height: calc(100dvh - 100px);
   }
   
   .filter-panel {

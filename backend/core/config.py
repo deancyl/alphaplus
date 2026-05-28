@@ -62,6 +62,44 @@ class Settings(BaseSettings):
     # CORS (configurable via CORS_ORIGINS env var)
     cors_origins: list[str] = _parse_cors_origins()
     
+    # Cache Warmup Configuration
+    warmup_top_funds_count: int = 50
+    warmup_index_valuation_codes: list[str] = [
+        "000300", "000905", "399006", "000852", "H30533", 
+        "000016", "399102"
+    ]
+    
+    # Quantitative Analysis Parameters
+    fear_greed_history_days: int = 30
+    erp_history_days: int = 100
+    crowding_history_records: int = 240
+    
+    # Gold Arbitrage Calibration
+    gold_shanghai_purity: float = 0.9999
+    gold_london_purity: float = 0.9950
+    gold_vat_friction_factor: float = 0.0035
+    
+    # Core Indices Configuration (17 indices)
+    CORE_INDICES: dict[str, str] = {
+        "000300": "沪深300",
+        "000905": "中证500",
+        "000852": "中证1000",
+        "399006": "创业板指",
+        "000016": "上证50",
+        "399102": "创业板综",
+        "H30533": "中证A50",
+        "000001": "上证指数",
+        "399001": "深证成指",
+        "000688": "科创50",
+        "399303": "国证2000",
+        "000903": "中证100",
+        "000922": "中证红利",
+        "931697": "中证消费",
+        "931800": "中证医药",
+        "931631": "中证科技",
+        "399971": "中证传媒"
+    }
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

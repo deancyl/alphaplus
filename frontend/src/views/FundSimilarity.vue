@@ -891,7 +891,8 @@ onMounted(() => {
 
 <style scoped>
 .fund-similarity {
-  height: calc(100vh - 100px);
+  height: calc(100vh - 100px); /* Fallback for older browsers */
+  height: calc(100dvh - 100px);
   display: flex;
   flex-direction: column;
 }

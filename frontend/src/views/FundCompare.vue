@@ -659,10 +659,12 @@ onUnmounted(() => {
           </div>
           
           <div class="table-container" ref="tableContainer">
-            <!-- Left scroll indicator -->
-            <div v-if="canScrollLeft" class="scroll-indicator scroll-indicator-left">
-              <el-icon><i-ep-arrow-left /></el-icon>
-            </div>
+            <!-- Left scroll indicator - gradient mask only -->
+            <div 
+              v-if="canScrollLeft" 
+              class="scroll-indicator scroll-indicator-left"
+              aria-hidden="true"
+            />
             
             <!-- Skeleton table when loading -->
             <SkeletonLoader 
@@ -763,12 +765,14 @@ onUnmounted(() => {
                   {{ formatNumber(row.volatility_1y) }}
                 </template>
               </el-table-column>
-            </el-table>
+</el-table>
             
-            <!-- Right scroll indicator -->
-            <div v-if="canScrollRight" class="scroll-indicator scroll-indicator-right">
-              <el-icon><i-ep-arrow-right /></el-icon>
-            </div>
+            <!-- Right scroll indicator - gradient mask only -->
+            <div 
+              v-if="canScrollRight" 
+              class="scroll-indicator scroll-indicator-right"
+              aria-hidden="true"
+            />
           </div>
         </div>
         
@@ -856,7 +860,8 @@ onUnmounted(() => {
 
 <style scoped>
 .fund-compare {
-  height: calc(100vh - 100px);
+  height: calc(100vh - 100px); /* Fallback for older browsers */
+  height: calc(100dvh - 100px);
 }
 
 .compare-container {
@@ -1033,7 +1038,10 @@ onUnmounted(() => {
 }
 
 .remove-btn {
-  padding: 2px;
+  padding: 10px;
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
 }
 
 .card-body {
@@ -1177,18 +1185,51 @@ onUnmounted(() => {
   }
 }
 
-/* Sticky left column for mobile horizontal scroll */
+/* Sticky left column for mobile horizontal scroll with progressive shadow */
 .el-table .sticky-column {
-  position: sticky;
-  left: 0;
-  z-index: var(--z-sticky);
-  background: var(--bg-card);
-  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
+  position: sticky !important;
+  left: 0 !important;
+  z-index: var(--z-sticky) !important;
+  background: var(--bg-card) !important;
+}
+
+/* Progressive shadow + gradient mask on sticky column edge */
+.el-table .sticky-column::before {
+  content: '';
+  position: absolute;
+  right: -4px;
+  top: 0;
+  height: 100%;
+  width: 20px;
+  background: linear-gradient(to left, transparent 0%, var(--bg-card) 100%);
+  pointer-events: none;
+  z-index: calc(var(--z-sticky) - 1);
+}
+
+/* Shadow effect on sticky column */
+.el-table .sticky-column::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 8px;
+  background: transparent;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
 }
 
 /* For dark mode */
 :root.dark .el-table .sticky-column {
-  background: var(--bg-card);
+  background: var(--bg-card) !important;
+}
+
+:root.dark .el-table .sticky-column::before {
+  background: linear-gradient(to left, transparent 0%, var(--bg-card) 100%);
+}
+
+:root.dark .el-table .sticky-column::after {
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.4);
 }
 
 /* Second column also sticky if needed */
@@ -1197,6 +1238,7 @@ onUnmounted(() => {
   left: 150px;
   z-index: calc(var(--z-sticky) - 1);
   background: var(--bg-card);
+  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.08);
 }
 
 /* Table container with scroll detection */
@@ -1207,40 +1249,34 @@ onUnmounted(() => {
   scroll-snap-type: x proximity;
 }
 
-/* Scroll indicators */
+/* Scroll indicators with gradient masks */
 .scroll-indicator {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 20;
-  background: var(--bg-card);
-  padding: 8px;
-  border-radius: 50%;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  opacity: 0.8;
-  transition: opacity 0.2s;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-}
-
-.scroll-indicator:hover {
-  opacity: 1;
+  top: 0;
+  height: 100%;
+  z-index: var(--z-sticky);
+  pointer-events: none;
+  transition: opacity 0.3s ease;
 }
 
 .scroll-indicator-left {
-  left: 8px;
+  left: 0;
+  width: 48px;
+  background: linear-gradient(to right, var(--bg-card) 0%, var(--bg-card) 20%, transparent 100%);
 }
 
 .scroll-indicator-right {
-  right: 8px;
+  right: 0;
+  width: 48px;
+  background: linear-gradient(to left, var(--bg-card) 0%, var(--bg-card) 20%, transparent 100%);
 }
 
 /* Dark mode scroll indicators */
-:root.dark .scroll-indicator {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+:root.dark .scroll-indicator-left {
+  background: linear-gradient(to right, var(--bg-card) 0%, var(--bg-card) 20%, transparent 100%);
+}
+
+:root.dark .scroll-indicator-right {
+  background: linear-gradient(to left, var(--bg-card) 0%, var(--bg-card) 20%, transparent 100%);
 }
 </style>
