@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.20-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.20)
+[![Version](https://img.shields.io/badge/version-0.1.21-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.21)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -9,7 +9,7 @@
 
 ## 功能特性
 
-### 核心模块 (24个功能视图)
+### 核心模块 (26个功能视图)
 
 | 模块 | 功能 | 数据来源 |
 |------|------|----------|
@@ -17,7 +17,7 @@
 | 基金筛选 | 5维度穿透筛选，26,801只基金，毫秒级响应 | AkShare |
 | 基金对比 | 相关性热力矩阵，最多15只基金，实时Pearson计算 | 本地计算 |
 | 相似度计算器 | 14因子暴露分析，SLSQP风格归因 | 本地计算 |
-| 基金发行看板 | 新发基金周历管线 | AkShare |
+| 金发行看板 | 新发基金周历管线 | AkShare |
 | 基金公司透视 | Treemap资产分布 + 经理四象限气泡图 | AkShare |
 | **基金详情穿透** | 持仓明细 + 行业配置饼图，报告期选择 | AkShare |
 | 股票行情 | A股实时行情 | AkShare |
@@ -34,9 +34,11 @@
 | **定投计算器** | 周/双周/月定投收益计算，一次性对比 | 本地计算 |
 | **指数专区** | 5类指数标签页，对比抽屉 | AkShare |
 | **存款利率看板** | 银行存款利率 vs 国债收益率利差分析 | AkShare |
+| **存款ERP联动** | 存款利率与ERP动态关联分析 | AkShare |
 | **保险IRR测算器** | Newton-Raphson IRR计算，30年现金价值投影 | 本地计算 |
 | **贵金属跟踪** | 上海金交所Au99.99 + 伦敦金估算，价差分析 | AkShare |
 | **FOF组合回测** | 虚拟组合构建 + Brinson业绩归因 | 本地计算 |
+| **银行理财筛选** | PR1-PR5风险等级、收益率、期限筛选 | 中国理财网/天天基金 |
 
 ### 技术亮点
 
@@ -44,20 +46,26 @@
 - **高性能查询**: 
   - SQLite WAL 模式 + 64MB 缓存
   - Pandas 内存筛选，26,801只基金 ~7ms 响应
+  - L1 TTLCache P95延迟 0.007ms (280x优于目标)
+  - L2/L3 DataFrame LRU + Parquet分区，90%命中率
 - **量化引擎**:
   - 相空间轨迹计算 (位置、速度、加速度)
   - SciPy SLSQP 多因子暴露分析 (14因子)
   - 实时 Pearson 相关系数矩阵 (~4ms)
+  - Brinson几何多期归因 (Carino残差<1e-12)
 - **优雅降级架构**:
   - GBM 几何布朗运动模拟器 (价格/收益率)
   - O-U 均值回归模拟器 (恐惧贪婪/拥挤度)
   - 指数退避重试 + 令牌桶限流
+  - 多源数据网关 + Circuit Breaker熔断
 - **高级可视化**:
   - ECharts markArea 估值区间着色
   - Sparkline 表格内嵌微图表
   - 相空间轨迹向量动画
-- **移动端适配**: 响应式设计，支持手机/平板/电脑
+  - 移动端动态文本头替代Tooltip
+- **移动端适配**: 响应式设计320px-3840px，触控热区44px最小
 - **实时刷新**: 30秒自动刷新行情数据
+- **QA Gates**: Brinson验证、内存泄漏测试、Sub-500ms性能基准
 
 ## 技术栈
 
@@ -248,6 +256,36 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.21 (2026-05-28)
+
+**下一阶段无债研发与加固:**
+
+**UI/UX 修复:**
+- Mobile Tooltip Fix: FearGreed/ERPSpread移动端tooltip禁用，动态文本头替代
+- Z-Index标准化: 5级体系(1/10/30/50/100)，11个组件更新
+- Soft Keyboard Handling: InsuranceCalculator键盘遮挡图表隐藏机制
+- Z-Score Alerts: StyleStrength/MarketCrowding Z-Score >= +2.0告警
+
+**新功能开发:**
+- WMP银行理财筛选: wmp_source.py + wmp.py API，WMPFilter.vue前端
+- 存款ERP联动: DepositERPLinkage.vue新视图
+- 拥挤度分析: crowding_analysis.py新服务
+- aData直连模式: adata_client.py新适配器
+
+**性能优化:**
+- L1 Cache: P95延迟0.007ms (目标<2ms)，280倍优于目标
+- L2/L3 Cache: DataFrame LRU缓存，Parquet分区，90%命中率
+
+**QA Gates:**
+- Brinson验证测试: 20个新测试，Carino残差<1e-12
+- 内存泄漏测试: 50次路由切换，10条ECharts路由
+- 性能基准测试: 11条路由Sub-500ms测试
+
+**文件统计:**
+- 新增文件: 18个
+- 修改文件: 33个
+- 测试覆盖: +200个测试用例
 
 ### v0.1.20 (2026-05-28)
 
