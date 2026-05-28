@@ -353,7 +353,6 @@ const fetchMarketData = async () => {
     
   } catch (error) {
     ElMessage.error('获取市场数据失败')
-    console.error(error)
   } finally {
     loading.value = false
   }

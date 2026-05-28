@@ -80,7 +80,6 @@ const fetchYieldCurve = async () => {
     await nextTick()
     renderYieldCurveChart()
   } catch (error) {
-    console.error('获取收益率曲线失败:', error)
     ElMessage.error('获取收益率曲线失败')
   } finally {
     loading.value = false

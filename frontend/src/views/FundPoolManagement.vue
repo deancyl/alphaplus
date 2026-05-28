@@ -77,7 +77,6 @@ const loadAllPools = async () => {
       exit: exitRes.funds,
     }
   } catch (error) {
-    console.error('Failed to load pools:', error)
     ElMessage.error('加载基金池失败')
   } finally {
     loading.value = false
@@ -92,7 +91,6 @@ const loadPool = async (poolType: string | number) => {
     const response = await poolApi.list(poolTypeStr, status)
     pools.value[poolTypeStr] = response.funds
   } catch (error) {
-    console.error(`Failed to load ${poolTypeStr} pool:`, error)
   }
 }
 
@@ -139,7 +137,6 @@ const handleAddFund = async () => {
     addDialogVisible.value = false
     await loadPool(addForm.value.pool_type)
   } catch (error) {
-    console.error('Failed to add fund:', error)
     ElMessage.error('添加失败')
   } finally {
     addFormLoading.value = false
@@ -164,7 +161,6 @@ const handleTransfer = async (fund: PoolFund, targetPool: string) => {
     await loadAllPools()
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('Failed to transfer fund:', error)
       ElMessage.error('转移失败')
     }
   }
@@ -188,7 +184,6 @@ const handleRemove = async (fund: PoolFund) => {
     await loadPool(fund.pool_type)
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('Failed to remove fund:', error)
       ElMessage.error('移除失败')
     }
   }

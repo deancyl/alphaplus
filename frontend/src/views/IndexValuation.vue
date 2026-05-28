@@ -21,14 +21,15 @@ const fetchValuation = async () => {
   loading.value = true
   try {
     const response = await getIndexValuation()
-    valuationData.value = response.items
-    if (!selectedIndex.value && valuationData.value.length > 0) {
-      selectedIndex.value = valuationData.value[0]
-      fetchHistory()
+    if (response && response.items) {
+      valuationData.value = response.items
+      if (!selectedIndex.value && valuationData.value.length > 0) {
+        selectedIndex.value = valuationData.value[0]
+        fetchHistory()
+      }
     }
-  } catch (error) {
-    console.error('Failed to fetch index valuation:', error)
-    ElMessage.error('获取指数估值数据失败')
+  } catch {
+    // API interceptor already handled notification
   } finally {
     loading.value = false
   }
@@ -39,10 +40,12 @@ const fetchHistory = async () => {
   
   historyLoading.value = true
   try {
-    historyData.value = await getIndexPEHistory(selectedIndex.value.index_code, historyDays.value)
-  } catch (error) {
-    console.error('Failed to fetch PE history:', error)
-    ElMessage.error('获取PE历史数据失败')
+    const data = await getIndexPEHistory(selectedIndex.value.index_code, historyDays.value)
+    if (data && Array.isArray(data)) {
+      historyData.value = data
+    }
+  } catch {
+    // API interceptor already handled notification
   } finally {
     historyLoading.value = false
   }

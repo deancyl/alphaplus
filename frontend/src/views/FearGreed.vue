@@ -409,7 +409,6 @@ const fetchData = async () => {
     }, 100)
   } catch (error) {
     ElMessage.error('获取恐惧贪婪指数数据失败')
-    console.error(error)
   } finally {
     loading.value = false
   }

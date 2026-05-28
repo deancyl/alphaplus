@@ -911,7 +911,6 @@ const fetchRotationVectors = async () => {
     }, 100)
   } catch (error) {
     ElMessage.error('获取轨迹向量数据失败')
-    console.error(error)
   } finally {
     trajectoryLoading.value = false
   }
@@ -1018,7 +1017,6 @@ const fetchData = async () => {
     }, 100)
   } catch (error) {
     ElMessage.error('获取市场拥挤度数据失败')
-    console.error(error)
   } finally {
     loading.value = false
   }

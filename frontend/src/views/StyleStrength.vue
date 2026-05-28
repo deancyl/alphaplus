@@ -379,7 +379,6 @@ const fetchData = async () => {
     }, 100)
   } catch (error) {
     ElMessage.error('获取市场风格强度数据失败')
-    console.error(error)
   } finally {
     loading.value = false
   }

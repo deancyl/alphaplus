@@ -104,7 +104,6 @@ const handleSearch = (query: string) => {
       })
       searchResults.value = response.results || []
     } catch (error) {
-      console.error('Search failed:', error)
       searchResults.value = []
     } finally {
       searchLoading.value = false
@@ -147,7 +146,6 @@ const fetchStockData = async () => {
     await nextTick()
     renderKLineChart()
   } catch (error) {
-    console.error('Failed to fetch stock data:', error)
     ElMessage.error('获取股票数据失败')
   } finally {
     quoteLoading.value = false

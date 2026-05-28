@@ -360,9 +360,13 @@ const handleFundSearch = async (query: string, index: number) => {
   
   try {
     const results = await searchFunds(query)
-    fundSearchResults.value = results
-  } catch (error) {
-    console.error('Fund search failed:', error)
+    if (results && Array.isArray(results)) {
+      fundSearchResults.value = results
+    } else {
+      fundSearchResults.value = []
+    }
+  } catch {
+    fundSearchResults.value = []
   } finally {
     fundSearchLoading.value = null
   }
@@ -417,8 +421,7 @@ const savePortfolio = async () => {
     ElMessage.success('组合保存成功')
     activePortfolioId.value = portfolio.id
     await loadPortfolios()
-  } catch (error) {
-    console.error('Failed to save portfolio:', error)
+  } catch {
     ElMessage.error('保存失败，请重试')
   } finally {
     savingPortfolio.value = false
@@ -432,10 +435,8 @@ const loadPortfolios = async () => {
   loadingPortfolios.value = true
   
   try {
-    portfolios.value = await getPortfolios()
-  } catch (error) {
-    console.error('Failed to load portfolios:', error)
-    // Use empty array on error
+    portfolios.value = (await getPortfolios()) || []
+  } catch {
     portfolios.value = []
   } finally {
     loadingPortfolios.value = false
@@ -474,7 +475,6 @@ const handleDeletePortfolio = async (portfolio: PortfolioItem) => {
     await loadPortfolios()
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('Failed to delete portfolio:', error)
       ElMessage.error('删除失败')
     }
   }
@@ -518,7 +518,6 @@ const runBacktestHandler = async () => {
       ElMessage.success('回测完成')
     }
   } catch (error) {
-    console.error('Backtest failed:', error)
     ElMessage.error('回测失败，请重试')
   } finally {
     runningBacktest.value = false

@@ -65,8 +65,8 @@ const loadFromStorage = () => {
         insurance: parsed.insurance || [],
       }
     }
-  } catch (error) {
-    console.error('Failed to load favorites from localStorage:', error)
+  } catch {
+    // Silently fail - localStorage is not critical
   }
 }
 
@@ -74,8 +74,7 @@ const loadFromStorage = () => {
 const saveToStorage = () => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites.value))
-  } catch (error) {
-    console.error('Failed to save favorites to localStorage:', error)
+  } catch {
     ElMessage.error('保存失败，请检查浏览器存储空间')
   }
 }
@@ -171,7 +170,6 @@ const handleSyncToCloud = async () => {
     await favoritesApi.sync(allFavorites)
     ElMessage.success('同步成功')
   } catch (error) {
-    console.error('Sync failed:', error)
     ElMessage.error('同步失败，请稍后重试')
   } finally {
     syncing.value = false

@@ -432,7 +432,6 @@ const fetchData = async () => {
     }
   } catch (error) {
     ElMessage.error('获取ERP数据失败')
-    console.error(error)
   } finally {
     loading.value = false
   }

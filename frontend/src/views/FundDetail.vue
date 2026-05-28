@@ -153,10 +153,10 @@ const fetchFundInfo = async () => {
   
   fundLoading.value = true
   try {
-    fundInfo.value = await getFundDetail(fundCode.value)
-  } catch (error) {
-    console.error('Failed to fetch fund info:', error)
-    ElMessage.error('获取基金信息失败')
+    const data = await getFundDetail(fundCode.value)
+    if (data) fundInfo.value = data
+  } catch {
+    // API interceptor already handled notification
   } finally {
     fundLoading.value = false
   }
@@ -168,16 +168,15 @@ const fetchHoldings = async () => {
   holdingsLoading.value = true
   try {
     const response = await getFundHoldings(fundCode.value, selectedDate.value || undefined)
-    
-    availableDates.value = response.report_dates
-    if (!selectedDate.value && response.report_dates.length > 0) {
-      selectedDate.value = response.report_dates[0].report_date
+    if (response && response.report_dates) {
+      availableDates.value = response.report_dates
+      if (!selectedDate.value && response.report_dates.length > 0) {
+        selectedDate.value = response.report_dates[0].report_date
+      }
+      holdings.value = response.holdings
     }
-    holdings.value = response.holdings
-    
-  } catch (error) {
-    console.error('Failed to fetch holdings:', error)
-    ElMessage.error('获取持仓数据失败')
+  } catch {
+    // API interceptor already handled notification
   } finally {
     holdingsLoading.value = false
   }
@@ -189,12 +188,11 @@ const fetchIndustry = async () => {
   industryLoading.value = true
   try {
     const response = await getFundIndustry(fundCode.value, selectedDate.value || undefined)
-    
-    industries.value = response.industries
-    
-  } catch (error) {
-    console.error('Failed to fetch industry:', error)
-    ElMessage.error('获取行业分布失败')
+    if (response && response.industries) {
+      industries.value = response.industries
+    }
+  } catch {
+    // API interceptor already handled notification
   } finally {
     industryLoading.value = false
   }

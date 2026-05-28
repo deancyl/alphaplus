@@ -100,7 +100,6 @@ const loadData = async () => {
     }
   } catch (error) {
     ElMessage.error('加载期货数据失败')
-    console.error(error)
   } finally {
     loading.value = false
   }

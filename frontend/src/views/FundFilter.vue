@@ -63,11 +63,12 @@ const handleFilter = async () => {
   const startTime = performance.now()
   try {
     const response = await filterFunds(filterParams.value)
-    tableData.value = response.funds
-    total.value = response.total
-  } catch (error) {
-    ElMessage.error('筛选失败，请重试')
-    console.error(error)
+    if (response && response.funds) {
+      tableData.value = response.funds
+      total.value = response.total
+    }
+  } catch {
+    // API interceptor already handled notification
   } finally {
     loading.value = false
     filterTimeMs.value = Math.round(performance.now() - startTime)
@@ -185,9 +186,8 @@ const fetchSparklineData = async (fundCode: string) => {
       const fallbackOption = createFallbackSparkline(fundCode)
       sparklineCache.value.set(fundCode, { option: fallbackOption, isSimulated: true })
     }
-  } catch (error) {
-    console.warn(`Failed to fetch NAV trend for ${fundCode}:`, error)
-    // Use fallback
+  } catch {
+    // Graceful degradation - use fallback sparkline
     const fallbackOption = createFallbackSparkline(fundCode)
     sparklineCache.value.set(fundCode, { option: fallbackOption, isSimulated: true })
   } finally {

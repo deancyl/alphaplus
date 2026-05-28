@@ -192,7 +192,6 @@ async function fetchIssueData() {
     updateChart()
   } catch (error) {
     ElMessage.error('获取发行数据失败，请重试')
-    console.error(error)
     issueData.value = []
     updateChart()
   } finally {

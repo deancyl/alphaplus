@@ -110,7 +110,6 @@ const handleSearch = async () => {
       }))
   } catch (error) {
     ElMessage.error('搜索失败，请重试')
-    console.error(error)
   } finally {
     loading.value = false
   }
@@ -225,7 +224,6 @@ const fetchComparisonData = async () => {
     renderCharts()
   } catch (error) {
     ElMessage.error('获取对比数据失败')
-    console.error(error)
   } finally {
     compareLoading.value = false
   }

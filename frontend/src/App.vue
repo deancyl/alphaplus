@@ -20,8 +20,8 @@ const loadFavoritesCount = () => {
         0
       )
     }
-  } catch (error) {
-    console.error('Failed to load favorites count:', error)
+  } catch {
+    // Silently fail - favorites count is not critical
   }
 }
 

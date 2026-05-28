@@ -68,7 +68,6 @@ const fetchIndexData = async () => {
     // Axios interceptor returns response.data, which has { items, total }
     allIndices.value = (response as any).items ?? []
   } catch (error) {
-    console.error('Failed to fetch index valuation:', error)
     ElMessage.error('获取指数数据失败，请稍后重试')
   } finally {
     loading.value = false

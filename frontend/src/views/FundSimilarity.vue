@@ -118,7 +118,6 @@ const handleSearch = async () => {
     searchResults.value = response || []
     showSearchDropdown.value = searchResults.value.length > 0
   } catch (error) {
-    console.error('Search failed:', error)
     searchResults.value = []
   } finally {
     searchLoading.value = false
@@ -219,7 +218,6 @@ const fetchFactorExposure = async (fundCode: string, fundName: string): Promise<
       utilities_sector: exposure[16] || 0,
     }
   } catch (error) {
-    console.error(`Failed to fetch factor exposure for ${fundCode}:`, error)
     return null
   }
 }
@@ -298,7 +296,6 @@ const fetchStyleBoxData = async (fundCode: string): Promise<StyleBoxData | null>
       small_cap_growth: smallRow.growth,
     }
   } catch (error) {
-    console.error(`Failed to fetch style box data for ${fundCode}:`, error)
     // Return a balanced default distribution
     return {
       large_cap_value: 15,
@@ -340,7 +337,6 @@ const calculateFactorExposures = async () => {
     }
   } catch (error) {
     ElMessage.error('因子暴露计算失败')
-    console.error(error)
   } finally {
     factorCalculationTime.value = Math.round(performance.now() - startTime)
     factorLoading.value = false
@@ -399,7 +395,6 @@ const calculateSimilarity = async () => {
     await fetchStyleBoxData(sourceFundCode.value)
   } catch (error) {
     ElMessage.error('相似度计算失败，请重试')
-    console.error(error)
     similarFunds.value = []
   } finally {
     loading.value = false

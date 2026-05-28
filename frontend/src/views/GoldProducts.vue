@@ -275,7 +275,6 @@ const fetchGoldData = async () => {
     }
   } catch (error) {
     ElMessage.error('获取黄金价格失败')
-    console.error(error)
   } finally {
     loading.value = false
   }
@@ -287,7 +286,6 @@ const fetchHistoryData = async () => {
     const response = await axios.get<GoldHistoryData>('/api/v1/gold/history?days=30')
     historyData.value = response.data.history
   } catch (error) {
-    console.error('Failed to fetch gold history:', error)
   }
 }
 

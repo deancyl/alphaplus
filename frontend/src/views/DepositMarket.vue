@@ -49,7 +49,6 @@ const fetchDepositRates = async () => {
     const response = await axios.get<DepositData>('/api/v1/deposit/rates')
     depositData.value = response.data
   } catch (error) {
-    console.error('Failed to load deposit rates:', error)
     ElMessage.error('获取存款利率数据失败')
   } finally {
     loading.value = false

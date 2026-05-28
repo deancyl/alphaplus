@@ -30,7 +30,6 @@ const handleSearch = async () => {
     result.value = await getStockReverseHolding(searchCode.value.trim())
     crowdingData.value = await getCrowdingAnalysis(searchCode.value.trim())
   } catch (error) {
-    console.error('Failed to fetch stock reverse holding:', error)
     ElMessage.error('查询失败，请检查股票代码')
   } finally {
     loading.value = false
@@ -51,7 +50,6 @@ const handleExport = async (format: 'csv' | 'excel') => {
     window.URL.revokeObjectURL(url)
     ElMessage.success('导出成功')
   } catch (error) {
-    console.error('Export failed:', error)
     ElMessage.error('导出失败')
   } finally {
     exporting.value = false
