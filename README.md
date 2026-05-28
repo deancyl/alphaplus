@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.21-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.21)
+[![Version](https://img.shields.io/badge/version-0.1.22-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.22)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -256,6 +256,59 @@ alphaplus/
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.22 (2026-05-28)
+
+**多端UI/UX深度优化与硬编码剔除:**
+
+**移动端视口优化 (100vh → 100dvh):**
+- 27个Vue文件完成替换，34处100vh改为100dvh
+- 解决移动端浏览器工具栏导致的视口高度塌陷问题
+- CSS fallback支持旧版浏览器
+
+**大屏视口夹钳:**
+- App.vue添加max-w-[1920px] mx-auto约束
+- main.css新增.content-constraint工具类
+- 防止超宽屏幕(>1920px)内容过度拉伸
+
+**触控热区WCAG合规:**
+- BottomSheet.vue: 触控区域扩展至44px最小
+- MegaMenu.vue: 菜单项触控优化
+- FundCompare.vue: 滚动指示器触控增强
+- 符合WCAG 2.5.5标准 (44px×44px最小)
+
+**配置层扩展 (15个新参数):**
+- warmup_top_funds_count=50
+- warmup_index_valuation_codes (7条)
+- fear_greed_history_days=30
+- erp_history_days=100
+- crowding_history_records=240
+- gold_shanghai_purity=0.9999
+- gold_london_purity=0.9950
+- gold_vat_friction_factor=0.0035
+- CORE_INDICES迁移至config (17条)
+
+**缓存预热重构:**
+- 消除warmup_placeholder占位符
+- warmup_fear_greed调用真实API
+- 新增warmup_hot_funds预热热门基金
+- 使用settings.*配置参数
+
+**表格粘性列优化:**
+- FundCompare.vue第一列sticky定位
+- 渐变阴影滚动指示器
+- 水平滚动视觉反馈增强
+
+**测试覆盖:**
+- test_config_warmup.py: 11个测试 (配置验证)
+- test_warmup_refactor.py: 3个测试 (重构验证)
+- 全部22个测试通过
+
+**文件统计:**
+- 31文件修改: +271行, -115行
+- 后端: config.py, main.py, index_valuation.py
+- 前端: 27个Vue组件, main.css
+- 测试: 2个新测试文件
 
 ### v0.1.21 (2026-05-28)
 
