@@ -2,6 +2,7 @@
 Market API router - Overview, Indices, Bonds, Quotes.
 """
 import asyncio
+import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -15,7 +16,7 @@ from backend.models.fund import (
     IndexValuationHistory,
 )
 from backend.services.cache import realtime_cache
-from backend.services.akshare_data import akshare_data_service
+from backend.services.akshare_data import akshare_data_service, get_default_indices
 from backend.services.index_valuation import get_all_indices_valuation, get_index_pe_history
 from backend.services.market_gateway import market_gateway, init_gateway
 from backend.schemas.fund import DashboardResponse, DashboardDataQuality
@@ -27,6 +28,7 @@ from backend.schemas.market import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Initialize gateway on module load
 _gateway_initialized = False
@@ -112,22 +114,91 @@ async def get_index_valuation_history(
 @router.get("/indices")
 async def get_index_quotes():
     """
-    核心指数行情 - 5秒伪实时刷新.
-    Returns 8 major indices with cached data.
+    核心指数行情 - 带超时和优雅降级的实时刷新.
+    
+    Features:
+    - 10s timeout protection
+    - Fallback to default indices on failure
+    - Cache TTL 30s (configurable)
+    - Returns _meta.is_fallback when using degraded data
     """
     cached_indices = await realtime_cache.get("indices")
     if cached_indices:
         return cached_indices
     
-    real_data = await akshare_data_service.get_index_quotes()
-    if real_data:
-        return real_data
+    try:
+        real_data = await asyncio.wait_for(
+            akshare_data_service.get_index_quotes(),
+            timeout=10.0
+        )
+        if real_data:
+            await realtime_cache.set("indices", real_data, ttl_seconds=30)
+            return real_data
+    except asyncio.TimeoutError:
+        logger.warning("Indices API timed out after 10s, using fallback")
+    except Exception as e:
+        logger.warning(f"Indices API failed: {e}")
+    
+    default_data = {item["code"]: {
+        "name": item["name"],
+        "price": item["price"],
+        "change": item["change"],
+        "change_pct": item["change_pct"]
+    } for item in get_default_indices()}
     
     return {
-        "000001": {"name": "上证指数", "price": 0, "change": 0, "change_pct": 0},
-        "399001": {"name": "深证成指", "price": 0, "change": 0, "change_pct": 0},
-        "000300": {"name": "沪深300", "price": 0, "change": 0, "change_pct": 0},
+        **default_data,
+        "_meta": {"is_fallback": True, "error": "Data source unavailable or timed out"}
     }
+
+
+@router.get("/indices/health")
+async def check_indices_health():
+    """
+    Health check for indices data source.
+    
+    Returns:
+        - status: "healthy" or "degraded"
+        - latency_ms: Response time in milliseconds
+        - message: Error message if degraded
+    """
+    import time
+    
+    start_time = time.time()
+    
+    try:
+        real_data = await asyncio.wait_for(
+            akshare_data_service.get_index_quotes(),
+            timeout=5.0
+        )
+        latency_ms = int((time.time() - start_time) * 1000)
+        
+        if real_data and len(real_data) > 0:
+            return {
+                "status": "healthy",
+                "latency_ms": latency_ms,
+                "indices_count": len(real_data),
+            }
+        else:
+            return {
+                "status": "degraded",
+                "latency_ms": latency_ms,
+                "message": "Data source returned empty data",
+            }
+    except asyncio.TimeoutError:
+        latency_ms = int((time.time() - start_time) * 1000)
+        return {
+            "status": "degraded",
+            "latency_ms": latency_ms,
+            "message": "Data source timed out after 5s",
+        }
+    except Exception as e:
+        latency_ms = int((time.time() - start_time) * 1000)
+        return {
+            "status": "degraded",
+            "latency_ms": latency_ms,
+            "message": f"Using fallback data: {str(e)}",
+        }
 
 
 @router.get("/valuation")

@@ -1,30 +1,26 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import type { EChartsOption } from 'echarts'
 import { getFearGreedIndex, getERPSpread, getCrowdingAnalysis, getStyleStrength } from '@/api/analytics'
-import { getIndices, getMarketHeatmap } from '@/api/market'
+import { getMarketHeatmap, getDomesticMarket } from '@/api/market'
 import { filterFunds, type FundItem, type FundFilterParams } from '@/api/fund'
+import { useIndicesStore } from '@/stores/indices'
 
 // Loading states
 const loading = ref(true)
-const indicesLoading = ref(false)
 const gainersLoading = ref(false)
 
-// Real-time data refresh interval
+// Real-time data refresh interval (for other data, not indices)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 const REFRESH_INTERVAL = 30000 // 30 seconds
 
-// Index quotes data
-interface IndexQuote {
-  name: string
-  price: number
-  change: number
-  change_pct: number
-}
-const indexQuotes = ref<Record<string, IndexQuote>>({})
+// Index quotes data - now from shared store
+const indicesStore = useIndicesStore()
+const { indices: indexQuotes, loading: indicesLoading } = storeToRefs(indicesStore)
 
 // Fear/Greed data
 interface FearGreedData {
@@ -342,97 +338,84 @@ const heatmapOption = ref<EChartsOption>({
   }],
 })
 
-// Fetch all data
+// Fetch all data (indices handled by store)
 const fetchAllData = async () => {
   loading.value = true
   try {
     await Promise.all([
-      fetchIndices(),
       fetchFearGreed(),
       fetchERP(),
       fetchCrowding(),
       fetchStyleStrength(),
       fetchHeatmap(),
-      fetchTopFunds()
+      fetchTopFunds(),
+      fetchSectors()
     ])
-  } catch (error) {
-    console.error('Dashboard load error:', error)
-    ElMessage.error('数据加载失败，请刷新重试')
+  } catch {
+    // API interceptor already handled user notification
   } finally {
     loading.value = false
   }
 }
 
-// Fetch index quotes
-const fetchIndices = async () => {
-  indicesLoading.value = true
-  try {
-    indexQuotes.value = await getIndices()
-  } catch (error) {
-    console.error('Failed to fetch indices:', error)
-  } finally {
-    indicesLoading.value = false
-  }
-}
-
-// Fetch fear/greed data
 const fetchFearGreed = async () => {
   try {
     const data = await getFearGreedIndex()
-    if (data.length > 0) {
+    if (data && Array.isArray(data) && data.length > 0) {
       fearGreedData.value = data[0]
       fearGreedHistory.value = data.slice(0, 30)
     }
-  } catch (error) {
-    console.error('Failed to fetch fear/greed:', error)
+  } catch {
+    // Graceful degradation - widget will show empty
   }
 }
 
-// Fetch ERP spread
 const fetchERP = async () => {
   try {
     const data = await getERPSpread()
-    if (data.length > 0) {
+    if (data && Array.isArray(data) && data.length > 0) {
       erpData.value = data[0]
     }
-  } catch (error) {
-    console.error('Failed to fetch ERP:', error)
+  } catch {
+    // Graceful degradation - widget will show empty
   }
 }
 
-// Fetch crowding analysis
 const fetchCrowding = async () => {
   try {
-    crowdingData.value = await getCrowdingAnalysis()
-  } catch (error) {
-    console.error('Failed to fetch crowding:', error)
+    const data = await getCrowdingAnalysis()
+    if (data && Array.isArray(data)) {
+      crowdingData.value = data
+    }
+  } catch {
+    // Graceful degradation - widget will show empty
   }
 }
 
-// Fetch style strength
 const fetchStyleStrength = async () => {
   try {
-    styleStrengthData.value = await getStyleStrength()
-  } catch (error) {
-    console.error('Failed to fetch style strength:', error)
+    const data = await getStyleStrength()
+    if (data && Array.isArray(data)) {
+      styleStrengthData.value = data
+    }
+  } catch {
+    // Graceful degradation - widget will show empty
   }
 }
 
-// Fetch heatmap
 const fetchHeatmap = async () => {
   try {
     const heatmap = await getMarketHeatmap()
-    if (heatmap.rows && heatmap.cols) {
+    if (heatmap && heatmap.rows && heatmap.cols) {
       heatmapOption.value.xAxis!.data = heatmap.cols
       heatmapOption.value.yAxis!.data = heatmap.rows
       heatmapOption.value.series![0].data = heatmap.cells.map(c => [c.col, c.row, c.value])
     }
-  } catch (error) {
-    console.error('Failed to fetch heatmap:', error)
+  } catch {
+    // Graceful degradation - widget will show empty
   }
 }
 
-// Fetch top gainers/losers
 const fetchTopFunds = async () => {
   gainersLoading.value = true
   try {
@@ -440,12 +423,27 @@ const fetchTopFunds = async () => {
       filterFunds({ page: 1, page_size: 10, sort_by: 'return_1y', sort_order: 'desc' } as FundFilterParams),
       filterFunds({ page: 1, page_size: 10, sort_by: 'return_1y', sort_order: 'asc' } as FundFilterParams)
     ])
-    topGainers.value = gainers.funds
-    topLosers.value = losers.funds
-  } catch (error) {
-    console.error('Failed to fetch top funds:', error)
+    if (gainers && gainers.funds) topGainers.value = gainers.funds
+    if (losers && losers.funds) topLosers.value = losers.funds
+  } catch {
+    // Graceful degradation - tables will show empty
   } finally {
     gainersLoading.value = false
+  }
+}
+
+const fetchSectors = async () => {
+  try {
+    const data = await getDomesticMarket()
+    if (data && data.sectors && data.sectors.length > 0) {
+      sectorPerformance.value = data.sectors.map(sector => ({
+        name: sector.name,
+        change_pct: sector.change_pct,
+        volume: 0
+      }))
+    }
+  } catch {
+    // Graceful degradation - widget will show empty
   }
 }
 
@@ -474,16 +472,22 @@ const handleQuickAction = (action: string) => {
 onMounted(() => {
   fetchAllData()
   
-  // Set up real-time refresh
+  // Set up real-time refresh for non-index data
+  // Indices are handled by the shared store
   refreshInterval = setInterval(() => {
-    fetchIndices()
+    fetchAllData()
   }, REFRESH_INTERVAL)
+  
+  // Start the shared indices store auto-refresh
+  indicesStore.startAutoRefresh(5000)
 })
 
 onUnmounted(() => {
   if (refreshInterval) {
     clearInterval(refreshInterval)
   }
+  // Stop the shared store auto-refresh
+  indicesStore.stopAutoRefresh()
 })
 </script>
 

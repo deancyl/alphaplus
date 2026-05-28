@@ -16,6 +16,24 @@ from backend.services.resilience import RetryConfig, retry_with_backoff
 logger = logging.getLogger(__name__)
 
 
+# Default fallback indices when data sources are unavailable
+DEFAULT_INDICES = [
+    {"code": "000001", "name": "上证指数", "price": 0, "change": 0, "change_pct": 0},
+    {"code": "399001", "name": "深证成指", "price": 0, "change": 0, "change_pct": 0},
+    {"code": "000300", "name": "沪深300", "price": 0, "change": 0, "change_pct": 0},
+    {"code": "000905", "name": "中证500", "price": 0, "change": 0, "change_pct": 0},
+    {"code": "000852", "name": "中证1000", "price": 0, "change": 0, "change_pct": 0},
+    {"code": "399006", "name": "创业板指", "price": 0, "change": 0, "change_pct": 0},
+    {"code": "000688", "name": "科创50", "price": 0, "change": 0, "change_pct": 0},
+    {"code": "000016", "name": "上证50", "price": 0, "change": 0, "change_pct": 0},
+]
+
+
+def get_default_indices() -> list[dict]:
+    """Get default indices for fallback when data sources fail."""
+    return DEFAULT_INDICES.copy()
+
+
 class AkShareDataError(Exception):
     """Raised when AkShare data fetch fails."""
     pass

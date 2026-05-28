@@ -74,7 +74,6 @@ const handleSearch = async () => {
     )
     showSuggestions.value = searchResults.value.length > 0
   } catch (error) {
-    console.error('Search failed:', error)
   } finally {
     searchLoading.value = false
   }
@@ -148,7 +147,6 @@ const handleCalculate = async () => {
   } catch (error: unknown) {
     const err = error as { response?: { data?: { detail?: string } } }
     ElMessage.error(err?.response?.data?.detail || '计算失败，请重试')
-    console.error(error)
   } finally {
     loading.value = false
   }
@@ -166,7 +164,7 @@ const loadLastCalculation = () => {
       }
       ElMessage.success('已加载上次计算参数')
     } catch {
-      console.warn('Failed to load saved params')
+      // Silent fail - localStorage parse error, use defaults
     }
   }
 }

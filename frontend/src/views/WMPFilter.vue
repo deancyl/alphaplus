@@ -91,7 +91,6 @@ const handleFilter = async () => {
     total.value = response.total
   } catch (error) {
     ElMessage.error('筛选失败，请重试')
-    console.error(error)
   } finally {
     loading.value = false
     filterTimeMs.value = Math.round(performance.now() - startTime)
@@ -129,8 +128,9 @@ const handleSortChange = ({ prop, order }: { prop: string; order: string | null 
 const loadStatistics = async () => {
   try {
     statistics.value = await getWMPStatistics()
-  } catch (error) {
-    console.warn('Failed to load WMP statistics:', error)
+  } catch {
+    // API interceptor already handled notification
+    statistics.value = null
   }
 }
 

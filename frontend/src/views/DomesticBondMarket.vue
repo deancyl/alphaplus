@@ -153,7 +153,6 @@ const fetchYieldCurve = async () => {
       selectedDate.value = availableDates.value[0]
     }
   } catch (error) {
-    console.error('Failed to fetch yield curve:', error)
   }
 }
 
@@ -162,7 +161,6 @@ const fetchCreditSpread = async () => {
     const response = await api.get<CreditSpreadItem[]>('/market/bond/credit-spread')
     creditSpreadData.value = response as unknown as CreditSpreadItem[]
   } catch (error) {
-    console.error('Failed to fetch credit spread:', error)
     creditSpreadData.value = []
   }
 }
@@ -180,12 +178,12 @@ const fetchMoneyRates = async () => {
           rate.isSimulated = historyResponse.is_simulated
           rate.sparklineOption = createSparklineOption(historyResponse.values)
         }
-      } catch (error) {
-        console.warn(`Failed to fetch sparkline for ${rate.rate_code}:`, error)
+      } catch {
+        // Silent fail - sparkline not critical, continue without it
+        rate.sparklineOption = undefined
       }
     }
   } catch (error) {
-    console.error('Failed to fetch money rates:', error)
     moneyRates.value = []
   }
 }
@@ -225,7 +223,6 @@ const fetchIssuanceData = async () => {
     const response = await api.get<BondIssuanceItem[]>('/market/bond/issuance')
     issuanceData.value = response as unknown as BondIssuanceItem[]
   } catch (error) {
-    console.error('Failed to fetch issuance data:', error)
     issuanceData.value = []
   }
 }
@@ -529,7 +526,6 @@ const fetchAllData = async () => {
     }, 100)
   } catch (error) {
     ElMessage.error('获取债券市场数据失败')
-    console.error(error)
   } finally {
     loading.value = false
   }

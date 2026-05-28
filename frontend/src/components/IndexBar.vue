@@ -1,31 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { getIndices } from '@/api/market'
+import { storeToRefs } from 'pinia'
+import { onMounted, onUnmounted } from 'vue'
+import { useIndicesStore } from '@/stores/indices'
 
-interface IndexQuote {
-  name: string
-  price: number
-  change: number
-  change_pct: number
-}
+const indicesStore = useIndicesStore()
 
-const indices = ref<Record<string, IndexQuote>>({})
-const loading = ref(true)
+// Use store's reactive state
+const { indices, loading } = storeToRefs(indicesStore)
 
-// 每5秒刷新
-let refreshInterval: ReturnType<typeof setInterval> | null = null
-
-const fetchIndices = async () => {
-  try {
-    const data = await getIndices()
-    indices.value = data
-  } catch (error) {
-    console.error('Failed to fetch indices:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
+// Format helpers
 const formatPrice = (price: number): string => {
   return price.toFixed(2)
 }
@@ -40,15 +23,14 @@ const formatChangePct = (pct: number): string => {
   return `${sign}${pct.toFixed(2)}%`
 }
 
+// Start auto-refresh on mount (singleton - only starts once globally)
 onMounted(() => {
-  fetchIndices()
-  refreshInterval = setInterval(fetchIndices, 5000)
+  indicesStore.startAutoRefresh(5000)
 })
 
+// Stop on unmount
 onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
+  indicesStore.stopAutoRefresh()
 })
 </script>
 

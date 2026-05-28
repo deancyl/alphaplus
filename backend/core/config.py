@@ -3,7 +3,7 @@ Application configuration using Pydantic Settings.
 """
 import os
 from pathlib import Path
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _parse_cors_origins() -> list[str]:
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     bond_sync_hour: int = 17
     
     # Cache
-    cache_ttl_seconds: int = 5
+    cache_ttl_seconds: int = 30
     index_refresh_interval: int = 5
     
     # Rate Limiting (for AkShare)
@@ -100,9 +100,11 @@ class Settings(BaseSettings):
         "399971": "中证传媒"
     }
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
 
 settings = Settings()

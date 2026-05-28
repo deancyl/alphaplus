@@ -86,7 +86,6 @@ const handleCalculate = async () => {
   } catch (error: unknown) {
     const err = error as { response?: { data?: { detail?: string } } }
     ElMessage.error(err?.response?.data?.detail || '计算失败，请重试')
-    console.error(error)
   } finally {
     loading.value = false
   }
@@ -101,7 +100,7 @@ const loadLastCalculation = () => {
       formData.value = { ...formData.value, ...parsed }
       ElMessage.success('已加载上次计算参数')
     } catch {
-      console.warn('Failed to load saved params')
+      // Silent fail - localStorage parse error, use defaults
     }
   }
 }

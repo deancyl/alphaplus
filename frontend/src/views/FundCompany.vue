@@ -226,11 +226,12 @@ const fetchData = async () => {
   loading.value = true
   try {
     const response = await getFundCompanies()
-    companies.value = response
-    applyFilters()
-  } catch (error) {
-    ElMessage.error('获取基金公司数据失败')
-    console.error(error)
+    if (response && Array.isArray(response)) {
+      companies.value = response
+      applyFilters()
+    }
+  } catch {
+    // API interceptor already handled notification
   } finally {
     loading.value = false
   }
@@ -371,7 +372,6 @@ const updateCharts = async () => {
       }],
     }
   } catch (error) {
-    console.error('Failed to update treemap:', error)
   } finally {
     chartLoading.value = false
   }
@@ -463,8 +463,8 @@ const generateTreemapData = async (companies: CompanyItem[]) => {
           children: generateCompanyChildren(companies, item.item_name, item.weight / 100),
         }))
       }
-    } catch (error) {
-      console.warn('Failed to fetch company distribution, using simulated data:', error)
+    } catch {
+      // API failed, use simulated fallback below
     }
   }
   
