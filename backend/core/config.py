@@ -69,6 +69,18 @@ class Settings(BaseSettings):
         "000016", "399102"
     ]
     
+    # Startup/Warmup Configuration
+    # Enable or disable cache warmup on application startup
+    warmup_enabled: bool = True
+    # Maximum time in seconds to wait for warmup operations
+    warmup_timeout_seconds: float = 10.0
+    # Number of retry attempts for warmup operations (reduced from default 5)
+    warmup_retry_count: int = 1
+    # Whether warmup should block application startup (False = non-blocking)
+    warmup_blocking: bool = False
+    # Enable fallback to degraded mode if warmup fails
+    warmup_fallback_enabled: bool = True
+    
     # Quantitative Analysis Parameters
     fear_greed_history_days: int = 30
     erp_history_days: int = 100

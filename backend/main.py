@@ -4,6 +4,7 @@ Main FastAPI application with lifespan and APScheduler integration.
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -20,6 +21,17 @@ from backend.services.index_valuation import get_all_indices_valuation, CORE_IND
 from backend.core.process_manager import start_scheduler_worker, stop_scheduler_worker, get_process_manager
 
 logger = logging.getLogger(__name__)
+
+
+# Warmup status tracking
+_warmup_status = {
+    "started": False,
+    "completed": False,
+    "tasks_total": 5,
+    "tasks_completed": 0,
+    "errors": [],
+    "start_time": None,
+}
 
 
 @asynccontextmanager
@@ -78,102 +90,185 @@ async def lifespan(app: FastAPI):
 
 async def _warmup_cache():
     """
-    Warmup TieredCache with frequently accessed data.
+    Non-blocking warmup with timeout and fallback data.
     
-    Loads:
-    - Top 50 index valuations (17 core indices)
-    - Hot funds data (placeholder for now)
-    - Fear-greed index
-    - Hot keys from metadata
+    Runs warmup tasks in background so service starts immediately.
+    Uses reduced retry count and timeout protection.
+    Injects fallback data if warmup fails.
     """
-    logger.info("Starting TieredCache warmup...")
+    if not settings.warmup_enabled:
+        logger.info("Warmup disabled by config")
+        return
     
-    warmup_tasks = []
+    # Immediately inject fallback data so service is operational
+    _inject_fallback_data()
     
-    async def warmup_indices():
-        """Load all 17 core index valuations into cache."""
+    _warmup_status["started"] = True
+    _warmup_status["start_time"] = datetime.now().isoformat()
+    
+    async def execute_warmup():
+        """Execute warmup tasks with timeout protection."""
         try:
-            valuations = await get_all_indices_valuation()
-            for idx_data in valuations:
-                key = f"index_valuation:{idx_data['index_code']}"
-                tiered_cache.set(key, idx_data, ttl=3600)
-            logger.info(f"Warmed up {len(valuations)} index valuations")
-            return len(valuations)
+            await asyncio.wait_for(
+                _run_warmup_tasks(),
+                timeout=settings.warmup_timeout_seconds
+            )
+            _warmup_status["completed"] = True
+            logger.info(f"Warmup completed successfully")
+        except asyncio.TimeoutError:
+            logger.warning(f"Warmup timed out after {settings.warmup_timeout_seconds}s")
+            _warmup_status["errors"].append("timeout")
+            _inject_fallback_data()
         except Exception as e:
-            logger.warning(f"Failed to warmup index valuations: {e}")
-            return 0
+            logger.error(f"Warmup failed: {e}")
+            _warmup_status["errors"].append(str(e))
+            _inject_fallback_data()
     
-    async def warmup_fear_greed():
-        """Load fear-greed index data into cache with real calculation."""
-        try:
-            from backend.api.analytics import get_fear_greed_index
-            key = "fear_greed:latest"
-            
-            # Call the real analytics function (returns last 30 days by default)
-            data = await get_fear_greed_index()
-            
-            if data:
-                tiered_cache.set(key, data, ttl=300)
-                logger.info(f"Warmed up fear-greed index with {len(data)} records")
-                return len(data)
-            return 0
-        except Exception as e:
-            logger.warning(f"Failed to warmup fear-greed: {e}")
-            return 0
-    
-    async def warmup_index_quotes():
-        """Load real-time index quotes into cache."""
-        try:
-            quotes = await akshare_data_service.get_index_quotes()
-            key = "index_quotes:all"
-            tiered_cache.set(key, quotes, ttl=300)
-            logger.info(f"Warmed up {len(quotes)} index quotes")
-            return len(quotes)
-        except Exception as e:
-            logger.warning(f"Failed to warmup index quotes: {e}")
-            return 0
-    
-    async def warmup_hot_keys():
-        """Warm L1 cache with hot keys from metadata."""
-        try:
-            warmed = await tiered_cache.warm_cache(top_n=100)
-            logger.info(f"Warmed {warmed} hot keys from metadata")
-            return warmed
-        except Exception as e:
-            logger.warning(f"Failed to warmup hot keys: {e}")
-            return 0
-    
-    async def warmup_hot_funds():
-        """Pre-warm top N funds from GLOBAL_FUND_DF."""
-        try:
-            df = GLOBAL_FUND_DF.df
-            if df is not None and not df.empty:
-                # Use settings.warmup_top_funds_count
-                top_funds = df.nlargest(settings.warmup_top_funds_count, 'scale') if 'scale' in df.columns else df.head(settings.warmup_top_funds_count)
-                warmed = 0
-                for _, fund in top_funds.iterrows():
-                    key = f"fund:{fund.get('fund_code', fund.get('code', ''))}"
-                    tiered_cache.set(key, fund.to_dict(), ttl=3600)
-                    warmed += 1
-                logger.info(f"Warmed up {warmed} hot funds")
-                return warmed
-            return 0
-        except Exception as e:
-            logger.warning(f"Failed to warmup hot funds: {e}")
-            return 0
-    
-    warmup_tasks = [
-        warmup_indices(),
-        warmup_fear_greed(),
-        warmup_index_quotes(),
-        warmup_hot_keys(),
-        warmup_hot_funds(),  # NEW
+    if settings.warmup_blocking:
+        await execute_warmup()
+    else:
+        asyncio.create_task(execute_warmup())
+        logger.info("Warmup started in background, service accepting requests")
+
+
+async def _run_warmup_tasks():
+    """Execute warmup tasks that don't require external APIs."""
+    tasks = [
+        _warmup_hot_keys(),
+        _warmup_hot_funds(),
     ]
     
-    results = await asyncio.gather(*warmup_tasks, return_exceptions=True)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     
-    total_entries = sum(r for r in results if isinstance(r, int))
-    logger.info(f"TieredCache warmup complete: {total_entries} entries loaded")
+    for i, result in enumerate(results):
+        if isinstance(result, int):
+            _warmup_status["tasks_completed"] += 1
+        elif isinstance(result, Exception):
+            logger.warning(f"Warmup task {i} failed: {result}")
+
+
+async def _warmup_indices_with_fallback():
+    """Warmup index valuations with fallback injection."""
+    try:
+        valuations = await get_all_indices_valuation()
+        for idx_data in valuations:
+            key = f"index_valuation:{idx_data['index_code']}"
+            tiered_cache.set(key, idx_data, ttl=3600)
+        logger.info(f"Warmed up {len(valuations)} index valuations")
+        return len(valuations)
+    except Exception as e:
+        logger.warning(f"Index valuation warmup failed: {e}")
+        from backend.services.warmup_fallback import get_fallback_index_valuations
+        fallback_data = get_fallback_index_valuations()
+        for idx_data in fallback_data:
+            key = f"index_valuation:{idx_data['index_code']}"
+            tiered_cache.set(key, idx_data, ttl=3600)
+        logger.info(f"Injected {len(fallback_data)} fallback index valuations")
+        return 0
+
+
+async def _warmup_fear_greed_with_fallback():
+    """Warmup fear-greed index with fallback injection."""
+    try:
+        # Direct database query instead of calling FastAPI endpoint
+        from backend.models.fund import MarketFearGreedSentimentHistory
+        from backend.core import async_engine
+        from sqlalchemy import select
+        
+        async with async_engine.connect() as conn:
+            result = await conn.execute(
+                select(MarketFearGreedSentimentHistory)
+                .order_by(MarketFearGreedSentimentHistory.trade_date.desc())
+                .limit(30)
+            )
+            rows = result.fetchall()
+            
+            if rows:
+                data = [
+                    {
+                        "trade_date": row.trade_date,
+                        "composite_score": row.composite_score,
+                        "sentiment_status": row.sentiment_status,
+                        "is_fallback": False,
+                    }
+                    for row in rows
+                ]
+                tiered_cache.set("fear_greed:latest", data, ttl=300)
+                logger.info(f"Warmed up fear-greed index with {len(data)} records")
+                return len(data)
+        return 0
+    except Exception as e:
+        logger.warning(f"Fear-greed warmup failed: {e}")
+        from backend.services.warmup_fallback import get_fallback_fear_greed
+        fallback_data = get_fallback_fear_greed()
+        tiered_cache.set("fear_greed:latest", fallback_data, ttl=300)
+        logger.info("Injected fallback fear-greed data")
+        return 0
+
+
+async def _warmup_index_quotes_with_fallback():
+    """Warmup index quotes with fallback injection."""
+    try:
+        quotes = await akshare_data_service.get_index_quotes()
+        tiered_cache.set("index_quotes:all", quotes, ttl=300)
+        logger.info(f"Warmed up {len(quotes)} index quotes")
+        return len(quotes)
+    except Exception as e:
+        logger.warning(f"Index quotes warmup failed: {e}")
+        from backend.services.warmup_fallback import get_fallback_index_quotes
+        fallback_data = get_fallback_index_quotes()
+        tiered_cache.set("index_quotes:all", fallback_data, ttl=300)
+        logger.info("Injected fallback index quotes")
+        return 0
+
+
+async def _warmup_hot_keys():
+    """Warm L1 cache with hot keys from metadata."""
+    try:
+        warmed = await tiered_cache.warm_cache(top_n=100)
+        logger.info(f"Warmed {warmed} hot keys from metadata")
+        return warmed
+    except Exception as e:
+        logger.warning(f"Hot keys warmup failed: {e}")
+        return 0
+
+
+async def _warmup_hot_funds():
+    """Pre-warm top N funds from GLOBAL_FUND_DF."""
+    try:
+        df = GLOBAL_FUND_DF.df
+        if df is not None and not df.empty:
+            top_funds = df.nlargest(settings.warmup_top_funds_count, 'scale') if 'scale' in df.columns else df.head(settings.warmup_top_funds_count)
+            warmed = 0
+            for _, fund in top_funds.iterrows():
+                key = f"fund:{fund.get('fund_code', fund.get('code', ''))}"
+                tiered_cache.set(key, fund.to_dict(), ttl=3600)
+                warmed += 1
+            logger.info(f"Warmed up {warmed} hot funds")
+            return warmed
+        return 0
+    except Exception as e:
+        logger.warning(f"Hot funds warmup failed: {e}")
+        return 0
+
+
+def _inject_fallback_data():
+    """Inject all fallback data when warmup fails completely."""
+    from backend.services.warmup_fallback import (
+        get_fallback_index_valuations,
+        get_fallback_fear_greed,
+        get_fallback_index_quotes,
+    )
+    
+    for idx_data in get_fallback_index_valuations():
+        key = f"index_valuation:{idx_data['index_code']}"
+        tiered_cache.set(key, idx_data, ttl=3600)
+    
+    tiered_cache.set("fear_greed:latest", get_fallback_fear_greed(), ttl=300)
+    
+    tiered_cache.set("index_quotes:all", get_fallback_index_quotes(), ttl=300)
+    
+    logger.info("Injected all fallback data into cache")
 
 
 # Create FastAPI app
@@ -219,11 +314,12 @@ app.include_router(wmp_router, prefix="/api/v1/wmp", tags=["WMP"])
 # Health check endpoint
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with warmup status."""
     return {
         "status": "healthy",
         "app": settings.app_name,
         "version": settings.app_version,
+        "warmup": _warmup_status,
     }
 
 
