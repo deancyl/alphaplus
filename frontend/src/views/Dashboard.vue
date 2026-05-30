@@ -2,21 +2,33 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { Warning } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import JargonTooltip from '@/components/JargonTooltip.vue'
 import type { EChartsOption } from 'echarts'
 import { getFearGreedIndex, getERPSpread, getCrowdingAnalysis, getStyleStrength } from '@/api/analytics'
 import { getMarketHeatmap, getDomesticMarket } from '@/api/market'
-import { filterFunds, type FundItem, type FundFilterParams } from '@/api/fund'
+import { getTopFunds, type FundItem } from '@/api/fund'
 import { useIndicesStore } from '@/stores/indices'
+import { formatNumber, formatSign } from '@/utils/formatters'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 
-// Loading states
-const loading = ref(true)
-const gainersLoading = ref(false)
+// Breakpoint detection for responsive tables
+const { isMobile, isXs } = useBreakpoint()
+
+// Loading states - per-widget for progressive loading
+const fearGreedLoading = ref(true)
+const erpLoading = ref(true)
+const crowdingLoading = ref(true)
+const styleStrengthLoading = ref(true)
+const heatmapLoading = ref(true)
+const sectorsLoading = ref(true)
+const gainersLoading = ref(true)
 
 // Real-time data refresh interval (for other data, not indices)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
-const REFRESH_INTERVAL = 30000 // 30 seconds
+const REFRESH_INTERVAL = 30000
 
 // Index quotes data - now from shared store
 const indicesStore = useIndicesStore()
@@ -82,6 +94,7 @@ interface SectorPerformance {
   volume: number
 }
 const sectorPerformance = ref<SectorPerformance[]>([])
+const sectorPeriod = ref('today')
 
 // Fear/Greed chart option
 const fearGreedOption = computed<EChartsOption>(() => {
@@ -115,7 +128,7 @@ const fearGreedOption = computed<EChartsOption>(() => {
         valueAnimation: true, 
         fontSize: 28, 
         offsetCenter: [0, '70%'],
-        formatter: '{value}',
+        formatter: (value: number) => value.toFixed(2),
         color: '#1A1A1A'
       },
       title: { 
@@ -185,14 +198,16 @@ const erpOption = computed<EChartsOption>(() => {
       endAngle: 0,
       min: 0,
       max: 100,
+      radius: '90%',
+      center: ['50%', '60%'],
       splitNumber: 4,
       itemStyle: { color: '#003399' },
       progress: { show: true, width: 16 },
       axisLine: { lineStyle: { width: 16, color: [[1, '#E5E8ED']] } },
       axisTick: { show: false },
       splitLine: { length: 12, lineStyle: { width: 2, color: '#999' } },
-      axisLabel: { 
-        distance: 20, 
+      axisLabel: {
+        distance: 20,
         fontSize: 11,
         formatter: (value: number) => {
           if (value === 0) return '高估'
@@ -203,11 +218,16 @@ const erpOption = computed<EChartsOption>(() => {
           return ''
         }
       },
-      pointer: { length: '70%', width: 6 },
-      detail: { 
-        valueAnimation: true, 
-        fontSize: 20, 
-        offsetCenter: [0, '65%'],
+      pointer: { length: '55%', width: 6 },
+      title: {
+        offsetCenter: [0, '30%'],
+        fontSize: 14,
+        color: '#4A4A4A'
+      },
+      detail: {
+        valueAnimation: true,
+        fontSize: 20,
+        offsetCenter: [0, '40%'],
         formatter: `{a|${spread.toFixed(2)}%}\n{b|历史${percentile.toFixed(0)}%分位}`,
         rich: {
           a: { fontSize: 20, color: '#1A1A1A', fontWeight: 'bold' },
@@ -228,7 +248,7 @@ const crowdingOption = computed<EChartsOption>(() => {
   return {
     tooltip: {
       formatter: (params: { data: number[] }) => {
-        return `${params.data[2]}<br/>PE分位: ${params.data[0].toFixed(1)}%<br/>拥挤度: ${params.data[1].toFixed(2)}`
+        return `${params.data[2]}<br/>PE分位: ${params.data[0].toFixed(2)}%<br/>拥挤度: ${params.data[1].toFixed(2)}`
       }
     },
     grid: { top: 20, left: 50, right: 20, bottom: 40 },
@@ -313,19 +333,30 @@ const styleStrengthOption = computed<EChartsOption>(() => {
 
 // Heatmap chart option
 const heatmapOption = ref<EChartsOption>({
-  tooltip: { position: 'top' },
-  grid: { top: 10, left: 100, right: 10, bottom: 30 },
-  xAxis: { type: 'category', data: [], splitArea: { show: true } },
+  tooltip: { 
+    position: 'top',
+    formatter: (params: any) => {
+      if (params.data) {
+        const [colIdx, rowIdx, value] = params.data
+        const cols = heatmapOption.value.xAxis!.data as string[]
+        const rows = heatmapOption.value.yAxis!.data as string[]
+        return `${rows[rowIdx]} - ${cols[colIdx]}<br/>收益率: ${value.toFixed(2)}%`
+      }
+      return ''
+    }
+  },
+  grid: { top: 10, left: 100, right: 10, bottom: 50 },
+  xAxis: { type: 'category', data: [], splitArea: { show: true }, axisLabel: { rotate: 45 } },
   yAxis: { type: 'category', data: [], splitArea: { show: true } },
   visualMap: {
-    min: -10,
-    max: 10,
+    min: -50,
+    max: 150,
     calculable: true,
     orient: 'horizontal',
     left: 'center',
     bottom: 0,
     inRange: {
-      color: ['#2E7D32', '#FFFFFF', '#E63935'],
+      color: ['#E63935', '#FFFFFF', '#2E7D32'],
     },
   },
   series: [{
@@ -339,100 +370,117 @@ const heatmapOption = ref<EChartsOption>({
 })
 
 // Fetch all data (indices handled by store)
-const fetchAllData = async () => {
-  loading.value = true
-  try {
-    await Promise.all([
-      fetchFearGreed(),
-      fetchERP(),
-      fetchCrowding(),
-      fetchStyleStrength(),
-      fetchHeatmap(),
-      fetchTopFunds(),
-      fetchSectors()
-    ])
-  } catch {
-    // API interceptor already handled user notification
-  } finally {
-    loading.value = false
-  }
-}
-
-const fetchFearGreed = async () => {
+// Progressive widget loaders - each widget loads independently
+const fetchFearGreedWidget = async () => {
+  fearGreedLoading.value = true
   try {
     const data = await getFearGreedIndex()
     if (data && Array.isArray(data) && data.length > 0) {
       fearGreedData.value = data[0]
       fearGreedHistory.value = data.slice(0, 30)
     }
-  } catch {
-    // Graceful degradation - widget will show empty
+  } catch (e) {
+    console.error('Fear-greed widget failed:', e)
+    // Fallback: neutral state
+    fearGreedData.value = {
+      trade_date: new Date().toISOString().split('T')[0],
+      composite_score: 50,
+      sentiment_status: '中性',
+      factor_volatility: null,
+      factor_safe_haven: null,
+      factor_margin_ratio: null,
+      factor_volume_deviation: null,
+      factor_futures_basis: null,
+      factor_stock_strength: null
+    }
+  } finally {
+    fearGreedLoading.value = false
   }
 }
 
-const fetchERP = async () => {
+const fetchERPWidget = async () => {
+  erpLoading.value = true
   try {
     const data = await getERPSpread()
     if (data && Array.isArray(data) && data.length > 0) {
       erpData.value = data[0]
     }
-  } catch {
-    // Graceful degradation - widget will show empty
+  } catch (e) {
+    console.error('ERP widget failed:', e)
+    // Fallback: placeholder data
+    erpData.value = {
+      index_code: '000300',
+      index_name: '沪深300',
+      trade_date: new Date().toISOString().split('T')[0],
+      pe_ttm: 12.0,
+      treasury_yield_10y: 2.5,
+      erp_spread: 5.5,
+      percentile_rank_10y: 50,
+      index_close_price: null
+    }
+  } finally {
+    erpLoading.value = false
   }
 }
 
-const fetchCrowding = async () => {
+const fetchCrowdingWidget = async () => {
+  crowdingLoading.value = true
   try {
     const data = await getCrowdingAnalysis()
     if (data && Array.isArray(data)) {
       crowdingData.value = data
     }
-  } catch {
-    // Graceful degradation - widget will show empty
+  } catch (e) {
+    console.error('Crowding widget failed:', e)
+    // Fallback: empty array - widget will show empty state
+    crowdingData.value = []
+  } finally {
+    crowdingLoading.value = false
   }
 }
 
-const fetchStyleStrength = async () => {
+const fetchStyleStrengthWidget = async () => {
+  styleStrengthLoading.value = true
   try {
     const data = await getStyleStrength()
     if (data && Array.isArray(data)) {
       styleStrengthData.value = data
     }
-  } catch {
-    // Graceful degradation - widget will show empty
+  } catch (e) {
+    console.error('Style strength widget failed:', e)
+    // Fallback: empty array
+    styleStrengthData.value = []
+  } finally {
+    styleStrengthLoading.value = false
   }
 }
 
-const fetchHeatmap = async () => {
+const fetchHeatmapWidget = async () => {
+  heatmapLoading.value = true
   try {
     const heatmap = await getMarketHeatmap()
-    if (heatmap && heatmap.rows && heatmap.cols) {
+    if (heatmap && heatmap.rows && heatmap.cols && heatmap.cells) {
       heatmapOption.value.xAxis!.data = heatmap.cols
       heatmapOption.value.yAxis!.data = heatmap.rows
-      heatmapOption.value.series![0].data = heatmap.cells.map(c => [c.col, c.row, c.value])
+      
+      const rowIndexMap = new Map(heatmap.rows.map((r, i) => [r, i]))
+      const colIndexMap = new Map(heatmap.cols.map((c, i) => [c, i]))
+      
+      heatmapOption.value.series![0].data = heatmap.cells.map(c => [
+        colIndexMap.get(c.col) ?? 0,
+        rowIndexMap.get(c.row) ?? 0,
+        c.value
+      ])
     }
-  } catch {
-    // Graceful degradation - widget will show empty
-  }
-}
-
-const fetchTopFunds = async () => {
-  gainersLoading.value = true
-  try {
-    const [gainers, losers] = await Promise.all([
-      filterFunds({ page: 1, page_size: 10, sort_by: 'return_1y', sort_order: 'desc' } as FundFilterParams),
-      filterFunds({ page: 1, page_size: 10, sort_by: 'return_1y', sort_order: 'asc' } as FundFilterParams)
-    ])
-    if (gainers && gainers.funds) topGainers.value = gainers.funds
-    if (losers && losers.funds) topLosers.value = losers.funds
-  } catch {
-    // Graceful degradation - tables will show empty
+  } catch (e) {
+    console.error('Heatmap widget failed:', e)
   } finally {
-    gainersLoading.value = false
+    heatmapLoading.value = false
   }
 }
 
-const fetchSectors = async () => {
+const fetchSectorsWidget = async () => {
+  sectorsLoading.value = true
   try {
     const data = await getDomesticMarket()
     if (data && data.sectors && data.sectors.length > 0) {
@@ -442,26 +490,56 @@ const fetchSectors = async () => {
         volume: 0
       }))
     }
-  } catch {
-    // Graceful degradation - widget will show empty
+  } catch (e) {
+    console.error('Sectors widget failed:', e)
+    // Fallback: empty array
+    sectorPerformance.value = []
+  } finally {
+    sectorsLoading.value = false
+  }
+}
+
+const fetchTopFundsWidget = async () => {
+  gainersLoading.value = true
+  try {
+    const data = await getTopFunds(10)
+    if (data) {
+      topGainers.value = data.gainers as FundItem[]
+      topLosers.value = data.losers as FundItem[]
+    }
+  } catch (e) {
+    console.error('Top funds widget failed:', e)
+    // Fallback: empty arrays
+    topGainers.value = []
+    topLosers.value = []
+  } finally {
+    gainersLoading.value = false
   }
 }
 
 // Format helpers
-const formatNumber = (val: number | null, suffix = ''): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}${suffix}`
+const formatChange = (val: number | null | undefined): string => {
+  if (val === null || val === undefined) return '--%'
+  return formatSign(val, '%')
 }
 
-const formatChange = (val: number): string => {
-  const sign = val >= 0 ? '+' : ''
-  return `${sign}${val.toFixed(2)}%`
-}
-
-const getValueClass = (val: number | null): string => {
-  if (val === null) return ''
+const getValueClass = (val: number | null | undefined): string => {
+  if (val === null || val === undefined) return ''
   return val >= 0 ? 'text-up' : 'text-down'
 }
+
+// Mobile carousel: Group indices into slides (3 per slide on mobile, 2 on XS)
+const indexSlides = computed(() => {
+  const indicesPerSlide = isXs.value ? 2 : 3
+  const entries = Object.entries(indexQuotes.value)
+  const slides: Array<Array<[string, typeof indexQuotes.value[string]]>> = []
+  
+  for (let i = 0; i < entries.length; i += indicesPerSlide) {
+    slides.push(entries.slice(i, i + indicesPerSlide))
+  }
+  
+  return slides
+})
 
 // Quick actions
 const handleQuickAction = (action: string) => {
@@ -470,16 +548,30 @@ const handleQuickAction = (action: string) => {
 
 // Lifecycle
 onMounted(() => {
-  fetchAllData()
+  // Fire all widget loaders simultaneously - they'll render independently
+  fetchFearGreedWidget()
+  fetchERPWidget()
+  fetchCrowdingWidget()
+  fetchStyleStrengthWidget()
+  fetchHeatmapWidget()
+  fetchSectorsWidget()
+  fetchTopFundsWidget()
   
-  // Set up real-time refresh for non-index data
-  // Indices are handled by the shared store
+  // Auto-refresh every 30s (only when tab is visible)
   refreshInterval = setInterval(() => {
-    fetchAllData()
+    if (document.visibilityState === 'visible') {
+      fetchFearGreedWidget()
+      fetchERPWidget()
+      fetchCrowdingWidget()
+      fetchStyleStrengthWidget()
+      fetchHeatmapWidget()
+      fetchSectorsWidget()
+      fetchTopFundsWidget()
+    }
   }, REFRESH_INTERVAL)
   
-  // Start the shared indices store auto-refresh
-  indicesStore.startAutoRefresh(5000)
+  // Index Bar uses shared Pinia store - loads instantly
+  indicesStore.startAutoRefresh(30000)
 })
 
 onUnmounted(() => {
@@ -509,23 +601,53 @@ onUnmounted(() => {
           />
         </template>
         
-        <!-- Actual data when loaded -->
-        <template v-else>
+        <!-- Desktop: Horizontal scroll layout -->
+        <template v-else-if="!isMobile">
           <div 
             v-for="(quote, code) in indexQuotes" 
             :key="code" 
             class="index-item"
           >
-            <div class="index-name">{{ quote.name }}</div>
-            <div class="index-price">{{ quote.price.toFixed(2) }}</div>
-            <div class="index-change" :class="getValueClass(quote.change)">
-              {{ formatChange(quote.change_pct) }}
+            <div class="index-name">{{ quote?.name || code }}</div>
+            <div class="index-price">{{ (quote?.price ?? 0).toFixed(2) }}</div>
+            <div class="index-change" :class="getValueClass(quote?.change ?? null)">
+              {{ formatChange(quote?.change_pct ?? null) }}
             </div>
           </div>
           <div v-if="Object.keys(indexQuotes).length === 0" class="index-empty">
             暂无行情数据
           </div>
         </template>
+        
+        <!-- Mobile: Carousel layout -->
+        <el-carousel 
+          v-else
+          :interval="5000" 
+          :loop="true" 
+          :autoplay="true"
+          indicator-position="outside"
+          height="80px"
+          class="index-carousel"
+        >
+          <el-carousel-item 
+            v-for="(slide, slideIndex) in indexSlides" 
+            :key="slideIndex"
+          >
+            <div class="index-slide">
+              <div 
+                v-for="[code, quote] in slide" 
+                :key="code" 
+                class="index-item-mobile"
+              >
+                <div class="index-name">{{ quote?.name || code }}</div>
+                <div class="index-price">{{ (quote?.price ?? 0).toFixed(2) }}</div>
+                <div class="index-change" :class="getValueClass(quote?.change ?? null)">
+                  {{ formatChange(quote?.change_pct ?? null) }}
+                </div>
+              </div>
+            </div>
+          </el-carousel-item>
+        </el-carousel>
       </div>
     </div>
 
@@ -551,13 +673,13 @@ onUnmounted(() => {
       <div class="card widget-fear-greed">
         <div class="card-header">
           <div class="card-title">恐惧贪婪指数</div>
-          <div class="card-subtitle" v-if="fearGreedData && !loading">
+          <div class="card-subtitle" v-if="fearGreedData && !fearGreedLoading">
             {{ fearGreedData.trade_date }}
           </div>
         </div>
         
         <!-- Skeleton when loading -->
-        <template v-if="loading">
+        <template v-if="fearGreedLoading">
           <div class="widget-content">
             <SkeletonLoader variant="gauge" height="200px" />
           </div>
@@ -587,17 +709,21 @@ onUnmounted(() => {
           </div>
           <div class="factor-breakdown" v-if="fearGreedData">
             <div class="factor-item">
-              <span class="factor-label">波动率</span>
+              <JargonTooltip term="波动率" definition="衡量价格波动幅度的统计指标，反映风险水平" />
               <span class="factor-value">{{ formatNumber(fearGreedData.factor_volatility) }}</span>
             </div>
             <div class="factor-item">
-              <span class="factor-label">避险情绪</span>
+              <JargonTooltip term="避险情绪" definition="市场恐慌时资金流向安全资产(如黄金、国债)的倾向" />
               <span class="factor-value">{{ formatNumber(fearGreedData.factor_safe_haven) }}</span>
             </div>
             <div class="factor-item">
-              <span class="factor-label">杠杆水平</span>
+              <JargonTooltip term="杠杆水平" definition="融资交易占总交易的比例，反映市场风险偏好" />
               <span class="factor-value">{{ formatNumber(fearGreedData.factor_margin_ratio) }}</span>
             </div>
+          </div>
+          <div class="risk-warning" v-if="!fearGreedLoading">
+            <el-icon><Warning /></el-icon>
+            <span>投资有风险，决策需谨慎</span>
           </div>
         </template>
       </div>
@@ -606,13 +732,13 @@ onUnmounted(() => {
       <div class="card widget-erp">
         <div class="card-header">
           <div class="card-title">股债性价比 (ERP)</div>
-          <div class="card-subtitle" v-if="erpData && !loading">
+          <div class="card-subtitle" v-if="erpData && !erpLoading">
             {{ erpData.index_name }} | {{ erpData.trade_date }}
           </div>
         </div>
         
         <!-- Skeleton when loading -->
-        <template v-if="loading">
+        <template v-if="erpLoading">
           <div class="widget-content">
             <SkeletonLoader variant="gauge" height="220px" />
           </div>
@@ -623,12 +749,12 @@ onUnmounted(() => {
           <div class="widget-content">
             <EChartsWrapper
               :option="erpOption"
-              height="220px"
+              height="300px"
             />
           </div>
           <div class="erp-details" v-if="erpData">
             <div class="detail-row">
-              <span class="detail-label">PE(TTM)</span>
+              <JargonTooltip term="PE(TTM)" definition="滚动市盈率，当前股价/过去12个月每股收益" />
               <span class="detail-value">{{ erpData.pe_ttm.toFixed(2) }}</span>
             </div>
             <div class="detail-row">
@@ -639,6 +765,10 @@ onUnmounted(() => {
               <span class="detail-label">指数收盘</span>
               <span class="detail-value">{{ erpData.index_close_price?.toFixed(2) ?? '-' }}</span>
             </div>
+          </div>
+          <div class="risk-warning" v-if="!erpLoading">
+            <el-icon><Warning /></el-icon>
+            <span>仅供参考，不构成投资建议。投资有风险，决策需谨慎</span>
           </div>
         </template>
       </div>
@@ -651,7 +781,7 @@ onUnmounted(() => {
         </div>
         
         <!-- Skeleton when loading -->
-        <template v-if="loading">
+        <template v-if="crowdingLoading">
           <div class="widget-content">
             <SkeletonLoader variant="heatmap" height="280px" />
           </div>
@@ -687,7 +817,7 @@ onUnmounted(() => {
         </div>
         
         <!-- Skeleton when loading -->
-        <template v-if="loading">
+        <template v-if="styleStrengthLoading">
           <div class="widget-content">
             <SkeletonLoader variant="image" height="280px" />
           </div>
@@ -719,22 +849,37 @@ onUnmounted(() => {
           :columns="4"
         />
         
-        <!-- Actual table when loaded -->
-        <el-table
-          v-else
-          :data="topGainers"
-          size="small"
-          max-height="300"
-        >
-          <el-table-column prop="fund_code" label="代码" width="80" />
-          <el-table-column prop="fund_name" label="名称" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="fund_type" label="类型" width="80" />
-          <el-table-column prop="return_1y" label="收益%" width="90" sortable>
-            <template #default="{ row }">
-              <span class="text-up">{{ formatNumber(row.return_1y) }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
+        <!-- Desktop: Table with sticky first column -->
+        <div v-else-if="!isMobile" class="table-container">
+          <el-table
+            :data="topGainers"
+            size="small"
+            max-height="300"
+          >
+            <el-table-column prop="fund_code" label="代码" width="80" class-name="sticky-column" />
+            <el-table-column prop="fund_name" label="名称" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="fund_type" label="类型" width="80" />
+            <el-table-column prop="return_1y" label="收益%" width="90" sortable>
+              <template #default="{ row }">
+                <span class="text-up">{{ formatNumber(row.return_1y) }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="scroll-indicator scroll-indicator-left"></div>
+          <div class="scroll-indicator scroll-indicator-right"></div>
+        </div>
+        
+        <!-- Mobile/XS: Card layout -->
+        <div v-else class="fund-cards-mobile">
+          <div v-for="fund in topGainers" :key="fund.fund_code" class="fund-card">
+            <div class="fund-header">
+              <span class="fund-code">{{ fund.fund_code }}</span>
+              <span class="fund-return text-up">{{ formatNumber(fund.return_1y) }}%</span>
+            </div>
+            <div class="fund-name">{{ fund.fund_name }}</div>
+            <div v-if="!isXs" class="fund-type">{{ fund.fund_type }}</div>
+          </div>
+        </div>
       </div>
 
       <!-- Top Losers Table -->
@@ -752,22 +897,37 @@ onUnmounted(() => {
           :columns="4"
         />
         
-        <!-- Actual table when loaded -->
-        <el-table
-          v-else
-          :data="topLosers"
-          size="small"
-          max-height="300"
-        >
-          <el-table-column prop="fund_code" label="代码" width="80" />
-          <el-table-column prop="fund_name" label="名称" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="fund_type" label="类型" width="80" />
-          <el-table-column prop="return_1y" label="收益%" width="90" sortable>
-            <template #default="{ row }">
-              <span class="text-down">{{ formatNumber(row.return_1y) }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
+        <!-- Desktop: Table with sticky first column -->
+        <div v-else-if="!isMobile" class="table-container">
+          <el-table
+            :data="topLosers"
+            size="small"
+            max-height="300"
+          >
+            <el-table-column prop="fund_code" label="代码" width="80" class-name="sticky-column" />
+            <el-table-column prop="fund_name" label="名称" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="fund_type" label="类型" width="80" />
+            <el-table-column prop="return_1y" label="收益%" width="90" sortable>
+              <template #default="{ row }">
+                <span class="text-down">{{ formatNumber(row.return_1y) }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="scroll-indicator scroll-indicator-left"></div>
+          <div class="scroll-indicator scroll-indicator-right"></div>
+        </div>
+        
+        <!-- Mobile/XS: Card layout -->
+        <div v-else class="fund-cards-mobile">
+          <div v-for="fund in topLosers" :key="fund.fund_code" class="fund-card">
+            <div class="fund-header">
+              <span class="fund-code">{{ fund.fund_code }}</span>
+              <span class="fund-return text-down">{{ formatNumber(fund.return_1y) }}%</span>
+            </div>
+            <div class="fund-name">{{ fund.fund_name }}</div>
+            <div v-if="!isXs" class="fund-type">{{ fund.fund_type }}</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -780,7 +940,7 @@ onUnmounted(() => {
       
       <!-- Skeleton when loading -->
       <SkeletonLoader
-        v-if="loading"
+        v-if="heatmapLoading"
         variant="heatmap"
         height="400px"
       />
@@ -798,16 +958,18 @@ onUnmounted(() => {
       <div class="card-header">
         <div class="card-title">板块表现概览</div>
         <div class="card-actions">
-          <el-radio-group size="small">
-            <el-radio-button label="今日" />
-            <el-radio-button label="近5日" />
-            <el-radio-button label="近20日" />
+          <el-radio-group v-model="sectorPeriod" size="small">
+            <el-radio-button value="today">今日</el-radio-button>
+            <el-radio-button value="5d">近5日</el-radio-button>
+            <el-radio-button value="20d">近20日</el-radio-button>
           </el-radio-group>
         </div>
       </div>
-      <div class="sector-grid">
-        <div 
-          v-for="sector in sectorPerformance" 
+
+      <!-- Desktop: Grid layout -->
+      <div v-if="!isMobile" class="sector-grid">
+        <div
+          v-for="sector in sectorPerformance"
           :key="sector.name"
           class="sector-item"
           :class="getValueClass(sector.change_pct)"
@@ -815,9 +977,34 @@ onUnmounted(() => {
           <div class="sector-name">{{ sector.name }}</div>
           <div class="sector-change">{{ formatChange(sector.change_pct) }}</div>
         </div>
-        <div v-if="sectorPerformance.length === 0" class="sector-empty">
-          暂无板块数据
-        </div>
+      </div>
+
+      <!-- Mobile: Accordion layout -->
+      <el-collapse v-else class="sector-collapse" accordion>
+        <el-collapse-item
+          v-for="sector in sectorPerformance"
+          :key="sector.name"
+          :name="sector.name"
+        >
+          <template #title>
+            <div class="sector-collapse-title" :class="getValueClass(sector.change_pct)">
+              <span class="sector-name">{{ sector.name }}</span>
+              <span class="sector-change">{{ formatChange(sector.change_pct) }}</span>
+            </div>
+          </template>
+          <div class="sector-collapse-content">
+            <div class="sector-detail">
+              <span class="detail-label">涨跌幅</span>
+              <span class="detail-value" :class="getValueClass(sector.change_pct)">
+                {{ formatChange(sector.change_pct) }}
+              </span>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+
+      <div v-if="sectorsLoading" class="sector-loading">
+        <SkeletonLoader variant="table" :rows="4" :columns="3" />
       </div>
     </div>
   </div>
@@ -895,6 +1082,92 @@ onUnmounted(() => {
   padding: 20px;
 }
 
+/* Mobile Index Carousel */
+.index-carousel {
+  width: 100%;
+}
+
+.index-slide {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.index-item-mobile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px;
+  background: var(--bg-system);
+  border-radius: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.index-item-mobile .index-name {
+  font-size: 12px;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.index-item-mobile .index-price {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.index-item-mobile .index-change {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Carousel controls - WCAG 44px touch targets */
+:deep(.index-carousel .el-carousel__button) {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+:deep(.index-carousel .el-carousel__indicators) {
+  padding: 8px 0;
+}
+
+:deep(.index-carousel .el-carousel__indicator) {
+  padding: 4px;
+}
+
+:deep(.index-carousel .el-carousel__arrow) {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+@media (max-width: 375px) {
+  .index-slide {
+    gap: 8px;
+  }
+  
+  .index-item-mobile {
+    padding: 8px;
+  }
+  
+  .index-item-mobile .index-name {
+    font-size: 11px;
+  }
+  
+  .index-item-mobile .index-price {
+    font-size: 13px;
+  }
+  
+  .index-item-mobile .index-change {
+    font-size: 11px;
+  }
+}
+
 /* Page Title */
 .page-title {
   font-size: 24px;
@@ -936,6 +1209,12 @@ onUnmounted(() => {
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   padding: 16px;
+  transition: all 0.25s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 51, 153, 0.12);
 }
 
 .card-header {
@@ -964,6 +1243,20 @@ onUnmounted(() => {
 /* Widget Specific Styles */
 .widget-fear-greed {
   grid-column: span 2;
+  border: 2px solid var(--brand-navy-dark);
+  transition: all 0.25s ease;
+}
+
+.widget-erp {
+  grid-column: span 2;
+  border: 2px solid var(--brand-navy-dark);
+  transition: all 0.25s ease;
+}
+
+.widget-fear-greed:hover,
+.widget-erp:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 51, 153, 0.12);
 }
 
 .widget-content {
@@ -1002,6 +1295,19 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
+}
+
+/* Risk Warning */
+.risk-warning {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 8px;
+  background: var(--bg-system);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
 }
 
 /* ERP Details */
@@ -1109,6 +1415,85 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+/* Mobile Sector Collapse (Accordion) */
+.sector-collapse {
+  border: none;
+}
+
+.sector-collapse :deep(.el-collapse-item__header) {
+  background: var(--bg-system);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  padding: 0 16px;
+  height: 48px;
+  line-height: 48px;
+  border: 1px solid var(--border-color-light);
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.sector-collapse :deep(.el-collapse-item__header:hover) {
+  background: var(--bg-system-hover);
+}
+
+.sector-collapse :deep(.el-collapse-item__header.is-active) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.sector-collapse :deep(.el-collapse-item__wrap) {
+  background: var(--bg-system);
+  border-radius: 0 0 4px 4px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-color-light);
+  border-top: none;
+}
+
+.sector-collapse :deep(.el-collapse-item__content) {
+  padding: 12px 16px;
+}
+
+.sector-collapse-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.sector-collapse-title .sector-name {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 0;
+}
+
+.sector-collapse-title .sector-change {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sector-collapse-content {
+  padding-top: 4px;
+}
+
+.sector-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.sector-detail .detail-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.sector-detail .detail-value {
+  font-size: 15px;
+  font-weight: 600;
+}
+
 .sector-empty {
   grid-column: 1 / -1;
   text-align: center;
@@ -1128,5 +1513,189 @@ onUnmounted(() => {
 
 :deep(.el-table .cell) {
   padding: 0 8px;
+}
+
+/* Responsive Fund Cards - Mobile Layout */
+.fund-cards-mobile {
+  display: grid;
+  gap: 12px;
+  padding: 0 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+/* Mobile (480-768px): Show 3 fields (code, name, type, return) */
+.fund-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  min-height: 44px; /* WCAG touch target */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.fund-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--primary);
+}
+
+.fund-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 44px; /* WCAG touch target */
+}
+
+.fund-code {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.fund-return {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.fund-name {
+  font-size: 13px;
+  color: var(--text-regular);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.fund-type {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  display: inline-block;
+}
+
+/* XS (320-480px): Simplified cards - only code + name + return */
+@media (max-width: 480px) {
+  .fund-card {
+    padding: 12px;
+    gap: 6px;
+  }
+  
+  .fund-header {
+    min-height: 44px;
+  }
+  
+  .fund-code {
+    font-size: 13px;
+  }
+  
+  .fund-return {
+    font-size: 15px;
+  }
+  
+  .fund-name {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 320px;
+  }
+}
+
+/* Desktop (>768px): Sticky first column with scroll indicators */
+.table-container {
+  position: relative;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  max-height: 300px;
+}
+
+/* Sticky column for desktop table */
+:deep(.el-table .sticky-column) {
+  position: sticky !important;
+  left: 0 !important;
+  z-index: var(--z-sticky, 10) !important;
+  background: var(--bg-card) !important;
+}
+
+/* Gradient mask on sticky column edge */
+:deep(.el-table .sticky-column::before) {
+  content: '';
+  position: absolute;
+  right: -4px;
+  top: 0;
+  height: 100%;
+  width: 20px;
+  background: linear-gradient(to left, transparent 0%, var(--bg-card) 100%);
+  pointer-events: none;
+  z-index: calc(var(--z-sticky, 10) - 1);
+}
+
+/* Shadow effect on sticky column */
+:deep(.el-table .sticky-column::after) {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 8px;
+  background: transparent;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+
+/* Scroll indicators with gradient masks */
+.scroll-indicator {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: var(--z-sticky, 10);
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.scroll-indicator-left {
+  left: 0;
+  width: 48px;
+  background: linear-gradient(to right, var(--bg-card) 0%, var(--bg-card) 20%, transparent 100%);
+}
+
+.scroll-indicator-right {
+  right: 0;
+  width: 48px;
+  background: linear-gradient(to left, var(--bg-card) 0%, var(--bg-card) 20%, transparent 100%);
+}
+
+/* Dark mode adjustments */
+:root.dark .fund-card {
+  background: var(--bg-card);
+  border-color: var(--border-light);
+}
+
+:root.dark .fund-card:hover {
+  border-color: var(--primary);
+}
+
+:root.dark :deep(.el-table .sticky-column) {
+  background: var(--bg-card) !important;
+}
+
+:root.dark :deep(.el-table .sticky-column::before) {
+  background: linear-gradient(to left, transparent 0%, var(--bg-card) 100%);
+}
+
+:root.dark :deep(.el-table .sticky-column::after) {
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.4);
+}
+
+:root.dark .scroll-indicator-left,
+:root.dark .scroll-indicator-right {
+  background: linear-gradient(to right, var(--bg-card) 0%, var(--bg-card) 20%, transparent 100%);
 }
 </style>
