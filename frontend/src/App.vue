@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { RouterView } from 'vue-router'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import MegaMenu from '@/components/MegaMenu.vue'
 import IndexBar from '@/components/IndexBar.vue'
 import FavoritesDrawer from '@/components/FavoritesDrawer.vue'
+import OmniSearch from '@/components/OmniSearch.vue'
 
 const favoritesDrawerVisible = ref(false)
 const favoritesCount = ref(0)
@@ -37,21 +39,31 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="app-container">
-    <header class="app-header">
-      <MegaMenu @open-favorites="handleOpenFavorites" :favorites-count="favoritesCount" />
-      <IndexBar />
-    </header>
-    
-    <main class="app-main">
-      <RouterView />
-    </main>
+  <ErrorBoundary error-message="页面加载失败，请刷新重试">
+    <div class="app-container">
+      <header class="app-header">
+        <MegaMenu @open-favorites="handleOpenFavorites" :favorites-count="favoritesCount" />
+        <IndexBar />
+      </header>
+      
+      <main class="app-main">
+        <RouterView />
+      </main>
 
-    <FavoritesDrawer
-      v-model:visible="favoritesDrawerVisible"
-      @update:visible="favoritesDrawerVisible = $event"
-    />
-  </div>
+      <FavoritesDrawer
+        v-model:visible="favoritesDrawerVisible"
+        @update:visible="favoritesDrawerVisible = $event"
+      />
+      
+      <!-- Global OmniSearch (Ctrl+K) -->
+      <OmniSearch />
+      
+      <!-- Footer -->
+      <footer class="app-footer">
+        <p>© 2024 财富 Alpha+ | 投资有风险，决策需谨慎</p>
+      </footer>
+    </div>
+  </ErrorBoundary>
 </template>
 
 <style scoped>
@@ -95,5 +107,18 @@ onMounted(() => {
   .app-main {
     padding: var(--spacing-lg);
   }
+}
+
+.app-footer {
+  background-color: var(--brand-navy-dark);
+  padding: var(--spacing-md);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  margin-top: auto;
+}
+
+.app-footer p {
+  margin: 0;
 }
 </style>

@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { getCrowdingAnalysis, getRotationVectors } from '@/api/analytics'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 
 // Crowding data type
 interface CrowdingData {
@@ -1059,7 +1060,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="market-crowding" v-loading="loading">
+  <ErrorBoundary error-message="市场拥挤度数据加载失败">
+    <div class="market-crowding" v-loading="loading">
     <!-- Header -->
     <div class="page-header">
       <h2>市场拥挤度分析</h2>
@@ -1259,7 +1261,7 @@ onUnmounted(() => {
     <div class="empty-state" v-else-if="!loading">
       <p>暂无数据</p>
     </div>
-  </div>
+  </ErrorBoundary>
 </template>
 
 <style scoped>

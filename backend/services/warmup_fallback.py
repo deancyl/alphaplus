@@ -9,6 +9,36 @@ from typing import Dict, List, Any
 
 logger = logging.getLogger(__name__)
 
+
+async def inject_fallback_data():
+    """
+    Inject fallback data into cache for all critical endpoints.
+    This ensures service availability even when external APIs fail.
+    Called immediately on startup for non-blocking availability.
+    """
+    from backend.services.tiered_cache import tiered_cache
+    from backend.services.cache import realtime_cache
+    
+    logger.info("Injecting fallback data into cache...")
+    
+    for idx_data in get_fallback_index_valuations():
+        key = f"index_valuation:{idx_data['index_code']}"
+        tiered_cache.set(key, idx_data, ttl=3600)
+    
+    tiered_cache.set("fear_greed:latest", get_fallback_fear_greed(), ttl=300)
+    
+    fallback_quotes = get_fallback_index_quotes()
+    tiered_cache.set("index_quotes:all", fallback_quotes, ttl=300)
+    await realtime_cache.set("indices", fallback_quotes, ttl_seconds=300)
+    
+    await realtime_cache.set("domestic_sectors", get_fallback_sectors(), ttl_seconds=300)
+    
+    await realtime_cache.set("top_funds:10", get_fallback_top_funds(), ttl_seconds=300)
+    
+    await realtime_cache.set("market:heatmap", get_fallback_heatmap(), ttl_seconds=3600)
+    
+    logger.info("Fallback data injection complete - service available immediately")
+
 # Core indices mapping (code -> name)
 CORE_INDICES = {
     "000001": "上证指数",

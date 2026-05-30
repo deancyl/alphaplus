@@ -26,6 +26,7 @@ from backend.models.fund import (
     MarketCrowdingValuationHistory,
 )
 from backend.services.resilience import RetryConfig, retry_with_backoff
+from backend.services.quant_engine import calculate_percentile_rank, calculate_std_dev_bands, calculate_moving_average
 
 # Semaphore for max concurrent requests (V0.2 开发圣经: max 3)
 CONCURRENCY_LIMIT = asyncio.Semaphore(3)
@@ -91,16 +92,25 @@ async def fetch_index_history():
             df = df.tail(500)
             print(f"  {name}: {len(df)} days")
             
+            # Calculate historical PE values for percentile (using placeholder PE for now)
+            # In production, this would fetch real PE data
+            pe_value = 15.0 if code == '000300' else 20.0 if code == '000905' else 25.0
+            historical_pe = [pe_value] * len(df)
+            
             async with AsyncSessionLocal() as session:
                 for _, row in df.iterrows():
                     date_str = str(row['date'])[:10]
+                    pe_ttm = 15.0 if code == '000300' else 20.0 if code == '000905' else 25.0
+                    
+                    # Calculate percentile from historical PE distribution
+                    percentile_10y = calculate_percentile_rank(pe_ttm, historical_pe, window_years=10)
                     
                     record = IndexValuationHistory(
                         index_code=code,
                         trade_date=date_str,
-                        pe_ttm=15 if code == '000300' else 20 if code == '000905' else 25,
-                        percentile_rank_10y=0,
-                        moving_mean_10y=0,
+                        pe_ttm=pe_ttm,
+                        percentile_rank_10y=percentile_10y,
+                        moving_mean_10y=calculate_moving_average(historical_pe, window=252),
                         index_close_price=float(row['close']),
                     )
                     session.add(record)
@@ -246,10 +256,19 @@ async def calculate_erp_spread():
         
         treasury_yield = 2.5
         
+        # Extract historical PE values for percentile/std dev calculations
+        historical_pe_values = [v.pe_ttm for v in reversed(valuations) if v.pe_ttm and v.pe_ttm > 0]
+        
+        # Calculate std dev bands from historical PE data
+        std_dev_1y, std_dev_2y = calculate_std_dev_bands(historical_pe_values, window_years=10)
+        
         for v in valuations:
             if v.pe_ttm and v.pe_ttm > 0:
                 earnings_yield = (1 / v.pe_ttm) * 100
                 erp = earnings_yield - treasury_yield
+                
+                # Calculate percentile rank for PE
+                percentile_10y = calculate_percentile_rank(v.pe_ttm, historical_pe_values, window_years=10)
                 
                 record = BondEquityYieldSpreadHistory(
                     index_code='000300',
@@ -257,7 +276,9 @@ async def calculate_erp_spread():
                     pe_ttm=v.pe_ttm,
                     treasury_yield_10y=treasury_yield,
                     erp_spread=erp,
-                    percentile_rank_10y=0,
+                    percentile_rank_10y=percentile_10y,
+                    std_dev_1y_10y=std_dev_1y,
+                    std_dev_2y_10y=std_dev_2y,
                     index_close_price=v.index_close_price,
                 )
                 session.add(record)
@@ -284,16 +305,29 @@ async def calculate_style_strength():
         df_large = df_large.tail(100)
         df_small = df_small.tail(100)
         
+        # Calculate historical ratio values for percentile calculation
+        historical_ratios = []
+        ratio_values = []
+        for (_, row_l), (_, row_s) in zip(df_large.iterrows(), df_small.iterrows()):
+            ratio = float(row_l['close']) / float(row_s['close']) * 100.0
+            ratio_values.append(ratio)
+        
+        # Use all values as historical context for percentile calculation
+        historical_ratios = ratio_values
+        
         async with AsyncSessionLocal() as session:
-            for (_, row_l), (_, row_s) in zip(df_large.iterrows(), df_small.iterrows()):
-                ratio = row_l['close'] / row_s['close'] * 100
+            for idx, ((_, row_l), (_, row_s)) in enumerate(zip(df_large.iterrows(), df_small.iterrows())):
+                ratio = float(row_l['close']) / float(row_s['close']) * 100.0
+                
+                # Calculate percentile rank within 3-year historical context
+                percentile_3y = calculate_percentile_rank(float(ratio), historical_ratios, window_years=3)
                 
                 record = MarketStyleStrengthHistory(
                     trade_date=str(row_l['date'])[:10],
                     index_code_num='000300',
                     index_code_den='000905',
                     ratio_value=ratio,
-                    percentile_rank_3y=0,
+                    percentile_rank_3y=percentile_3y,
                 )
                 session.add(record)
             await session.commit()

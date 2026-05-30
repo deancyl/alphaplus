@@ -26,11 +26,13 @@ export interface IndexPEHistoryItem {
 
 // Get index valuation list
 export const getIndexValuation = async (): Promise<{ items: IndexValuationItem[], total: number }> => {
-  return api.get('/market/index-valuation')
+  const response = await api.get('/market/index-valuation')
+  return response.data ?? { items: [], total: 0 }
 }
 
 export const getIndexPEHistory = async (indexCode: string, days: number = 365): Promise<IndexPEHistoryItem[]> => {
-  return api.get(`/market/index-valuation/${indexCode}/history`, { params: { days } })
+  const response = await api.get(`/market/index-valuation/${indexCode}/history`, { params: { days } })
+  return response.data ?? []
 }
 
 // Get index quotes (5s cache)
@@ -40,7 +42,8 @@ export const getIndices = async (): Promise<Record<string, {
   change: number
   change_pct: number
 }>> => {
-  return api.get('/market/indices')
+  const response = await api.get('/market/indices')
+  return response.data ?? {}
 }
 
 // Dashboard aggregated metrics
@@ -89,7 +92,8 @@ export interface DashboardMetrics {
 }
 
 export const getDashboardMetrics = async (): Promise<DashboardMetrics> => {
-  return api.get('/market/dashboard')
+  const response = await api.get('/market/dashboard')
+  return response.data!
 }
 
 // Get index valuation
@@ -102,7 +106,8 @@ export const getIndexValuationHistory = async (
   moving_mean_10y: number | null
   index_close_price: number | null
 }>> => {
-  return api.get('/market/valuation', { params: { index_code: indexCode } })
+  const response = await api.get('/market/valuation', { params: { index_code: indexCode } })
+  return response.data ?? []
 }
 
 // Get bond yield curve
@@ -112,7 +117,8 @@ export const getBondYieldCurve = async (
 ): Promise<Record<string, Array<{ tenor: number; yield_ytm: number }>>> => {
   const params: Record<string, string> = { bond_type: bondType }
   if (tradeDate) params.trade_date = tradeDate
-  return api.get('/market/bond/yield-curve', { params })
+  const response = await api.get('/market/bond/yield-curve', { params })
+  return response.data ?? {}
 }
 
 // Get money market rates
@@ -122,7 +128,8 @@ export const getMoneyMarketRates = async (): Promise<Array<{
   rate_value: number
   sparkline_data: string | null
 }>> => {
-  return api.get('/market/bond/money-rates')
+  const response = await api.get('/market/bond/money-rates')
+  return response.data ?? []
 }
 
 // Get rate history for sparkline
@@ -134,9 +141,10 @@ export const getRateHistory = async (
   dates: string[]
   is_simulated: boolean
 }> => {
-  return api.get('/market/bond/rate-history', {
+  const response = await api.get('/market/bond/rate-history', {
     params: { rate_code: rateCode, days }
   })
+  return response.data ?? { values: [], dates: [], is_simulated: true }
 }
 
 // Get market heatmap
@@ -145,7 +153,8 @@ export const getMarketHeatmap = async (): Promise<{
   cols: string[]
   cells: Array<{ row: string; col: string; value: number; color: string }>
 }> => {
-  return api.get('/market/heatmap')
+  const response = await api.get('/market/heatmap')
+  return response.data ?? { rows: [], cols: [], cells: [] }
 }
 
 // Get futures quotes
@@ -170,7 +179,8 @@ export const getFuturesQuotes = async (
 ): Promise<FuturesQuote[]> => {
   const params: Record<string, string> = {}
   if (category) params.category = category
-  return api.get('/market/futures/quotes', { params })
+  const response = await api.get('/market/futures/quotes', { params })
+  return response.data ?? []
 }
 
 // Get global market overview
@@ -195,7 +205,8 @@ export const getGlobalMarket = async (): Promise<{
   }>
   update_time: string
 }> => {
-  return api.get('/market/global')
+  const response = await api.get('/market/global')
+  return response.data ?? { indices: [], currencies: [], commodities: [], update_time: '' }
 }
 
 // Get domestic market overview
@@ -231,5 +242,13 @@ export const getDomesticMarket = async (): Promise<{
   }
   update_time: string
 }> => {
-  return api.get('/market/domestic')
+  const response = await api.get('/market/domestic')
+  return response.data ?? {
+    indices: [],
+    market_breadth: { total: 0, advancing: 0, declining: 0, unchanged: 0, advance_ratio: 0, limit_up: 0, limit_down: 0 },
+    volume: { total_volume: 0, total_turnover: 0, turnover_rate: 0 },
+    sectors: [],
+    north_bound: { net_inflow: 0, shanghai_inflow: 0, shenzhen_inflow: 0 },
+    update_time: ''
+  }
 }

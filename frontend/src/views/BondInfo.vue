@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getBondYieldCurve } from '@/api/market'
 import { formatNumber } from '@/utils/formatters'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 
 // 债券类型
 const bondTypes = [
@@ -232,7 +233,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="bond-info">
+  <ErrorBoundary error-message="债券信息加载失败">
+    <div class="bond-info">
     <!-- 顶部搜索和类型选择 -->
     <div class="top-bar">
       <div class="search-box">
@@ -347,18 +349,18 @@ onMounted(() => {
           label="债券代码"
           width="120"
           fixed
-        />
+        ></el-table-column>
         <el-table-column
           prop="bond_name"
           label="债券名称"
           min-width="140"
           fixed
-        />
+        ></el-table-column>
         <el-table-column
           prop="issuer"
           label="发行人"
           min-width="120"
-        />
+        ></el-table-column>
         <el-table-column
           prop="credit_rating"
           label="信用评级"
@@ -399,9 +401,10 @@ onMounted(() => {
             {{ row.issue_amount }}
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </div>
     </div>
-  </div>
+  </ErrorBoundary>
 </template>
 
 <style scoped>

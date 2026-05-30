@@ -5,6 +5,7 @@ import * as echarts from 'echarts'
 import { getBondYieldCurve, getMoneyMarketRates, getRateHistory } from '@/api/market'
 import api from '@/api/index'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import type { EChartsOption } from 'echarts'
 
 // ==================== Types ====================
@@ -545,7 +546,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="bond-market" v-loading="loading">
+  <ErrorBoundary error-message="债券市场数据加载失败">
+    <div class="bond-market" v-loading="loading">
     <!-- Header -->
     <div class="page-header">
       <h2>国内债券市场总览</h2>
@@ -659,8 +661,9 @@ onUnmounted(() => {
           </div>
         </div>
       </el-tab-pane>
-    </el-tabs>
-  </div>
+      </el-tabs>
+    </div>
+  </ErrorBoundary>
 </template>
 
 <style scoped>

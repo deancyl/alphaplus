@@ -383,7 +383,10 @@ class SchedulerWorker:
     
     def _handle_holdings_ingestion(self, task_id: str, params: Dict[str, Any]) -> Optional[str]:
         """
-        Handle quarterly holdings ingestion.
+        Handle quarterly holdings ingestion with smart window-period scheduling.
+        
+        Only executes during window periods (1/4/7/10 months, 15-30 days).
+        Outside window periods, skips execution and waits for next window.
         
         Args:
             task_id: Task identifier
@@ -392,11 +395,36 @@ class SchedulerWorker:
         Returns:
             Path to result Parquet file, or None
         """
-        logger.info(f"Executing holdings ingestion: {params}")
-        
         from backend.services.parquet_cache import PhysicalLock, load_holdings_from_parquet
         from backend.services.duckdb_ingestion import insert_holdings_batch
         from datetime import date
+        
+        # Check if we're in a window period
+        if not PhysicalLock.should_probe():
+            next_window = PhysicalLock.get_next_window_period()
+            logger.info(
+                f"Holdings ingestion skipped - outside window period. "
+                f"Next window: {next_window[0]} to {next_window[1]}"
+            )
+            
+            result_data = [{
+                'task_id': task_id,
+                'status': 'skipped',
+                'reason': 'outside_window_period',
+                'next_window_start': next_window[0].isoformat(),
+                'next_window_end': next_window[1].isoformat(),
+                'timestamp': datetime.utcnow().isoformat()
+            }]
+            
+            result_path = self._data_bridge.write_parquet(
+                result_data,
+                task_id=task_id,
+                chunk_name='result'
+            )
+            
+            return str(result_path)
+        
+        logger.info(f"Executing holdings ingestion (in window period): {params}")
         
         try:
             import asyncio
@@ -404,7 +432,8 @@ class SchedulerWorker:
             asyncio.set_event_loop(loop)
             
             try:
-                with PhysicalLock("holdings_ingestion"):
+                # Use block_network=True to prevent concurrent API calls
+                with PhysicalLock("holdings_ingestion", block_network=True):
                     today = date.today()
                     cached = load_holdings_from_parquet(today)
                     

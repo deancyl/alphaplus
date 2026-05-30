@@ -330,3 +330,23 @@ class FundIndustryAllocation(Base):
     __table_args__ = (
         Index("idx_fund_industry", "fund_code", "report_date"),
     )
+
+
+class UserPreferences(Base):
+    """用户偏好设置表 - Filter templates, display settings, user configurations."""
+    __tablename__ = "user_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(50), default="default", index=True)
+    pref_type: Mapped[str] = mapped_column(String(50), nullable=False)  # filter_template, display_config, etc.
+    pref_key: Mapped[str] = mapped_column(String(100), nullable=False)  # Unique key for the preference
+    pref_name: Mapped[str] = mapped_column(String(200), nullable=False)  # Display name
+    pref_value: Mapped[str] = mapped_column(Text, nullable=False)  # JSON string
+    is_default: Mapped[bool] = mapped_column(default=False)  # Default template flag
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "pref_type", "pref_key", name="uq_user_pref"),
+        Index("idx_user_pref_type", "user_id", "pref_type"),
+    )

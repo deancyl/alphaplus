@@ -25,6 +25,9 @@ Rotation Detection:
 import numpy as np
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_phase_space_position(
@@ -42,6 +45,161 @@ def calculate_phase_space_position(
         Tuple[float, float]: (x, y) position in phase space
     """
     return (float(crowding_score), float(pe_percentile))
+
+
+def calculate_percentile_rank(
+    current_value: float,
+    historical_values: List[float],
+    window_years: int = 10
+) -> float:
+    """
+    Calculate percentile rank of current value within historical distribution.
+    
+    Args:
+        current_value: Current metric value
+        historical_values: List of historical values
+        window_years: Lookback window (default 10 years)
+    
+    Returns:
+        Percentile rank (0-100), returns 50.0 if insufficient data
+        
+    Example:
+        >>> calculate_percentile_rank(4.5, [3.0, 4.0, 5.0, 4.2, 4.8])
+        60.0
+    """
+    if not historical_values or len(historical_values) < 2:
+        logger.warning(f"Insufficient historical data ({len(historical_values) if historical_values else 0} values)")
+        return 50.0  # Neutral percentile when insufficient data
+    
+    # Filter out NaN values
+    valid_values = [v for v in historical_values if v is not None and not np.isnan(v)]
+    
+    if len(valid_values) < 2:
+        logger.warning(f"Insufficient valid historical data ({len(valid_values)} values after filtering)")
+        return 50.0
+    
+    # Sort historical values
+    sorted_values = sorted(valid_values)
+    
+    # Count values below current
+    count_below = sum(1 for v in sorted_values if v < current_value)
+    
+    # Calculate percentile
+    percentile = (count_below / len(sorted_values)) * 100
+    
+    return round(percentile, 2)
+
+
+def calculate_std_dev_bands(
+    historical_values: List[float],
+    window_years: int = 10
+) -> Tuple[float, float]:
+    """
+    Calculate ±1σ and ±2σ bands from historical distribution.
+    
+    Args:
+        historical_values: List of historical values
+        window_years: Lookback window
+    
+    Returns:
+        Tuple of (std_dev_1y, std_dev_2y) - 1σ and 2σ values
+        Returns (0.0, 0.0) if insufficient data
+        
+    Example:
+        >>> calculate_std_dev_bands([3.0, 4.0, 5.0, 4.2, 4.8])
+        (0.67, 1.33)
+    """
+    if not historical_values or len(historical_values) < 3:
+        logger.warning(f"Insufficient data for std dev ({len(historical_values) if historical_values else 0} values)")
+        return (0.0, 0.0)
+    
+    # Filter out NaN values
+    valid_values = [v for v in historical_values if v is not None and not np.isnan(v)]
+    
+    if len(valid_values) < 3:
+        logger.warning(f"Insufficient valid data for std dev ({len(valid_values)} values after filtering)")
+        return (0.0, 0.0)
+    
+    # Calculate standard deviation
+    std_dev = np.std(valid_values, ddof=1)  # Sample std dev
+    
+    # Return ±1σ and ±2σ
+    std_dev_1y = round(float(std_dev), 4)
+    std_dev_2y = round(float(2 * std_dev), 4)
+    
+    return (std_dev_1y, std_dev_2y)
+
+
+def calculate_moving_average(
+    historical_values: List[float],
+    window: int = 252  # ~1 year of trading days
+) -> float:
+    """
+    Calculate moving average of historical values.
+    
+    Args:
+        historical_values: List of historical values
+        window: Moving average window (default 252 = 1 year)
+    
+    Returns:
+        Moving average value, returns current value if insufficient data
+    """
+    if not historical_values:
+        return 0.0
+    
+    # Filter out NaN values
+    valid_values = [v for v in historical_values if v is not None and not np.isnan(v)]
+    
+    if not valid_values:
+        return 0.0
+    
+    if len(valid_values) < window:
+        # Use all available data if less than window
+        return round(float(np.mean(valid_values)), 4)
+    
+    # Calculate MA using last window values
+    recent_values = valid_values[-window:]
+    return round(float(np.mean(recent_values)), 4)
+
+
+def calculate_rolling_percentile(
+    values: List[float],
+    window: int = 252,
+    percentile: int = 50
+) -> List[float]:
+    """
+    Calculate rolling percentile for a time series.
+    
+    Args:
+        values: Time series of values
+        window: Rolling window size
+        percentile: Percentile to calculate (0-100)
+    
+    Returns:
+        List of rolling percentile values
+    """
+    # Filter out NaN values
+    valid_values = [v for v in values if v is not None and not np.isnan(v)]
+    
+    if len(valid_values) < window:
+        return [50.0] * len(values)  # Neutral if insufficient
+    
+    result = []
+    for i in range(len(values)):
+        if i < window:
+            # Use all available data up to this point
+            window_values = valid_values[:i+1]
+        else:
+            window_values = valid_values[i-window:i]
+        
+        percentile_value = calculate_percentile_rank(
+            values[i],
+            window_values,
+            window_years=1  # Window in years not applicable here
+        )
+        result.append(percentile_value)
+    
+    return result
 
 
 def calculate_trajectory_vector(

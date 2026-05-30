@@ -8,6 +8,7 @@ import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import JargonTooltip from '@/components/JargonTooltip.vue'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import DataConfidenceBadge from '@/components/DataConfidenceBadge.vue'
+import MarketWordCloud from '@/components/MarketWordCloud.vue'
 import type { EChartsOption } from 'echarts'
 import { getFearGreedIndex, getERPSpread, getCrowdingAnalysis, getStyleStrength } from '@/api/analytics'
 import { getMarketHeatmap, getDomesticMarket } from '@/api/market'
@@ -107,6 +108,20 @@ interface SectorPerformance {
 }
 const sectorPerformance = ref<SectorPerformance[]>([])
 const sectorPeriod = ref('today')
+
+// Word cloud keywords derived from sector performance
+const wordCloudKeywords = computed(() => {
+  if (sectorPerformance.value.length === 0) return []
+  
+  // Normalize weights based on absolute change percentage
+  const maxAbsChange = Math.max(...sectorPerformance.value.map(s => Math.abs(s.change_pct)))
+  
+  return sectorPerformance.value.map(sector => ({
+    name: sector.name,
+    weight: maxAbsChange > 0 ? Math.abs(sector.change_pct) / maxAbsChange : 0.5,
+    change: sector.change_pct,
+  }))
+})
 
 // Fear/Greed chart option
 const fearGreedOption = computed<EChartsOption>(() => {
@@ -547,6 +562,11 @@ const getValueClass = (val: number | null | undefined): string => {
   return val >= 0 ? 'text-up' : 'text-down'
 }
 
+// Handle word cloud keyword click
+const handleKeywordClick = (keyword: { name: string; weight: number; change?: number }) => {
+  ElMessage.info(`${keyword.name}: ${keyword.change !== undefined ? formatChange(keyword.change) : '无涨跌数据'}`)
+}
+
 // Mobile carousel: Group indices into slides (3 per slide on mobile, 2 on XS)
 const indexSlides = computed(() => {
   const indicesPerSlide = isXs.value ? 2 : 3
@@ -689,7 +709,7 @@ onUnmounted(() => {
     <!-- Main Grid -->
     <div class="dashboard-grid">
       <!-- Fear/Greed Index Widget -->
-      <div class="card widget-fear-greed">
+      <div class="card widget-fear-greed" role="region" aria-label="恐惧贪婪指数仪表盘" aria-live="polite">
         <div class="card-header">
           <div class="card-title">恐惧贪婪指数</div>
           <DataConfidenceBadge 
@@ -751,7 +771,7 @@ onUnmounted(() => {
       </div>
 
       <!-- ERP Spread Widget -->
-      <div class="card widget-erp">
+      <div class="card widget-erp" role="region" aria-label="股债性价比ERP分析" aria-live="polite">
         <div class="card-header">
           <div class="card-title">股债性价比 (ERP)</div>
           <DataConfidenceBadge 
@@ -799,7 +819,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Market Crowding Widget -->
-      <div class="card widget-crowding">
+      <div class="card widget-crowding" role="region" aria-label="市场拥挤度分析" aria-live="polite">
         <div class="card-header">
           <div class="card-title">市场拥挤度</div>
           <DataConfidenceBadge :source="crowdingDataSource" />
@@ -837,7 +857,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Style Strength Widget -->
-      <div class="card widget-style">
+      <div class="card widget-style" role="region" aria-label="市场风格强度分析" aria-live="polite">
         <div class="card-header">
           <div class="card-title">风格强度</div>
           <DataConfidenceBadge :source="styleStrengthDataSource" />
@@ -1043,6 +1063,23 @@ onUnmounted(() => {
         <div v-if="sectorsLoading" class="sector-loading">
           <SkeletonLoader variant="table" :rows="4" :columns="3" />
         </div>
+      </ErrorBoundary>
+    </div>
+
+    <!-- Market Sentiment Word Cloud -->
+    <div class="card word-cloud-card">
+      <div class="card-header">
+        <div class="card-title">市场热点词云</div>
+        <DataConfidenceBadge :source="sectorsDataSource" />
+      </div>
+      
+      <ErrorBoundary>
+        <MarketWordCloud
+          :keywords="wordCloudKeywords"
+          :loading="sectorsLoading"
+          empty-message="暂无板块热点数据"
+          @keyword-click="handleKeywordClick"
+        />
       </ErrorBoundary>
     </div>
   </div>
@@ -1421,6 +1458,11 @@ onUnmounted(() => {
 
 /* Sector Card */
 .sector-card {
+  margin-bottom: 16px;
+}
+
+/* Word Cloud Card */
+.word-cloud-card {
   margin-bottom: 16px;
 }
 

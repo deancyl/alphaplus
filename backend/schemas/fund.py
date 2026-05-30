@@ -431,3 +431,31 @@ class StockReverseHoldingResponse(BaseModel):
     total_funds: int = Field(..., description="持有该股票的基金总数")
     aggregate_exposure: float = Field(..., description="加总占净值比 (%)")
     funds: List[StockReverseHoldingItem] = Field(..., description="基金列表")
+
+
+# ==================== Bond Credit Spread & Issuance Schemas ====================
+
+class CreditSpreadItem(BaseModel):
+    """信用利差数据项."""
+    trade_date: str = Field(..., description="交易日期 YYYY-MM-DD")
+    rating: str = Field(..., description="信用评级 AAA/AA+/AA/AA-/A+")
+    spread: float = Field(..., description="信用利差 (BP)")
+    spread_change: Optional[float] = Field(None, description="利差变动 (BP)")
+    
+    @field_validator('spread', 'spread_change', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: Optional[float]) -> Optional[float]:
+        return round2(v)
+
+
+class BondIssuanceItem(BaseModel):
+    """债券发行数据项."""
+    month: str = Field(..., description="月份 YYYY-MM")
+    bond_type: str = Field(..., description="债券类型")
+    issuance_amount: float = Field(..., description="发行金额 (亿元)")
+    issuance_count: int = Field(..., description="发行数量 (只)")
+    
+    @field_validator('issuance_amount', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: float) -> float:
+        return round2(v)

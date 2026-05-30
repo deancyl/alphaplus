@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "NODE_OPTIONS='--max-old-space-size=4096' vite",
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "test": "vitest",
@@ -11,6 +11,7 @@
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx --fix"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
     "axios": "^1.7.0",
     "echarts": "^5.5.0",
     "element-plus": "^2.7.0",

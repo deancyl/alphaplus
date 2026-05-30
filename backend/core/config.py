@@ -64,6 +64,16 @@ class Settings(BaseSettings):
     # CORS (configurable via CORS_ORIGINS env var)
     cors_origins: list[str] = _parse_cors_origins()
     
+    # Circuit Breaker Configuration
+    circuit_breaker_failure_threshold: int = 5  # Increased from 3 to reduce false positives
+    circuit_breaker_recovery_timeout: int = 60  # Increased from 30 seconds (seconds)
+    circuit_breaker_success_threshold: int = 3  # Successes needed to close from half-open state
+    
+    # API Timeout Configuration
+    api_timeout_connect: float = 5.0  # Connection timeout (seconds)
+    api_timeout_read: float = 15.0    # Read timeout (seconds) - increased from 3
+    api_timeout_write: float = 10.0   # Write timeout (seconds)
+    
     # Cache Warmup Configuration
     warmup_top_funds_count: int = 50
     warmup_index_valuation_codes: list[str] = [
@@ -74,14 +84,18 @@ class Settings(BaseSettings):
     # Startup/Warmup Configuration
     # Enable or disable cache warmup on application startup
     warmup_enabled: bool = True
-    # Maximum time in seconds to wait for warmup operations
-    warmup_timeout_seconds: float = 10.0
-    # Number of retry attempts for warmup operations (reduced from default 5)
-    warmup_retry_count: int = 1
+    # Maximum time in seconds to wait for warmup operations (increased for 51 API calls)
+    warmup_timeout_seconds: float = 30.0
+    # Number of retry attempts for warmup operations (increased for resilience)
+    warmup_retry_count: int = 3
+    # Delay between retry attempts in seconds
+    warmup_retry_delay: float = 5.0
     # Whether warmup should block application startup (False = non-blocking)
     warmup_blocking: bool = False
     # Enable fallback to degraded mode if warmup fails
     warmup_fallback_enabled: bool = True
+    # Always inject fallback data on startup for immediate availability
+    warmup_fallback_on_failure: bool = True
     
     # Quantitative Analysis Parameters
     fear_greed_history_days: int = 30

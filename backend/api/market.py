@@ -4,10 +4,12 @@ Market API router - Overview, Indices, Bonds, Quotes.
 import asyncio
 import logging
 from datetime import datetime
+from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.core.config import settings
 from backend.core import get_db
 from backend.models.fund import (
     StockQuotesHistory,
@@ -20,7 +22,8 @@ from backend.services.akshare_data import akshare_data_service, get_default_indi
 from backend.services.index_valuation import get_all_indices_valuation, get_index_pe_history
 from backend.services.market_gateway import market_gateway, init_gateway
 from backend.services.circuit_breaker import AsyncCircuitBreaker, CircuitBreakerOpenError
-from backend.schemas.fund import DashboardResponse, DashboardDataQuality
+from backend import schemas
+from backend.schemas.fund import DashboardResponse, DashboardDataQuality, CreditSpreadItem, BondIssuanceItem
 from backend.schemas.market import (
     IndexValuationItem,
     IndexValuationResponse,
@@ -28,24 +31,37 @@ from backend.schemas.market import (
     IndexPEHistoryResponse,
 )
 from backend.services.warmup_fallback import get_fallback_sectors
+from backend.services.bond_data import bond_data_service, get_fallback_credit_spread, get_fallback_bond_issuance
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Circuit breaker for AkShare indices endpoint
-# Opens after 3 consecutive failures, attempts recovery after 30 seconds
+# Uses config values for failure threshold and recovery timeout
+# Opens after N consecutive failures (configurable), attempts recovery after M seconds
 indices_circuit_breaker = AsyncCircuitBreaker(
     name="akshare_indices",
-    failure_threshold=3,
-    recovery_timeout=30.0,
+    failure_threshold=settings.circuit_breaker_failure_threshold,
+    recovery_timeout=settings.circuit_breaker_recovery_timeout,
+    success_threshold=settings.circuit_breaker_success_threshold,
 )
 
 # Circuit breaker for domestic sectors endpoint
 # Protects get_domestic_sectors() calls with same resilience pattern
 sectors_circuit_breaker = AsyncCircuitBreaker(
     name="sectors",
-    failure_threshold=3,
-    recovery_timeout=30.0,
+    failure_threshold=settings.circuit_breaker_failure_threshold,
+    recovery_timeout=settings.circuit_breaker_recovery_timeout,
+    success_threshold=settings.circuit_breaker_success_threshold,
+)
+
+# Circuit breaker for domestic sectors endpoint
+# Protects get_domestic_sectors() calls with same resilience pattern
+sectors_circuit_breaker = AsyncCircuitBreaker(
+    name="sectors",
+    failure_threshold=settings.circuit_breaker_failure_threshold,
+    recovery_timeout=settings.circuit_breaker_recovery_timeout,
+    success_threshold=settings.circuit_breaker_success_threshold,
 )
 
 # Initialize gateway on module load
@@ -411,6 +427,42 @@ async def get_rate_history(
     }
 
 
+@router.get("/bond/credit-spread", response_model=List[CreditSpreadItem])
+async def get_credit_spread(
+    db: AsyncSession = Depends(get_db),
+    days: int = Query(100, description="Number of days to return")
+):
+    """
+    Get credit spread data for bonds.
+    
+    Returns credit spread history for various credit ratings.
+    """
+    try:
+        data = await bond_data_service.get_credit_spread(db, days)
+        return data
+    except Exception as e:
+        logger.error(f"Failed to fetch credit spread: {e}")
+        return get_fallback_credit_spread()
+
+
+@router.get("/bond/issuance", response_model=List[BondIssuanceItem])
+async def get_bond_issuance(
+    db: AsyncSession = Depends(get_db),
+    months: int = Query(12, description="Number of months to return")
+):
+    """
+    Get bond issuance statistics.
+    
+    Returns monthly bond issuance data by type and rating.
+    """
+    try:
+        data = await bond_data_service.get_issuance_data(db, months)
+        return data
+    except Exception as e:
+        logger.error(f"Failed to fetch bond issuance: {e}")
+        return get_fallback_bond_issuance()
+
+
 @router.get("/heatmap")
 async def get_market_heatmap():
     """
@@ -425,14 +477,14 @@ async def get_market_heatmap():
         if isinstance(cached, dict) and "_stale" in cached:
             return cached.get("data", cached)
         return cached
-    
+
     # Try to fetch real data with SHORT timeout
     try:
         heatmap_data = await asyncio.wait_for(
             akshare_data_service.get_market_heatmap(),
             timeout=5.0  # Reduced from 30s to 5s for faster fallback
         )
-        
+
         if heatmap_data.get("cells") and len(heatmap_data.get("cells", [])) > 0:
             for cell in heatmap_data["cells"]:
                 value = cell["value"]
@@ -442,14 +494,14 @@ async def get_market_heatmap():
                     cell["color"] = f"rgba(204,0,0,{min(abs(value)/20, 0.8)}"
                 else:
                     cell["color"] = "rgba(128,128,128,0.3)"
-            
+
             await realtime_cache.set(cache_key, heatmap_data, ttl_seconds=3600)
             return heatmap_data
     except asyncio.TimeoutError:
         logger.warning("Heatmap API timed out after 5s")
     except Exception as e:
         logger.warning(f"Heatmap API failed: {e}")
-    
+
     # Fallback: Use static heatmap data immediately
     from backend.services.warmup_fallback import get_fallback_heatmap
     logger.info("Using fallback heatmap data")
@@ -1088,23 +1140,47 @@ async def get_gateway_global_market():
 @router.get("/gateway/status")
 async def get_gateway_status():
     """
-    Gateway状态监控 - 返回所有数据源健康状态.
+    Gateway状态监控 - 返回所有数据源健康状态和熔断器配置.
     
-    Returns circuit breaker states and source availability.
+    Returns:
+        - circuit_breakers: Status of all circuit breakers
+        - config: Active circuit breaker configuration from settings
     """
     _ensure_gateway_initialized()
     
     return {
-        "sources": market_gateway.get_all_sources_status(),
+        "circuit_breakers": {
+            "indices": indices_circuit_breaker.get_status(),
+            "sectors": sectors_circuit_breaker.get_status(),
+        },
+        "config": {
+            "failure_threshold": settings.circuit_breaker_failure_threshold,
+            "recovery_timeout": settings.circuit_breaker_recovery_timeout,
+            "success_threshold": settings.circuit_breaker_success_threshold,
+        },
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
-@router.post("/gateway/reset/{source_name}")
-async def reset_source_circuit(source_name: str):
-    """重置指定数据源的熔断器."""
-    _ensure_gateway_initialized()
+@router.post("/gateway/reset/{service}")
+async def reset_circuit_breaker(service: str):
+    """
+    手动重置指定服务的熔断器.
     
-    if market_gateway.reset_circuit(source_name):
-        return {"success": True, "message": f"Circuit breaker for '{source_name}' reset"}
-    return {"success": False, "message": f"Source '{source_name}' not found"}
+    Args:
+        service: Service name (indices, sectors, or source_name for gateway sources)
+    
+    Returns:
+        Success/failure message
+    """
+    if service == "indices":
+        indices_circuit_breaker.reset()
+        return {"success": True, "message": f"Circuit breaker for '{service}' reset"}
+    elif service == "sectors":
+        sectors_circuit_breaker.reset()
+        return {"success": True, "message": f"Circuit breaker for '{service}' reset"}
+    else:
+        _ensure_gateway_initialized()
+        if market_gateway.reset_circuit(service):
+            return {"success": True, "message": f"Circuit breaker for '{service}' reset"}
+        return {"success": False, "message": f"Service '{service}' not found"}

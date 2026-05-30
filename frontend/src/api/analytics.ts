@@ -15,7 +15,8 @@ export const getFearGreedIndex = async (): Promise<Array<{
   factor_futures_basis: number | null
   factor_stock_strength: number | null
 }>> => {
-  return api.get('/analytics/fear-greed')
+  const response = await api.get('/analytics/fear-greed')
+  return response.data ?? []
 }
 
 // Get ERP spread
@@ -34,12 +35,13 @@ export const getERPSpread = async (
   risk_free_rate?: number
   risk_free_type?: string
 }>> => {
-  return api.get('/analytics/erp', { 
+  const response = await api.get('/analytics/erp', { 
     params: { 
       index_code: indexCode,
       risk_free_type: riskFreeType
     } 
   })
+  return response.data ?? []
 }
 
 // Get style strength
@@ -50,7 +52,8 @@ export const getStyleStrength = async (): Promise<Array<{
   ratio_value: number
   percentile_rank_3y: number | null
 }>> => {
-  return api.get('/analytics/style-strength')
+  const response = await api.get('/analytics/style-strength')
+  return response.data ?? []
 }
 
 // Get crowding analysis
@@ -66,7 +69,8 @@ export const getCrowdingAnalysis = async (
 }>> => {
   const params: Record<string, string> = {}
   if (category) params.category = category
-  return api.get('/analytics/crowding', { params })
+  const response = await api.get('/analytics/crowding', { params })
+  return response.data ?? []
 }
 
 // Get rotation vectors
@@ -84,11 +88,12 @@ export const getRotationVectors = async (
   t0_pe_percentile: number
   t1_pe_percentile: number
 }>> => {
-  return api.get('/analytics/rotation-vector', {
+  const response = await api.get('/analytics/rotation-vector', {
     params: {
       t0_date: t0Date,
       t1_date: t1Date,
       category,
     },
   })
+  return response.data ?? []
 }

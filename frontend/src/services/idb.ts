@@ -1,19 +1,21 @@
 /**
- * IndexedDB Service for Backtest History Persistence
- * Enables offline access and faster reload of backtest results
+ * IndexedDB Service for Backtest History & Filter Templates Persistence
+ * Enables offline access and faster reload of backtest results and filter configs
  * 
  * Database: alphaplus-backtest
- * Store: backtest-history
+ * Stores: backtest-history, filter-templates
  * 
  * Dependencies: idb (lightweight Promise-based IndexedDB wrapper)
  */
 import { openDB, IDBPDatabase } from 'idb'
 import type { BacktestResult } from '@/api/portfolio'
+import type { FundFilterParams } from '@/api/fund'
 
 // Database configuration
 const DB_NAME = 'alphaplus-backtest'
-const DB_VERSION = 1
-const STORE_NAME = 'backtest-history'
+const DB_VERSION = 2  // Bumped for new store
+const STORE_BACKTEST = 'backtest-history'
+const STORE_TEMPLATES = 'filter-templates'
 
 /**
  * Backtest history record with metadata
@@ -26,9 +28,22 @@ export interface BacktestHistoryRecord {
 }
 
 /**
+ * Filter template record for cloud fallback
+ */
+export interface FilterTemplateRecord {
+  key: string              // Template unique key (pref_key)
+  name: string             // Template display name (pref_name)
+  params: FundFilterParams // Filter parameters (pref_value)
+  is_default: boolean      // Is default template
+  created_at: string       // Creation timestamp
+  updated_at: string       // Last update timestamp
+  synced: boolean          // Whether synced to cloud
+}
+
+/**
  * Database schema for type safety
  */
-interface BacktestDBSchema {
+interface AlphaplusDBSchema {
   'backtest-history': {
     key: string
     value: BacktestHistoryRecord
@@ -37,25 +52,39 @@ interface BacktestDBSchema {
       'by-date': string
     }
   }
+  'filter-templates': {
+    key: string
+    value: FilterTemplateRecord
+    indexes: {
+      'by-name': string
+      'by-date': string
+      'by-default': number
+    }
+  }
 }
 
 // Database instance (singleton)
-let dbPromise: Promise<IDBPDatabase<BacktestDBSchema>> | null = null
+let dbPromise: Promise<IDBPDatabase<AlphaplusDBSchema>> | null = null
 
 /**
  * Get or create database connection
  * Implements singleton pattern to avoid multiple connections
  */
-async function getDB(): Promise<IDBPDatabase<BacktestDBSchema>> {
+async function getDB(): Promise<IDBPDatabase<AlphaplusDBSchema>> {
   if (!dbPromise) {
-    dbPromise = openDB<BacktestDBSchema>(DB_NAME, DB_VERSION, {
+    dbPromise = openDB<AlphaplusDBSchema>(DB_NAME, DB_VERSION, {
       upgrade(db) {
-        // Create object store if it doesn't exist
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' })
-          // Create indexes for efficient querying
-          store.createIndex('by-portfolio', 'portfolio_name')
-          store.createIndex('by-date', 'created_at')
+        if (!db.objectStoreNames.contains(STORE_BACKTEST)) {
+          const backtestStore = db.createObjectStore(STORE_BACKTEST, { keyPath: 'id' })
+          backtestStore.createIndex('by-portfolio', 'portfolio_name')
+          backtestStore.createIndex('by-date', 'created_at')
+        }
+        
+        if (!db.objectStoreNames.contains(STORE_TEMPLATES)) {
+          const templateStore = db.createObjectStore(STORE_TEMPLATES, { keyPath: 'key' })
+          templateStore.createIndex('by-name', 'name')
+          templateStore.createIndex('by-date', 'updated_at')
+          templateStore.createIndex('by-default', 'is_default')
         }
       },
     })
@@ -82,7 +111,7 @@ export async function saveBacktest(
       result,
     }
     
-    await db.put(STORE_NAME, record)
+    await db.put(STORE_BACKTEST, record)
   } catch (error) {
     throw new Error(`Failed to save backtest: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
@@ -98,7 +127,7 @@ export async function getBacktest(
 ): Promise<BacktestHistoryRecord | null> {
   try {
     const db = await getDB()
-    const record = await db.get(STORE_NAME, id)
+    const record = await db.get(STORE_BACKTEST, id)
     return record || null
   } catch {
     return null
@@ -112,9 +141,8 @@ export async function getBacktest(
 export async function getAllBacktests(): Promise<BacktestHistoryRecord[]> {
   try {
     const db = await getDB()
-    const records = await db.getAll(STORE_NAME)
+    const records = await db.getAll(STORE_BACKTEST)
     
-    // Sort by created_at descending (newest first)
     return records.sort((a, b) => 
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )
@@ -133,9 +161,8 @@ export async function getBacktestsByPortfolio(
 ): Promise<BacktestHistoryRecord[]> {
   try {
     const db = await getDB()
-    const records = await db.getAllFromIndex(STORE_NAME, 'by-portfolio', portfolioName)
+    const records = await db.getAllFromIndex(STORE_BACKTEST, 'by-portfolio', portfolioName)
     
-    // Sort by created_at descending (newest first)
     return records.sort((a, b) => 
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )
@@ -151,7 +178,7 @@ export async function getBacktestsByPortfolio(
 export async function deleteBacktest(id: string): Promise<void> {
   try {
     const db = await getDB()
-    await db.delete(STORE_NAME, id)
+    await db.delete(STORE_BACKTEST, id)
   } catch (error) {
     throw new Error(`Failed to delete backtest: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
@@ -164,7 +191,8 @@ export async function deleteBacktest(id: string): Promise<void> {
 export async function clearAll(): Promise<void> {
   try {
     const db = await getDB()
-    await db.clear(STORE_NAME)
+    await db.clear(STORE_BACKTEST)
+    await db.clear(STORE_TEMPLATES)
   } catch (error) {
     throw new Error(`Failed to clear all: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
@@ -177,7 +205,7 @@ export async function clearAll(): Promise<void> {
 export async function getBacktestCount(): Promise<number> {
   try {
     const db = await getDB()
-    return await db.count(STORE_NAME)
+    return await db.count(STORE_BACKTEST)
   } catch {
     return 0
   }
@@ -207,6 +235,119 @@ export function isIndexedDBAvailable(): boolean {
   }
 }
 
+export async function saveFilterTemplate(
+  key: string,
+  name: string,
+  params: FundFilterParams,
+  isDefault: boolean = false
+): Promise<void> {
+  try {
+    const db = await getDB()
+    const now = new Date().toISOString()
+    
+    const existing = await db.get(STORE_TEMPLATES, key)
+    
+    const record: FilterTemplateRecord = {
+      key,
+      name,
+      params,
+      is_default: isDefault,
+      created_at: existing?.created_at || now,
+      updated_at: now,
+      synced: false,
+    }
+    
+    await db.put(STORE_TEMPLATES, record)
+  } catch (error) {
+    throw new Error(`Failed to save filter template: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+export async function getFilterTemplate(
+  key: string
+): Promise<FilterTemplateRecord | null> {
+  try {
+    const db = await getDB()
+    return await db.get(STORE_TEMPLATES, key) || null
+  } catch {
+    return null
+  }
+}
+
+export async function getAllFilterTemplates(): Promise<FilterTemplateRecord[]> {
+  try {
+    const db = await getDB()
+    const records = await db.getAll(STORE_TEMPLATES)
+    
+    return records.sort((a, b) => 
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    )
+  } catch {
+    return []
+  }
+}
+
+export async function getDefaultFilterTemplate(): Promise<FilterTemplateRecord | null> {
+  try {
+    const db = await getDB()
+    const records = await db.getAllFromIndex(STORE_TEMPLATES, 'by-default', 1)
+    return records[0] || null
+  } catch {
+    return null
+  }
+}
+
+export async function deleteFilterTemplate(key: string): Promise<void> {
+  try {
+    const db = await getDB()
+    await db.delete(STORE_TEMPLATES, key)
+  } catch (error) {
+    throw new Error(`Failed to delete filter template: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+export async function setDefaultFilterTemplate(key: string): Promise<void> {
+  try {
+    const db = await getDB()
+    const allTemplates = await db.getAll(STORE_TEMPLATES)
+    
+    const tx = db.transaction(STORE_TEMPLATES, 'readwrite')
+    
+    for (const template of allTemplates) {
+      template.is_default = template.key === key
+      template.updated_at = new Date().toISOString()
+      template.synced = false
+      await tx.store.put(template)
+    }
+    
+    await tx.done
+  } catch (error) {
+    throw new Error(`Failed to set default template: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+export async function markTemplateSynced(key: string): Promise<void> {
+  try {
+    const db = await getDB()
+    const template = await db.get(STORE_TEMPLATES, key)
+    if (template) {
+      template.synced = true
+      await db.put(STORE_TEMPLATES, template)
+    }
+  } catch {
+  }
+}
+
+export async function getUnsyncedTemplates(): Promise<FilterTemplateRecord[]> {
+  try {
+    const db = await getDB()
+    const allTemplates = await db.getAll(STORE_TEMPLATES)
+    return allTemplates.filter(t => !t.synced)
+  } catch {
+    return []
+  }
+}
+
 // Export types and service
 export default {
   saveBacktest,
@@ -218,4 +359,12 @@ export default {
   getBacktestCount,
   closeDB,
   isIndexedDBAvailable,
+  saveFilterTemplate,
+  getFilterTemplate,
+  getAllFilterTemplates,
+  getDefaultFilterTemplate,
+  deleteFilterTemplate,
+  setDefaultFilterTemplate,
+  markTemplateSynced,
+  getUnsyncedTemplates,
 }

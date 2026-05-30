@@ -99,6 +99,7 @@ class MarketDataGateway:
         priority: int = 1,
         failure_threshold: Optional[int] = None,
         recovery_timeout: Optional[float] = None,
+        success_threshold: Optional[int] = None,
     ) -> None:
         """
         Register a data source with the gateway.
@@ -109,11 +110,13 @@ class MarketDataGateway:
             priority: Source priority (lower = higher priority, tried first)
             failure_threshold: Circuit breaker failure threshold (optional)
             recovery_timeout: Circuit breaker recovery timeout (optional)
+            success_threshold: Circuit breaker success threshold for half-open (optional)
         """
         circuit_breaker = AsyncCircuitBreaker(
             name=f"{name}_breaker",
             failure_threshold=failure_threshold or self._default_failure_threshold,
             recovery_timeout=recovery_timeout or self._default_recovery_timeout,
+            success_threshold=success_threshold or 3,
         )
 
         self._sources[name] = SourceConfig(
@@ -419,8 +422,9 @@ def init_gateway() -> None:
                 coalesce_window_ms=settings.adata_coalesce_window_ms,
             ),
             priority=priority,
-            failure_threshold=3,
-            recovery_timeout=30.0,
+            failure_threshold=settings.circuit_breaker_failure_threshold,
+            recovery_timeout=settings.circuit_breaker_recovery_timeout,
+            success_threshold=settings.circuit_breaker_success_threshold,
         )
         priority += 1
         logger.info("AData Direct Mode enabled as primary source")
@@ -432,8 +436,9 @@ def init_gateway() -> None:
             "akshare",
             AkshareSource(),
             priority=akshare_priority,
-            failure_threshold=3,
-            recovery_timeout=60.0,
+            failure_threshold=settings.circuit_breaker_failure_threshold,
+            recovery_timeout=settings.circuit_breaker_recovery_timeout,
+            success_threshold=settings.circuit_breaker_success_threshold,
         )
         logger.info(f"AkShare registered at priority {akshare_priority}")
 
@@ -442,16 +447,18 @@ def init_gateway() -> None:
         "eastmoney",
         EastmoneySource(),
         priority=akshare_priority + 1,
-        failure_threshold=5,
-        recovery_timeout=30.0,
+        failure_threshold=settings.circuit_breaker_failure_threshold,
+        recovery_timeout=settings.circuit_breaker_recovery_timeout,
+        success_threshold=settings.circuit_breaker_success_threshold,
     )
 
     market_gateway.register_source(
         "sina",
         SinaSource(),
         priority=akshare_priority + 2,
-        failure_threshold=5,
-        recovery_timeout=30.0,
+        failure_threshold=settings.circuit_breaker_failure_threshold,
+        recovery_timeout=settings.circuit_breaker_recovery_timeout,
+        success_threshold=settings.circuit_breaker_success_threshold,
     )
 
     source_count = len(market_gateway._sources)

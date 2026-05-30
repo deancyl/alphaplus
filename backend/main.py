@@ -19,6 +19,7 @@ from backend.services.tiered_cache import tiered_cache
 from backend.services.akshare_data import akshare_data_service
 from backend.services.index_valuation import get_all_indices_valuation, CORE_INDICES
 from backend.core.process_manager import start_scheduler_worker, stop_scheduler_worker, get_process_manager
+from backend.services.warmup_fallback import inject_fallback_data
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,12 @@ logger = logging.getLogger(__name__)
 _warmup_status = {
     "started": False,
     "completed": False,
+    "success": False,
     "tasks_total": 9,
     "tasks_completed": 0,
     "errors": [],
     "start_time": None,
+    "retry_count": 0,
 }
 
 
@@ -90,44 +93,63 @@ async def lifespan(app: FastAPI):
 
 async def _warmup_cache():
     """
-    Non-blocking warmup with timeout and fallback data.
+    Non-blocking warmup with retry logic and fallback data.
     
-    Runs warmup tasks in background so service starts immediately.
-    Uses reduced retry count and timeout protection.
-    Injects fallback data if warmup fails.
+    Injects fallback data immediately for service availability,
+    then runs warmup tasks in background with retry mechanism.
     """
     if not settings.warmup_enabled:
         logger.info("Warmup disabled by config")
         return
     
-    # Immediately inject fallback data so service is operational
-    await _inject_fallback_data()
+    if settings.warmup_fallback_on_failure:
+        await inject_fallback_data()
+        logger.info("Fallback data injected for immediate service availability")
     
     _warmup_status["started"] = True
     _warmup_status["start_time"] = datetime.now().isoformat()
     
-    async def execute_warmup():
-        """Execute warmup tasks with timeout protection."""
-        try:
-            await asyncio.wait_for(
-                _run_warmup_tasks(),
-                timeout=settings.warmup_timeout_seconds
-            )
-            _warmup_status["completed"] = True
-            logger.info(f"Warmup completed successfully")
-        except asyncio.TimeoutError:
-            logger.warning(f"Warmup timed out after {settings.warmup_timeout_seconds}s")
-            _warmup_status["errors"].append("timeout")
-            await _inject_fallback_data()
-        except Exception as e:
-            logger.error(f"Warmup failed: {e}")
-            _warmup_status["errors"].append(str(e))
-            await _inject_fallback_data()
+    async def run_warmup_with_retry():
+        """Run warmup tasks with retry logic."""
+        for attempt in range(settings.warmup_retry_count):
+            try:
+                logger.info(f"Warmup attempt {attempt + 1}/{settings.warmup_retry_count}")
+                _warmup_status["retry_count"] = attempt + 1
+                
+                await asyncio.wait_for(
+                    _run_warmup_tasks(),
+                    timeout=settings.warmup_timeout_seconds
+                )
+                
+                _warmup_status["completed"] = True
+                _warmup_status["success"] = True
+                logger.info("Warmup completed successfully")
+                return
+                
+            except asyncio.TimeoutError:
+                error_msg = f"Warmup timeout after {settings.warmup_timeout_seconds}s (attempt {attempt + 1})"
+                logger.warning(error_msg)
+                _warmup_status["errors"].append(error_msg)
+                
+                if attempt < settings.warmup_retry_count - 1:
+                    await asyncio.sleep(settings.warmup_retry_delay)
+                    
+            except Exception as e:
+                error_msg = f"Warmup error: {e} (attempt {attempt + 1})"
+                logger.error(error_msg)
+                _warmup_status["errors"].append(error_msg)
+                
+                if attempt < settings.warmup_retry_count - 1:
+                    await asyncio.sleep(settings.warmup_retry_delay)
+        
+        _warmup_status["completed"] = True
+        _warmup_status["success"] = False
+        logger.warning("Warmup failed after all retries, using fallback data")
     
     if settings.warmup_blocking:
-        await execute_warmup()
+        await run_warmup_with_retry()
     else:
-        asyncio.create_task(execute_warmup())
+        asyncio.create_task(run_warmup_with_retry())
         logger.info("Warmup started in background, service accepting requests")
 
 
@@ -507,32 +529,7 @@ async def _warmup_heatmap_with_fallback():
 
 async def _inject_fallback_data():
     """Inject all fallback data when warmup fails completely."""
-    from backend.services.warmup_fallback import (
-        get_fallback_index_valuations,
-        get_fallback_fear_greed,
-        get_fallback_index_quotes,
-    )
-    
-    for idx_data in get_fallback_index_valuations():
-        key = f"index_valuation:{idx_data['index_code']}"
-        tiered_cache.set(key, idx_data, ttl=3600)
-    
-    tiered_cache.set("fear_greed:latest", get_fallback_fear_greed(), ttl=300)
-    
-    tiered_cache.set("index_quotes:all", get_fallback_index_quotes(), ttl=300)
-    
-    # Initialize realtime_cache with fallback index data
-    fallback_quotes = get_fallback_index_quotes()
-    await realtime_cache.set("indices", fallback_quotes, ttl_seconds=300)
-    logger.info("Initialized realtime_cache with fallback index quotes")
-    
-    # Initialize realtime_cache with fallback sectors data
-    from backend.services.warmup_fallback import get_fallback_sectors
-    fallback_sectors = get_fallback_sectors()
-    await realtime_cache.set("domestic_sectors", fallback_sectors, ttl_seconds=300)
-    logger.info("Initialized realtime_cache with fallback sectors data")
-    
-    logger.info("Injected all fallback data into cache")
+    await inject_fallback_data()
 
 
 # Create FastAPI app
@@ -563,6 +560,7 @@ from backend.api.insurance import router as insurance_router
 from backend.api.gold import router as gold_router
 from backend.api.portfolio import router as portfolio_router
 from backend.api.wmp import router as wmp_router
+from backend.api.preferences import router as preferences_router
 
 app.include_router(fund_router, prefix="/api/v1/fund", tags=["Fund"])
 app.include_router(market_router, prefix="/api/v1/market", tags=["Market"])
@@ -573,6 +571,7 @@ app.include_router(insurance_router, prefix="/api/v1/insurance", tags=["Insuranc
 app.include_router(gold_router, prefix="/api/v1/gold", tags=["Gold"])
 app.include_router(portfolio_router, prefix="/api/v1/portfolio", tags=["Portfolio"])
 app.include_router(wmp_router, prefix="/api/v1/wmp", tags=["WMP"])
+app.include_router(preferences_router, prefix="/api/v1/preferences", tags=["Preferences"])
 
 
 # Health check endpoint

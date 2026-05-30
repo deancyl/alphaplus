@@ -68,12 +68,14 @@ export const getTopFunds = async (limit = 10): Promise<{
   }>
   timestamp: string
 }> => {
-  return api.get('/fund/top-funds', { params: { limit } })
+  const response = await api.get('/fund/top-funds', { params: { limit } })
+  return response.data!
 }
 
 // Get fund detail
 export const getFundDetail = async (fundCode: string): Promise<FundItem> => {
-  return api.get(`/fund/${fundCode}`)
+  const response = await api.get(`/fund/${fundCode}`)
+  return response.data!
 }
 
 // Compare funds
@@ -81,10 +83,11 @@ export const compareFunds = async (
   fundCodes: string[],
   benchmark = '000300'
 ): Promise<{ fund_codes: string[]; correlation_matrix: number[][] }> => {
-  return api.post('/fund/compare', {
+  const response = await api.post('/fund/compare', {
     fund_codes: fundCodes,
     benchmark,
   })
+  return response.data!
 }
 
 // Get fund issue calendar
@@ -102,7 +105,8 @@ export const getFundIssueCalendar = async (
 }>> => {
   const params: Record<string, string> = {}
   if (status) params.status = status
-  return api.get('/fund/issue', { params })
+  const response = await api.get('/fund/issue', { params })
+  return response.data ?? []
 }
 
 // Get fund companies
@@ -115,7 +119,8 @@ export const getFundCompanies = async (): Promise<Array<{
   fund_count: number | null
   manager_count: number | null
 }>> => {
-  return api.get('/fund/company')
+  const response = await api.get('/fund/company')
+  return response.data ?? []
 }
 
 // Get company distribution for treemap/bubble
@@ -126,9 +131,10 @@ export const getCompanyDistribution = async (
   items: Array<{ item_name: string; weight: number }>
   is_simulated: boolean
 }> => {
-  return api.get(`/fund/company/${companyId}/distribution`, {
+  const response = await api.get(`/fund/company/${companyId}/distribution`, {
     params: { dist_type: distType }
   })
+  return response.data ?? { items: [], is_simulated: true }
 }
 
 // Get fund NAV trend for sparkline
@@ -140,9 +146,10 @@ export const getFundNavTrend = async (
   dates: string[]
   is_simulated: boolean
 }> => {
-  return api.get(`/fund/${fundCode}/nav-trend`, {
+  const response = await api.get(`/fund/${fundCode}/nav-trend`, {
     params: { days }
   })
+  return response.data ?? { nav_values: [], dates: [], is_simulated: true }
 }
 
 // AIP (Automatic Investment Plan) Calculator Types
@@ -240,7 +247,8 @@ export const getFundHoldings = async (
 ): Promise<HoldingsResponse> => {
   const params: Record<string, string> = {}
   if (reportDate) params.report_date = reportDate
-  return api.get(`/fund/${fundCode}/holdings`, { params })
+  const response = await api.get(`/fund/${fundCode}/holdings`, { params })
+  return response.data!
 }
 
 // Get fund industry allocation
@@ -250,7 +258,8 @@ export const getFundIndustry = async (
 ): Promise<IndustryResponse> => {
   const params: Record<string, string> = {}
   if (reportDate) params.report_date = reportDate
-  return api.get(`/fund/${fundCode}/industry`, { params })
+  const response = await api.get(`/fund/${fundCode}/industry`, { params })
+  return response.data!
 }
 
 // ==================== Stock Reverse Holding Types ====================
@@ -278,9 +287,10 @@ export const getStockReverseHolding = async (
   stockCode: string,
   limit: number = 50
 ): Promise<StockReverseHoldingResponse> => {
-  return api.get('/fund/stock-reverse', {
+  const response = await api.get('/fund/stock-reverse', {
     params: { stock_code: stockCode, limit }
   })
+  return response.data!
 }
 
 export interface CrowdingAnalysisResponse {

@@ -16,6 +16,8 @@ from backend.schemas.fund import (
     CreditSpreadResponse,
     HeatmapCell,
     HeatmapMatrixResponse,
+    CreditSpreadItem,
+    BondIssuanceItem,
 )
 
 __all__ = [
@@ -33,4 +35,6 @@ __all__ = [
     "CreditSpreadResponse",
     "HeatmapCell",
     "HeatmapMatrixResponse",
+    "CreditSpreadItem",
+    "BondIssuanceItem",
 ]

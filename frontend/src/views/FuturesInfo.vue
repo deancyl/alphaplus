@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getFuturesQuotes } from '@/api/market'
 import { formatNumber } from '@/utils/formatters'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 
 // 期货合约类型定义
 interface FuturesContract {
@@ -263,7 +264,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="futures-info">
+  <ErrorBoundary error-message="期货信息加载失败">
+    <div class="futures-info">
     <!-- 顶部控制栏 -->
     <div class="control-bar">
       <div class="tabs-wrapper">
@@ -410,6 +412,7 @@ onMounted(() => {
       </div>
     </div>
   </div>
+</ErrorBoundary>
 </template>
 
 <style scoped>

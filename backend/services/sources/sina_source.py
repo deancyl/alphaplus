@@ -11,6 +11,8 @@ from typing import Any, Optional
 
 import httpx
 
+from backend.utils.formatters import round2
+
 logger = logging.getLogger(__name__)
 
 
@@ -137,7 +139,7 @@ class SinaSource:
                     "name": self.INDEX_NAMES.get(clean_code, name),
                     "price": current,
                     "change": change,
-                    "change_pct": round(change_pct, 2),
+                    "change_pct": round2(change_pct),
                     "volume": int(parts[8]) if len(parts) > 8 and parts[8] else 0,
                     "amount": float(parts[9]) if len(parts) > 9 and parts[9] else 0,
                 }

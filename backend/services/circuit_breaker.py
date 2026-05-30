@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Awaitable, Callable, Generic, Optional, TypeVar
 
+from ..core.config import settings
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -61,22 +63,16 @@ class AsyncCircuitBreaker:
     - CLOSED: Normal operation. Tracks consecutive failures.
       Opens when failures >= failure_threshold.
     - OPEN: Blocks all calls. After recovery_timeout, transitions to HALF_OPEN.
-    - HALF_OPEN: Allows one test call. If success -> CLOSED, if failure -> OPEN.
-
-    Example:
-        cb = AsyncCircuitBreaker(failure_threshold=3, recovery_timeout=60)
-        result = await cb.call(fetch_data)
-        if result.success:
-            data = result.value
-        else:
-            print(f"Circuit open or error: {result.error}")
+    - HALF_OPEN: Allows test calls. After success_threshold successes -> CLOSED,
+      if any failure -> OPEN.
     """
 
     def __init__(
         self,
         name: str = "default",
-        failure_threshold: int = 3,
-        recovery_timeout: float = 60.0,
+        failure_threshold: Optional[int] = None,
+        recovery_timeout: Optional[float] = None,
+        success_threshold: Optional[int] = None,
         half_open_max_calls: int = 1,
     ):
         """
@@ -84,19 +80,22 @@ class AsyncCircuitBreaker:
 
         Args:
             name: Circuit breaker name for logging
-            failure_threshold: Number of consecutive failures before opening
-            recovery_timeout: Seconds to wait before attempting recovery
-            half_open_max_calls: Max calls allowed in half-open state
+            failure_threshold: Consecutive failures before opening (default from config)
+            recovery_timeout: Seconds to wait before recovery attempt (default from config)
+            success_threshold: Successes needed to close from half-open (default from config)
+            half_open_max_calls: Max concurrent calls allowed in half-open state
         """
         self.name = name
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
+        self.failure_threshold = failure_threshold or settings.circuit_breaker_failure_threshold
+        self.recovery_timeout = recovery_timeout or settings.circuit_breaker_recovery_timeout
+        self.success_threshold = success_threshold or settings.circuit_breaker_success_threshold
         self.half_open_max_calls = half_open_max_calls
 
         self._state = CircuitState.CLOSED
         self._stats = CircuitStats()
         self._lock = asyncio.Lock()
         self._half_open_calls = 0
+        self._half_open_successes = 0
         self._opened_at: Optional[float] = None
 
     @property
@@ -196,11 +195,18 @@ class AsyncCircuitBreaker:
             self._stats.consecutive_failures = 0
 
             if self._state == CircuitState.HALF_OPEN:
-                logger.info(
-                    f"[{self.name}] Test call succeeded, closing circuit",
-                    extra={"circuit_name": self.name}
-                )
-                self._transition_to_closed()
+                self._half_open_successes += 1
+                if self._half_open_successes >= self.success_threshold:
+                    logger.info(
+                        f"[{self.name}] Success threshold ({self.success_threshold}) reached, closing circuit",
+                        extra={"circuit_name": self.name}
+                    )
+                    self._transition_to_closed()
+                else:
+                    logger.debug(
+                        f"[{self.name}] Half-open success {self._half_open_successes}/{self.success_threshold}",
+                        extra={"circuit_name": self.name}
+                    )
 
     async def _record_failure(self, error: Exception) -> None:
         """Record a failed call."""
@@ -235,17 +241,20 @@ class AsyncCircuitBreaker:
         self._state = CircuitState.OPEN
         self._opened_at = time.monotonic()
         self._half_open_calls = 0
+        self._half_open_successes = 0
 
     def _transition_to_closed(self) -> None:
         """Transition to CLOSED state."""
         self._state = CircuitState.CLOSED
         self._opened_at = None
         self._half_open_calls = 0
+        self._half_open_successes = 0
 
     def _transition_to_half_open(self) -> None:
         """Transition to HALF_OPEN state."""
         self._state = CircuitState.HALF_OPEN
         self._half_open_calls = 0
+        self._half_open_successes = 0
         logger.info(
             f"[{self.name}] Entering half-open state for recovery test",
             extra={"circuit_name": self.name}
@@ -256,6 +265,7 @@ class AsyncCircuitBreaker:
         self._state = CircuitState.CLOSED
         self._opened_at = None
         self._half_open_calls = 0
+        self._half_open_successes = 0
         self._stats = CircuitStats()
         logger.info(f"[{self.name}] Circuit manually reset to CLOSED")
 
@@ -277,10 +287,12 @@ class AsyncCircuitBreaker:
                 "consecutive_failures": self._stats.consecutive_failures,
                 "last_failure_time": self._stats.last_failure_time,
                 "last_failure_message": self._stats.last_failure_message,
+                "half_open_successes": self._half_open_successes,
             },
             "config": {
                 "failure_threshold": self.failure_threshold,
                 "recovery_timeout": self.recovery_timeout,
+                "success_threshold": self.success_threshold,
             },
             "time_until_recovery": self._time_until_recovery() if self.is_open() else None,
         }

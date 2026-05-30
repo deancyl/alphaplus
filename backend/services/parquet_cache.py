@@ -76,20 +76,126 @@ class PhysicalLock:
     File-based lock to prevent redundant API calls across processes.
     
     Uses fcntl for POSIX-compliant file locking.
+    
+    Enhanced for ETL window-period scheduling:
+    - Can block network requests during ETL
+    - Stores metadata about the ETL status
+    - Provides status query for network request middleware
     """
     
-    def __init__(self, lock_name: str, timeout: int = 300):
+    # Window periods for quarterly ETL (1/4/7/10 months, 15-30 days)
+    WINDOW_PERIODS = {
+        1: (15, 30),   # January 15-30
+        4: (15, 30),   # April 15-30
+        7: (15, 30),   # July 15-30
+        10: (15, 30),  # October 15-30
+    }
+    
+    def __init__(self, lock_name: str, timeout: int = 300, block_network: bool = False):
         """
         Initialize physical lock.
         
         Args:
             lock_name: Name of the lock (e.g., 'holdings_ingestion')
             timeout: Lock timeout in seconds (default 5 minutes)
+            block_network: If True, signal that network requests should be blocked
         """
         ensure_directories()
         self.lock_path = LOCK_DIR / f".{lock_name}.lock"
         self.timeout = timeout
+        self.block_network = block_network
         self.lock_file: Optional[Any] = None
+    
+    @classmethod
+    def is_in_window_period(cls, check_date: Optional[date] = None) -> bool:
+        """
+        Check if current date is within a quarterly ETL window period.
+        
+        Window periods: 1/4/7/10 months, days 15-30.
+        
+        Args:
+            check_date: Date to check (default: today)
+        
+        Returns:
+            True if in window period, False otherwise
+        """
+        if check_date is None:
+            check_date = date.today()
+        
+        month = check_date.month
+        day = check_date.day
+        
+        if month in cls.WINDOW_PERIODS:
+            start_day, end_day = cls.WINDOW_PERIODS[month]
+            return start_day <= day <= end_day
+        
+        return False
+    
+    @classmethod
+    def get_next_window_period(cls, from_date: Optional[date] = None) -> Tuple[date, date]:
+        """
+        Get the next ETL window period start and end dates.
+        
+        Args:
+            from_date: Starting date (default: today)
+        
+        Returns:
+            Tuple of (start_date, end_date) for next window period
+        """
+        if from_date is None:
+            from_date = date.today()
+        
+        window_months = [1, 4, 7, 10]
+        current_month = from_date.month
+        current_year = from_date.year
+        
+        # Find next window month
+        for month in window_months:
+            if month > current_month:
+                start_date = date(current_year, month, 15)
+                end_date = date(current_year, month, 30)
+                return (start_date, end_date)
+        
+        # Next year's first window
+        start_date = date(current_year + 1, 1, 15)
+        end_date = date(current_year + 1, 1, 30)
+        return (start_date, end_date)
+    
+    @classmethod
+    def should_probe(cls) -> bool:
+        """
+        Determine if ETL should probe during current window period.
+        
+        Returns True only during window periods (15-30 days of 1/4/7/10 months).
+        Outside window periods, returns False (skip ETL, wait for next window).
+        
+        Returns:
+            True if should probe, False if should wait
+        """
+        return cls.is_in_window_period()
+    
+    @classmethod
+    def is_network_blocked(cls, lock_name: str = 'holdings_ingestion') -> bool:
+        """
+        Check if network requests should be blocked due to active ETL.
+        
+        Args:
+            lock_name: Lock name to check
+        
+        Returns:
+            True if network should be blocked, False otherwise
+        """
+        lock_path = LOCK_DIR / f".{lock_name}.lock"
+        
+        if not lock_path.exists():
+            return False
+        
+        try:
+            with open(lock_path, 'r') as f:
+                metadata = json.load(f)
+                return metadata.get('block_network', False)
+        except (IOError, OSError, json.JSONDecodeError):
+            return False
     
     def acquire(self) -> bool:
         """
@@ -105,6 +211,8 @@ class PhysicalLock:
             self.lock_file.write(json.dumps({
                 'pid': __import__('os').getpid(),
                 'timestamp': __import__('time').time(),
+                'block_network': self.block_network,
+                'lock_name': self.lock_path.stem,
             }))
             self.lock_file.flush()
             return True

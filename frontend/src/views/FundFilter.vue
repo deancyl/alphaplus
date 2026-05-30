@@ -1,13 +1,35 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted, watch, computed } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { filterFunds, getFundNavTrend, type FundFilterParams, type FundItem } from '@/api/fund'
+import { useFilterTemplates } from '@/composables/useFilterTemplates'
 import SplitPanel from '@/components/SplitPanel.vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import JargonTooltip from '@/components/JargonTooltip.vue'
 import type { EChartsOption } from 'echarts'
 import jargonData from '@/data/jargon.json'
+
+const {
+  templates,
+  defaultTemplateKey,
+  loading: templatesLoading,
+  offlineMode,
+  loadTemplates,
+  saveTemplate,
+  deleteTemplate,
+  setDefault,
+  loadTemplateParams,
+} = useFilterTemplates()
+
+const selectedTemplateKey = ref<string>('')
+
+const templateOptions = computed(() => {
+  return templates.value.map(t => ({
+    label: t.is_default ? `${t.name} (默认)` : t.name,
+    value: t.key,
+  }))
+})
 
 // 筛选条件
 const filterParams = ref<FundFilterParams>({
@@ -93,20 +115,65 @@ const handlePageChange = (page: number) => {
   handleFilter()
 }
 
-// 保存筛选配置到localStorage
-const saveFilterConfig = () => {
-  localStorage.setItem('fundFilterConfig', JSON.stringify(filterParams.value))
-  ElMessage.success('筛选配置已保存')
+const handleSaveTemplate = async () => {
+  try {
+    const { value: name } = await ElMessageBox.prompt('请输入模板名称', '保存筛选模板', {
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputPattern: /^.{1,30}$/,
+      inputErrorMessage: '模板名称长度为 1-30 个字符',
+    })
+    
+    if (name) {
+      const key = await saveTemplate(name, filterParams.value)
+      selectedTemplateKey.value = key
+    }
+  } catch {
+  }
 }
 
-// 加载筛选配置
-const loadFilterConfig = () => {
-  const saved = localStorage.getItem('fundFilterConfig')
-  if (saved) {
-    filterParams.value = JSON.parse(saved)
+const handleLoadTemplate = (key: string) => {
+  if (!key) return
+  
+  const params = loadTemplateParams(key)
+  if (params) {
+    filterParams.value = { ...params, page: 1 }
     handleFilter()
-    ElMessage.success('筛选配置已加载')
+    
+    const template = templates.value.find(t => t.key === key)
+    ElMessage.success(`已加载模板 "${template?.name || '未知'}"`)
   }
+}
+
+const handleDeleteTemplate = async (key: string) => {
+  if (!key) return
+  
+  const template = templates.value.find(t => t.key === key)
+  const name = template?.name || '此模板'
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除模板 "${name}" 吗？`,
+      '删除确认',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    await deleteTemplate(key)
+    
+    if (selectedTemplateKey.value === key) {
+      selectedTemplateKey.value = ''
+    }
+  } catch {
+  }
+}
+
+const handleSetDefault = async (key: string) => {
+  if (!key) return
+  await setDefault(key)
 }
 
 // 格式化数字
@@ -119,6 +186,106 @@ const formatNumber = (val: number | null, suffix = ''): string => {
 const getValueClass = (val: number | null): string => {
   if (val === null) return ''
   return val >= 0 ? 'text-up' : 'text-down'
+}
+
+// 导出CSV - 零后端债务实现
+// 纯前端Blob API，带BOM头防止Excel中文乱码
+const handleExportCSV = () => {
+  if (!tableData.value || tableData.value.length === 0) {
+    ElMessage.warning('暂无数据可导出')
+    return
+  }
+
+  // CSV列定义
+  const headers = [
+    '基金代码',
+    '基金名称',
+    '基金类型',
+    '基金经理',
+    '成立日期',
+    '基金规模(亿)',
+    '近1年收益(%)',
+    '最大回撤(%)',
+    '夏普比率',
+    '内含新高率(%)',
+    '重仓行业',
+    '基金公司',
+  ]
+
+  const keys: (keyof FundItem)[] = [
+    'fund_code',
+    'fund_name',
+    'fund_type',
+    'manager',
+    'setup_date',
+    'scale',
+    'return_1y',
+    'max_drawdown_1y',
+    'sharpe_1y',
+    'new_high_ratio_1y',
+    'heavy_sector',
+    'company_name',
+  ]
+
+  // 构建CSV行
+  const csvRows: string[] = []
+
+  // 添加表头
+  csvRows.push(headers.join(','))
+
+  // 添加数据行
+  for (const fund of tableData.value) {
+    const row = keys.map((key) => {
+      const value = fund[key]
+
+      // 处理null/undefined
+      if (value === null || value === undefined) {
+        return ''
+      }
+
+      // 数字格式化
+      if (typeof value === 'number') {
+        return value.toFixed(2)
+      }
+
+      // 字符串转义（处理逗号、引号、换行）
+      const str = String(value)
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`
+      }
+
+      return str
+    })
+
+    csvRows.push(row.join(','))
+  }
+
+  // 添加BOM头（UTF-8 with BOM）防止Excel中文乱码
+  const BOM = '\uFEFF'
+  const csvContent = BOM + csvRows.join('\n')
+
+  // 创建Blob并下载
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+
+  // 生成文件名（带时间戳）
+  const now = new Date()
+  const timestamp = now.toISOString().slice(0, 19).replace(/[T:]/g, '-')
+  const filename = `fund-filter-${timestamp}.csv`
+
+  // 创建下载链接
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.style.display = 'none'
+  document.body.appendChild(link)
+  link.click()
+
+  // 清理
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+
+  ElMessage.success(`已导出 ${tableData.value.length} 条记录`)
 }
 
 // Generate sparkline option for fund return trend
@@ -261,7 +428,17 @@ watch(
   { deep: true }
 )
 
-onMounted(() => {
+onMounted(async () => {
+  await loadTemplates()
+  
+  if (defaultTemplateKey.value) {
+    const params = loadTemplateParams(defaultTemplateKey.value)
+    if (params) {
+      filterParams.value = { ...params }
+      selectedTemplateKey.value = defaultTemplateKey.value
+    }
+  }
+  
   handleFilter()
 })
 </script>
@@ -399,12 +576,49 @@ onMounted(() => {
               <el-button @click="handleReset">
                 重置
               </el-button>
-              <el-button @click="saveFilterConfig">
-                保存配置
+              <el-button @click="handleSaveTemplate">
+                保存模板
               </el-button>
-              <el-button @click="loadFilterConfig">
-                加载配置
-              </el-button>
+            </div>
+            
+            <!-- 模板选择 -->
+            <div v-if="templates.length > 0" class="template-section">
+              <div class="template-header">
+                <label>筛选模板</label>
+                <span v-if="offlineMode" class="offline-badge">离线</span>
+              </div>
+              <div class="template-controls">
+                <el-select
+                  v-model="selectedTemplateKey"
+                  placeholder="选择模板"
+                  size="small"
+                  @change="handleLoadTemplate"
+                >
+                  <el-option
+                    v-for="opt in templateOptions"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <div class="template-actions">
+                  <el-button
+                    size="small"
+                    :disabled="!selectedTemplateKey"
+                    @click="handleSetDefault(selectedTemplateKey)"
+                  >
+                    设为默认
+                  </el-button>
+                  <el-button
+                    size="small"
+                    type="danger"
+                    :disabled="!selectedTemplateKey"
+                    @click="handleDeleteTemplate(selectedTemplateKey)"
+                  >
+                    删除
+                  </el-button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -419,6 +633,15 @@ onMounted(() => {
               <span v-if="filterTimeMs !== null" class="filter-time">
                 {{ filterTimeMs }}ms
               </span>
+            </div>
+            <div class="header-actions">
+              <el-button 
+                size="small" 
+                :disabled="!tableData || tableData.length === 0"
+                @click="handleExportCSV"
+              >
+                导出CSV
+              </el-button>
             </div>
           </div>
           
@@ -641,6 +864,12 @@ onMounted(() => {
   gap: 12px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .result-count {
   font-weight: 400;
   color: var(--text-regular);
@@ -726,6 +955,51 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 20px;
+}
+
+.template-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-line);
+}
+
+.template-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.template-header label {
+  font-size: 13px;
+  color: var(--text-regular);
+  font-weight: 500;
+}
+
+.offline-badge {
+  font-size: 11px;
+  color: var(--color-warning, #E6A23C);
+  background: rgba(230, 162, 60, 0.1);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.template-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.template-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (min-width: 400px) {
+  .template-controls {
+    flex-direction: row;
+    align-items: center;
+  }
 }
 
 .pagination {
