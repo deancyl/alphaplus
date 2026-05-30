@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.22-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.22)
+[![Version](https://img.shields.io/badge/version-0.1.24-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.24)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -296,6 +296,40 @@ async def _warmup_cache():
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.24 (2026-05-30)
+
+**深度QA审计与关键崩溃修复:**
+
+**问题诊断:**
+- FOFBacktest.vue模板标签不平衡导致Vue编译失败 (500错误)
+- Dashboard.vue图标导入问题
+- FundFilter.vue可选链缺失导致TypeError
+- MegaMenu.vue路由缺失导致导航失败
+
+**修复内容:**
+- 修复FOFBacktest.vue第866行chart-section缺失结束标签
+- Dashboard首页ERP gauge重叠修复 (容器高度260px→300px)
+- FundFilter修复nav_values?.length和tableData?.length可选链
+- MegaMenu移除缺失路由的理财对比菜单项
+- 27个Vue文件100vh改为100dvh解决移动端视口问题
+- 添加Warning图标正确导入(Element Plus icons)
+
+**QA验证结果:**
+- 27个页面Playwright测试全部通过
+- 0 console errors
+- Vue编译成功
+- LSP诊断0 errors
+
+**修改文件:**
+- `frontend/src/views/FOFBacktest.vue` - 模板结构修复 (+1行)
+- `frontend/src/views/Dashboard.vue` - 首页全面优化 (+718行)
+- `frontend/src/views/FundFilter.vue` - 可选链修复
+- `frontend/src/components/MegaMenu.vue` - 路由修复
+- 26个前端组件 - 移动端响应式优化
+
+**新增文档:**
+- `docs/design-standards.md` - Vue模板标签平衡检查规范
 
 ### v0.1.23 (2026-05-28)
 
