@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.25-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.25)
+[![Version](https://img.shields.io/badge/version-0.1.26-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.26)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -296,6 +296,56 @@ async def _warmup_cache():
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.26 (2026-05-31)
+
+**前端API数据加载修复与用户体验增强:**
+
+**核心修复:**
+- 修复前端API函数未正确解构响应数据的问题
+- API拦截器返回 `{ data, _error, _meta }` 结构，但API函数未提取 `response.data`
+- `analytics.ts`: getFearGreedIndex/getERPSpread/getStyleStrength/getCrowdingAnalysis正确返回 `response.data ?? []`
+- `market.ts`: getIndices/getDashboardMetrics/getMarketHeatmap/getDomesticMarket等14个函数修复
+- `fund.ts`: getTopFunds/getFundDetail/getFundHoldings等函数修复
+
+**新增功能:**
+- `frontend/src/utils/apiHelpers.ts` - API错误处理辅助函数
+- `frontend/src/utils/formatters.ts` - 数据格式化工具
+- `frontend/src/utils/retry.ts` - 指数退避重试机制
+- `frontend/src/utils/requestDedupe.ts` - 请求去重工具
+- `frontend/src/composables/useDebounce.ts` - 防抖组合式函数
+- `frontend/src/composables/useFilterTemplates.ts` - 筛选模板存储
+- `frontend/src/components/MarketWordCloud.vue` - 市场热点词云组件
+- `frontend/src/components/OmniSearch.vue` - 全局搜索组件
+- `backend/api/preferences.py` - 用户偏好API (Pydantic v2迁移)
+- `backend/services/bond_data.py` - 债券数据服务
+- `backend/utils/formatters.py` - 后端格式化工具
+
+**性能优化:**
+- Parquet缓存服务增强: Hive分区、元数据管理、压缩支持
+- 量化引擎扩展: 相空间轨迹计算优化、相关性分析性能提升
+- 内存泄漏测试扩展: 从10条路由扩展至24条路由
+
+**用户体验增强:**
+- Dashboard首页数据加载完全修复
+- 恐惧贪婪指数、ERP、风格强度、拥挤度、热力图、板块表现全部正常显示
+- 涨幅榜/跌幅榜TOP10数据正确加载
+- 市场热点词云正确显示15个行业标签
+- 控制台零JavaScript错误
+
+**QA验证:**
+- Playwright测试: 首页所有widget数据加载成功
+- 控制台: 0 JavaScript错误
+- LSP诊断: 0 TypeScript错误
+- 集成测试: 27/27路由正常工作
+
+**修改文件:**
+- `frontend/src/api/analytics.ts` - API响应解构修复
+- `frontend/src/api/market.ts` - API响应解构修复
+- `frontend/src/api/fund.ts` - API响应解构修复
+- `frontend/src/views/Dashboard.vue` - 首页数据加载优化
+- `backend/services/parquet_cache.py` - 缓存服务增强
+- `backend/services/quant_engine.py` - 量化引擎扩展
 
 ### v0.1.25 (2026-05-30)
 
