@@ -153,6 +153,10 @@ class MarketStyleStrengthHistory(Base):
     ratio_value: Mapped[float] = mapped_column(Float)
     percentile_rank_3y: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 3年分位数
 
+    __table_args__ = (
+        Index("idx_style_strength_date", "trade_date"),
+    )
+
 
 class BondEquityYieldSpreadHistory(Base):
     """股债ERP历史表 - Equity Risk Premium."""
@@ -169,6 +173,10 @@ class BondEquityYieldSpreadHistory(Base):
     percentile_rank_10y: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     index_close_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
+    __table_args__ = (
+        Index("idx_erp_index_date", "index_code", "trade_date"),
+    )
+
 
 class IndexValuationHistory(Base):
     """指数估值历史表 - PE百分位."""
@@ -181,6 +189,10 @@ class IndexValuationHistory(Base):
     moving_mean_10y: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     index_close_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
+    __table_args__ = (
+        Index("idx_valuation_index_date", "index_code", "trade_date"),
+    )
+
 
 class MarketCrowdingValuationHistory(Base):
     """市场拥挤度与估值历史表 - For rotation vector analysis."""
@@ -192,6 +204,11 @@ class MarketCrowdingValuationHistory(Base):
     crowding_score: Mapped[float] = mapped_column(Float)  # 0-100
     pe_percentile: Mapped[float] = mapped_column(Float)  # 0-100
     close_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    __table_args__ = (
+        Index("idx_crowding_date", "trade_date"),
+        Index("idx_crowding_category_date", "category", "trade_date"),
+    )
 
 
 class BacktestStatsMacroStrategies(Base):

@@ -3,7 +3,8 @@ Pydantic schemas for API request/response validation.
 """
 from datetime import date
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from backend.utils.formatters import round2, round4
 
 
 # ==================== Fund Filter Schemas ====================
@@ -66,6 +67,12 @@ class FundIndicatorResponse(BaseModel):
     new_high_ratio_1y: Optional[float] = None
     heavy_sector: Optional[str] = None
     manager_honors: Optional[str] = Field(None, description="基金经理荣誉奖项 (逗号分隔)")
+    
+    @field_validator('setup_year', 'scale', 'return_1y', 'volatility_1y', 
+                     'max_drawdown_1y', 'sharpe_1y', 'new_high_ratio_1y', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: Optional[float]) -> Optional[float]:
+        return round2(v)
 
 
 class FundFilterResponse(BaseModel):
@@ -93,6 +100,12 @@ class CorrelationMatrixResponse(BaseModel):
     calculation_date: str = Field(..., description="计算日期 YYYY-MM-DD")
     sample_size: int = Field(..., description="样本数量 (交易日数)")
     data_quality: Optional[dict] = Field(default=None, description="数据质量信息")
+    
+    @field_validator('correlation_matrix', mode='before')
+    @classmethod
+    def round_correlation_matrix(cls, v: List[List[float]]) -> List[List[float]]:
+        """Round all correlation values to 4 decimal places."""
+        return [[round4(val) for val in row] for row in v]
 
 
 class FactorExposureResponse(BaseModel):
@@ -115,6 +128,15 @@ class FactorExposureResponse(BaseModel):
     conglomerate: float
     cash: float
     intercept: float
+    
+    @field_validator('large_cap_value', 'large_cap_growth', 'mid_cap_value', 
+                     'mid_cap_growth', 'small_cap_value', 'small_cap_growth',
+                     'consumer', 'tmt', 'manufacturing', 'healthcare', 
+                     'cyclical', 'utilities', 'conglomerate', 'cash', 
+                     'intercept', mode='before')
+    @classmethod
+    def round_to_4_decimals(cls, v: float) -> float:
+        return round4(v)
 
 
 # ==================== Market Overview Schemas ====================
@@ -128,6 +150,11 @@ class IndexQuoteResponse(BaseModel):
     change_pct: float
     volume: Optional[float]
     amount: Optional[float]
+    
+    @field_validator('price', 'change', 'change_pct', 'volume', 'amount', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: Optional[float]) -> Optional[float]:
+        return round2(v)
 
 
 class FearGreedResponse(BaseModel):
@@ -141,6 +168,13 @@ class FearGreedResponse(BaseModel):
     factor_volume_deviation: Optional[float]
     factor_futures_basis: Optional[float]
     factor_stock_strength: Optional[float]
+    
+    @field_validator('composite_score', 'factor_volatility', 'factor_safe_haven',
+                     'factor_margin_ratio', 'factor_volume_deviation', 
+                     'factor_futures_basis', 'factor_stock_strength', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: Optional[float]) -> Optional[float]:
+        return round2(v)
 
 
 class ERPSpreadResponse(BaseModel):
@@ -155,6 +189,13 @@ class ERPSpreadResponse(BaseModel):
     index_close_price: Optional[float]
     risk_free_type: Optional[str] = Field(None, description="无风险利率类型: treasury_10y/cdb_10y/dr007")
     risk_free_rate: Optional[float] = Field(None, description="实际使用的无风险利率(%)")
+    
+    @field_validator('pe_ttm', 'treasury_yield_10y', 'erp_spread', 
+                     'percentile_rank_10y', 'index_close_price', 
+                     'risk_free_rate', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: Optional[float]) -> Optional[float]:
+        return round2(v)
 
 
 class TrajectoryPoint(BaseModel):
@@ -162,6 +203,11 @@ class TrajectoryPoint(BaseModel):
     x: float = Field(..., description="Crowding score (0-100)")
     y: float = Field(..., description="PE percentile (0-100)")
     date: str = Field(..., description="Date YYYY-MM-DD")
+    
+    @field_validator('x', 'y', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: float) -> float:
+        return round2(v)
 
 
 class TrajectoryVector(BaseModel):
@@ -173,6 +219,11 @@ class TrajectoryVector(BaseModel):
     rotation: str = Field(..., description="Rotation classification: clockwise/counter_clockwise/neutral/expansion/contraction")
     magnitude: Optional[float] = Field(None, description="Trajectory magnitude")
     direction_deg: Optional[float] = Field(None, description="Direction in degrees")
+    
+    @field_validator('velocity', 'magnitude', 'direction_deg', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: Optional[float]) -> Optional[float]:
+        return round2(v)
 
 
 class TrajectoryResponse(BaseModel):
@@ -192,6 +243,12 @@ class CrowdingRotationVector(BaseModel):
     t1_crowding: float
     t0_pe_percentile: float
     t1_pe_percentile: float
+    
+    @field_validator('t0_crowding', 't1_crowding', 't0_pe_percentile', 
+                     't1_pe_percentile', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: float) -> float:
+        return round2(v)
 
 
 # ==================== Bond Market Schemas ====================
@@ -212,6 +269,11 @@ class CreditSpreadResponse(BaseModel):
     yield_ytm: float
     credit_spread: float
     percentile_rank: float
+    
+    @field_validator('yield_ytm', 'credit_spread', 'percentile_rank', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: float) -> float:
+        return round2(v)
 
 
 # ==================== Heatmap Matrix Schemas ====================
@@ -222,6 +284,11 @@ class HeatmapCell(BaseModel):
     col: str  # 列标签 (如时间周期)
     value: float  # 数值
     color: str  # 颜色 rgba
+    
+    @field_validator('value', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: float) -> float:
+        return round2(v)
 
 
 class HeatmapMatrixResponse(BaseModel):
@@ -256,6 +323,11 @@ class SimilarFund(BaseModel):
     fund_code: str
     fund_name: str
     similarity: float = Field(..., description="Similarity score (0-1, higher is more similar)")
+    
+    @field_validator('similarity', mode='before')
+    @classmethod
+    def round_to_4_decimals(cls, v: float) -> float:
+        return round4(v)
 
 
 class FactorExposureItem(BaseModel):
@@ -263,6 +335,11 @@ class FactorExposureItem(BaseModel):
     factor_name: str
     factor_type: str = Field(..., description="style or sector")
     weight: float
+    
+    @field_validator('weight', mode='before')
+    @classmethod
+    def round_to_4_decimals(cls, v: float) -> float:
+        return round4(v)
 
 
 class FundSimilarityResponse(BaseModel):

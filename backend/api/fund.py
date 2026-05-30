@@ -32,6 +32,7 @@ from backend.schemas.fund import (
 from backend.services.correlation import calculate_pearson_matrix, correlation_matrix_to_list
 from backend.services.factor_exposure import FactorExposureAnalyzer, ALL_FACTORS
 from backend.services.pandas_cache import pandas_filter_service
+from backend.services.cache import realtime_cache
 
 router = APIRouter()
 
@@ -127,6 +128,69 @@ async def filter_funds(
         page_size=request.page_size,
         funds=fund_responses,
     )
+
+
+@router.get("/top-funds")
+async def get_top_funds(
+    limit: int = Query(10, description="Number of funds per category", ge=1, le=50),
+):
+    """
+    Top gainers and losers - single endpoint returning both.
+    Performance: <100ms via cached pandas filtering.
+    """
+    # Check cache first
+    cache_key = f"top_funds:{limit}"
+    cached = await realtime_cache.get(cache_key)
+    if cached:
+        return cached
+    
+    # Existing logic - fetch from pandas filter service
+    gainers_df, _ = pandas_filter_service.filter_funds(
+        conditions={},
+        page=1,
+        page_size=limit,
+        sort_by='return_1y',
+        sort_order='desc',
+    )
+    
+    losers_df, _ = pandas_filter_service.filter_funds(
+        conditions={},
+        page=1,
+        page_size=limit,
+        sort_by='return_1y',
+        sort_order='asc',
+    )
+    
+    gainers = [
+        {
+            "fund_code": row['fund_code'],
+            "fund_name": row['fund_name'],
+            "fund_type": row['fund_type'],
+            "return_1y": row['return_1y'],
+        }
+        for _, row in gainers_df.iterrows()
+    ]
+    
+    losers = [
+        {
+            "fund_code": row['fund_code'],
+            "fund_name": row['fund_name'],
+            "fund_type": row['fund_type'],
+            "return_1y": row['return_1y'],
+        }
+        for _, row in losers_df.iterrows()
+    ]
+    
+    result = {
+        "gainers": gainers,
+        "losers": losers,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    
+    # Cache for 5 minutes
+    await realtime_cache.set(cache_key, result, ttl_seconds=300)
+    
+    return result
 
 
 @router.get("/stock-reverse/{stock_code}/export")

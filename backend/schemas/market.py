@@ -2,7 +2,8 @@
 Market schemas for index valuation API endpoints.
 """
 from typing import List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from backend.utils.formatters import round2
 
 
 class IndexValuationItem(BaseModel):
@@ -16,6 +17,11 @@ class IndexValuationItem(BaseModel):
     pb_percentile: float = Field(..., description="PB百分位 (0-100)")
     zone: str = Field(..., description="估值区间: 低估/正常/高估")
     is_simulated: bool = Field(..., description="是否为模拟数据")
+    
+    @field_validator('pe_ttm', 'pb', 'dividend_yield', 'pe_percentile', 'pb_percentile', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: float) -> float:
+        return round2(v)
 
 
 class IndexValuationResponse(BaseModel):
@@ -30,6 +36,11 @@ class IndexPEHistoryItem(BaseModel):
     date: str = Field(..., description="日期")
     pe: float = Field(..., description="PE值")
     percentile: float = Field(..., description="百分位")
+    
+    @field_validator('pe', 'percentile', mode='before')
+    @classmethod
+    def round_to_2_decimals(cls, v: float) -> float:
+        return round2(v)
 
 
 class IndexPEHistoryResponse(BaseModel):
