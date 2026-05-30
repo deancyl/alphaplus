@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete } from '@element-plus/icons-vue'
+import { Plus, Delete, InfoFilled } from '@element-plus/icons-vue'
 import SplitPanel from '@/components/SplitPanel.vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import type { EChartsOption } from 'echarts'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import {
@@ -19,6 +20,7 @@ import {
   type BacktestConfig,
   type BacktestResult,
 } from '@/api/portfolio'
+import { saveBacktest, getAllBacktests, deleteBacktest, type BacktestHistoryRecord } from '@/services/idb'
 
 // ==================== State ====================
 
@@ -43,6 +45,7 @@ const endDate = ref('')
 const selectedBenchmark = ref('000300')
 const linkingMethod = ref<'auto' | 'carino' | 'menchero'>('auto')
 const periodGranularity = ref<'daily' | 'weekly' | 'monthly'>('monthly')
+const useAdjustedNav = ref(false)
 const runningBacktest = ref(false)
 
 // Results
@@ -50,6 +53,10 @@ const backtestResult = ref<BacktestResult | null>(null)
 
 // Active portfolio
 const activePortfolioId = ref<string | null>(null)
+
+// Backtest history (IndexedDB)
+const backtestHistory = ref<BacktestHistoryRecord[]>([])
+const loadingHistory = ref(false)
 
 // ==================== Computed ====================
 
@@ -362,7 +369,7 @@ const handleFundSearch = async (query: string, index: number) => {
     const results = await searchFunds(query)
     fundSearchResults.value = results
   } catch (error) {
-    console.error('Fund search failed:', error)
+    ElMessage.error('基金搜索失败，请重试')
   } finally {
     fundSearchLoading.value = null
   }
@@ -418,8 +425,7 @@ const savePortfolio = async () => {
     activePortfolioId.value = portfolio.id
     await loadPortfolios()
   } catch (error) {
-    console.error('Failed to save portfolio:', error)
-    ElMessage.error('保存失败，请重试')
+    ElMessage.error('保存组合失败，请重试')
   } finally {
     savingPortfolio.value = false
   }
@@ -434,7 +440,7 @@ const loadPortfolios = async () => {
   try {
     portfolios.value = await getPortfolios()
   } catch (error) {
-    console.error('Failed to load portfolios:', error)
+    ElMessage.error('加载组合列表失败')
     // Use empty array on error
     portfolios.value = []
   } finally {
@@ -474,8 +480,7 @@ const handleDeletePortfolio = async (portfolio: PortfolioItem) => {
     await loadPortfolios()
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('Failed to delete portfolio:', error)
-      ElMessage.error('删除失败')
+      ElMessage.error('删除组合失败')
     }
   }
 }
@@ -507,10 +512,16 @@ const runBacktestHandler = async () => {
       end_date: endDate.value,
       benchmark: selectedBenchmark.value,
       linking_method: linkingMethod.value,
-      period_granularity: periodGranularity.value
+      period_granularity: periodGranularity.value,
+      use_adjusted_nav: useAdjustedNav.value
     }
     
     backtestResult.value = await runBacktest(activePortfolioId.value, config)
+    
+    // Save to IndexedDB for offline access
+    const backtestId = `${activePortfolioId.value}-${Date.now()}`
+    await saveBacktest(backtestId, backtestResult.value)
+    await loadBacktestHistory()
     
     if (backtestResult.value.is_simulated) {
       ElMessage.warning('使用模拟数据进行展示')
@@ -518,8 +529,7 @@ const runBacktestHandler = async () => {
       ElMessage.success('回测完成')
     }
   } catch (error) {
-    console.error('Backtest failed:', error)
-    ElMessage.error('回测失败，请重试')
+    ElMessage.error('回测运行失败，请检查参数后重试')
   } finally {
     runningBacktest.value = false
   }
@@ -550,10 +560,71 @@ const getValueClass = (value: number | null | undefined): string => {
   return value >= 0 ? 'text-up' : 'text-down'
 }
 
+/**
+ * Load backtest history from IndexedDB
+ */
+const loadBacktestHistory = async () => {
+  loadingHistory.value = true
+  try {
+    backtestHistory.value = await getAllBacktests()
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+/**
+ * Load a historical backtest result
+ */
+const loadHistoryResult = (record: BacktestHistoryRecord) => {
+  backtestResult.value = record.result
+  ElMessage.success(`已加载历史回测: ${record.portfolio_name}`)
+}
+
+/**
+ * Delete a backtest from history
+ */
+const handleDeleteHistory = async (record: BacktestHistoryRecord) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除历史回测"${record.portfolio_name}"吗？`,
+      '确认删除',
+      { type: 'warning' }
+    )
+    
+    await deleteBacktest(record.id)
+    ElMessage.success('删除成功')
+    await loadBacktestHistory()
+    
+    // Clear current result if it was the deleted one
+    if (backtestResult.value && backtestResult.value.portfolio_name === record.portfolio_name) {
+      backtestResult.value = null
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
+/**
+ * Format date for history display
+ */
+const formatHistoryDate = (dateStr: string): string => {
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
 // ==================== Lifecycle ====================
 
 onMounted(() => {
   loadPortfolios()
+  loadBacktestHistory()
   
   // Set default dates (last 3 years)
   const today = new Date()
@@ -564,7 +635,7 @@ onMounted(() => {
 })
 
 // Clear results when config changes
-watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity], () => {
+watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, useAdjustedNav], () => {
   backtestResult.value = null
 })
 </script>
@@ -581,11 +652,12 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
       <template #left="{ collapsed }">
         <div class="config-panel" :class="{ 'config-panel--collapsed': collapsed }">
           <!-- Portfolio Builder Section -->
-          <div v-if="!collapsed" class="config-section">
-            <h3 class="section-title">
-              <span class="section-icon">📊</span>
-              组合构建
-            </h3>
+          <ErrorBoundary v-if="!collapsed" error-message="组合构建加载失败">
+            <div class="config-section">
+              <h3 class="section-title">
+                <span class="section-icon">📊</span>
+                组合构建
+              </h3>
             
             <!-- Portfolio Name -->
             <div class="form-item">
@@ -704,14 +776,16 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
                 </div>
               </div>
             </div>
-          </div>
+            </div>
+          </ErrorBoundary>
           
           <!-- Backtest Configuration Section -->
-          <div v-if="!collapsed" class="config-section">
-            <h3 class="section-title">
-              <span class="section-icon">⚙️</span>
-              回测配置
-            </h3>
+          <ErrorBoundary v-if="!collapsed" error-message="回测配置加载失败">
+            <div class="config-section">
+              <h3 class="section-title">
+                <span class="section-icon">⚙️</span>
+                回测配置
+              </h3>
             
             <div class="form-item">
               <label>开始日期</label>
@@ -773,6 +847,20 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
               </el-select>
             </div>
             
+            <div class="form-item">
+              <div class="checkbox-row">
+                <el-checkbox v-model="useAdjustedNav">
+                  使用复权净值 (分红再投资)
+                </el-checkbox>
+                <el-tooltip 
+                  content="复权净值将分红按除权日净值再投资，用于准确比较长期收益"
+                  placement="top"
+                >
+                  <el-icon class="info-icon"><InfoFilled /></el-icon>
+                </el-tooltip>
+              </div>
+            </div>
+            
             <el-button
               type="primary"
               size="large"
@@ -783,27 +871,74 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
             >
               运行回测
             </el-button>
-          </div>
+            </div>
+          </ErrorBoundary>
+          
+          <!-- Backtest History Section -->
+          <ErrorBoundary v-if="!collapsed" error-message="历史记录加载失败">
+            <div class="config-section history-section">
+              <h3 class="section-title">
+                <span class="section-icon">📜</span>
+                历史记录
+              </h3>
+              
+              <div v-if="loadingHistory" class="loading-placeholder">
+                加载中...
+              </div>
+              <div v-else-if="backtestHistory.length === 0" class="empty-hint">
+                暂无历史回测记录
+              </div>
+              <div v-else class="history-list">
+                <div
+                  v-for="record in backtestHistory"
+                  :key="record.id"
+                  class="history-item"
+                  @click="loadHistoryResult(record)"
+                >
+                  <div class="history-info">
+                    <div class="history-name">{{ record.portfolio_name }}</div>
+                    <div class="history-meta">
+                      <span class="history-date">{{ formatHistoryDate(record.created_at) }}</span>
+                      <span 
+                        class="history-return"
+                        :class="getValueClass(record.result.performance.total_return)"
+                      >
+                        {{ formatPercent(record.result.performance.total_return) }}
+                      </span>
+                    </div>
+                  </div>
+                  <el-button
+                    type="danger"
+                    size="small"
+                    @click.stop="handleDeleteHistory(record)"
+                    :icon="Delete"
+                    circle
+                  />
+                </div>
+              </div>
+            </div>
+          </ErrorBoundary>
         </div>
       </template>
       
-      <!-- Right Panel: Results Dashboard -->
+<!-- Right Panel: Results Dashboard -->
       <template #right>
-        <div class="results-panel">
-          <!-- Empty State -->
-          <div v-if="!backtestResult" class="empty-state">
-            <div class="empty-icon">📈</div>
-            <h3>FOF组合回测</h3>
-            <p>在左侧构建组合并运行回测</p>
-            <div class="empty-tips">
-              <div class="tip-item">💡 添加基金并分配权重（合计100%）</div>
-              <div class="tip-item">💡 选择回测日期区间和基准指数</div>
-              <div class="tip-item">💡 点击"运行回测"查看结果</div>
+        <ErrorBoundary error-message="回测结果加载失败">
+          <div class="results-panel">
+            <!-- Empty State -->
+            <div v-if="!backtestResult" class="empty-state">
+              <div class="empty-icon">📈</div>
+              <h3>FOF组合回测</h3>
+              <p>在左侧构建组合并运行回测</p>
+              <div class="empty-tips">
+                <div class="tip-item">💡 添加基金并分配权重（合计100%）</div>
+                <div class="tip-item">💡 选择回测日期区间和基准指数</div>
+                <div class="tip-item">💡 点击"运行回测"查看结果</div>
+              </div>
             </div>
-          </div>
-          
-          <!-- Results Content -->
-          <template v-else>
+
+            <!-- Results Content -->
+            <template v-else>
             <!-- Header -->
             <div class="results-header">
               <div class="results-title">
@@ -812,9 +947,14 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
                   {{ backtestResult.start_date }} ~ {{ backtestResult.end_date }}
                 </span>
               </div>
-              <span v-if="backtestResult.is_simulated" class="simulated-badge">
-                模拟数据
-              </span>
+              <div class="results-badges">
+                <el-tag v-if="useAdjustedNav" type="success" size="small">
+                  复权净值
+                </el-tag>
+                <span v-if="backtestResult.is_simulated" class="simulated-badge">
+                  模拟数据
+                </span>
+              </div>
             </div>
             
             <!-- Statistics Cards -->
@@ -1014,9 +1154,10 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
             </div>
           </template>
         </div>
-      </template>
-    </SplitPanel>
-  </div>
+      </ErrorBoundary>
+    </template>
+  </SplitPanel>
+</div>
 </template>
 
 <style scoped>
@@ -1377,6 +1518,31 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
   margin-top: 4px;
 }
 
+/* Checkbox with tooltip */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-icon {
+  font-size: 16px;
+  color: var(--text-muted);
+  cursor: help;
+  transition: color 0.2s;
+}
+
+.info-icon:hover {
+  color: var(--brand-navy-dark);
+}
+
+/* Results badges container */
+.results-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Multi-Period Attribution Summary */
 .attribution-summary {
   display: grid;
@@ -1416,6 +1582,69 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
   font-size: 13px;
   font-family: 'Courier New', monospace;
   color: var(--text-muted);
+}
+
+/* Backtest History Section */
+.history-section {
+  border-top: 1px solid var(--border-line);
+  padding-top: 16px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-system);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.history-item:hover {
+  background: var(--bg-card);
+  border-color: var(--brand-navy-active);
+}
+
+.history-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.history-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.history-date {
+  color: var(--text-muted);
+}
+
+.history-return {
+  font-weight: 600;
 }
 
 /* Responsive */

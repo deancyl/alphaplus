@@ -53,6 +53,7 @@ export interface BacktestConfig {
   benchmark: string     // Benchmark index code (e.g., '000300', '000905', '399006')
   linking_method?: 'auto' | 'carino' | 'menchero'  // Multi-period Brinson linking method
   period_granularity?: 'daily' | 'weekly' | 'monthly'  // Period granularity for multi-period attribution
+  use_adjusted_nav?: boolean  // Use adjusted NAV (复权净值) for dividend reinvestment
 }
 
 /**

@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.24-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.24)
+[![Version](https://img.shields.io/badge/version-0.1.25-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.25)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -296,6 +296,58 @@ async def _warmup_cache():
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.25 (2026-05-30)
+
+**高可用工程净化与数据确信度机制:**
+
+**新增组件:**
+- `frontend/src/components/ErrorBoundary.vue` - Vue 3错误边界组件,使用onErrorCaptured捕获子组件错误
+- `frontend/src/components/DataConfidenceBadge.vue` - 数据确信度标识组件(实时/延迟/模拟三状态)
+- `frontend/src/services/idb.ts` - IndexedDB服务,支持回测历史离线存储
+- `backend/services/adjusted_nav.py` - 复权净值计算服务(分红再投资NAV)
+
+**控制台零容忍(Console Error Zero-Tolerance):**
+- Dashboard.vue移除7处console.error,替换为ErrorBoundary包裹
+- FOFBacktest.vue移除5处console.error,替换为ElMessage.error用户友好提示
+- 全项目Vue文件console.error从12处降至0处
+- 新增pre-commit hook自动检测并阻止console.error/warn提交
+
+**数据确信度标识机制:**
+- IndexBar.vue从fallback-badge改为DataConfidenceBadge
+- Dashboard每个widget header添加数据确信度标识
+- 模拟数据强制高亮水印("模拟/历史锁定数据")
+- 符合架构师要求"前端UI必须强制高亮显示模拟/历史锁定数据水印"
+
+**IndexedDB回测历史存储:**
+- 回测结果自动保存到IndexedDB
+- 支持离线查看历史回测结果
+- 历史记录列表UI,点击可重新加载
+- 新增idb@8.0.3依赖
+
+**复权净值计算:**
+- 支持分红再投资NAV计算
+- FOFBacktest添加复权净值选项checkbox
+- 结果显示复权净值标识tag
+
+**QA验证结果:**
+- Homepage: 0 console errors
+- FOFBacktest: 0 console errors
+- Playwright测试通过
+- DataConfidenceBadge正确显示模拟数据水印
+- LSP诊断0 errors
+
+**修改文件:**
+- `frontend/src/components/ErrorBoundary.vue` - 新增 (+171行)
+- `frontend/src/components/DataConfidenceBadge.vue` - 新增 (+295行)
+- `frontend/src/services/idb.ts` - 新增 (+228行)
+- `backend/services/adjusted_nav.py` - 新增 (+630行)
+- `frontend/src/views/Dashboard.vue` - ErrorBoundary+DataConfidenceBadge集成
+- `frontend/src/views/FOFBacktest.vue` - IndexedDB+复权净值+ErrorBoundary集成
+- `frontend/src/components/IndexBar.vue` - DataConfidenceBadge集成
+- `frontend/src/api/portfolio.ts` - use_adjusted_nav参数
+- `frontend/package.json` - idb依赖
+- `.git/hooks/pre-commit` - console.error检测hook
 
 ### v0.1.24 (2026-05-30)
 

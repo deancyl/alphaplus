@@ -6,6 +6,8 @@ import { Warning } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import JargonTooltip from '@/components/JargonTooltip.vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
+import DataConfidenceBadge from '@/components/DataConfidenceBadge.vue'
 import type { EChartsOption } from 'echarts'
 import { getFearGreedIndex, getERPSpread, getCrowdingAnalysis, getStyleStrength } from '@/api/analytics'
 import { getMarketHeatmap, getDomesticMarket } from '@/api/market'
@@ -25,6 +27,16 @@ const styleStrengthLoading = ref(true)
 const heatmapLoading = ref(true)
 const sectorsLoading = ref(true)
 const gainersLoading = ref(true)
+
+// Data source states - track real/delayed/simulated data for each widget
+type DataSource = 'real' | 'delayed' | 'simulated'
+const fearGreedDataSource = ref<DataSource>('simulated')
+const erpDataSource = ref<DataSource>('simulated')
+const crowdingDataSource = ref<DataSource>('simulated')
+const styleStrengthDataSource = ref<DataSource>('simulated')
+const heatmapDataSource = ref<DataSource>('simulated')
+const sectorsDataSource = ref<DataSource>('simulated')
+const gainersDataSource = ref<DataSource>('simulated')
 
 // Real-time data refresh interval (for other data, not indices)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
@@ -378,9 +390,9 @@ const fetchFearGreedWidget = async () => {
     if (data && Array.isArray(data) && data.length > 0) {
       fearGreedData.value = data[0]
       fearGreedHistory.value = data.slice(0, 30)
+      fearGreedDataSource.value = 'real'
     }
-  } catch (e) {
-    console.error('Fear-greed widget failed:', e)
+  } catch {
     // Fallback: neutral state
     fearGreedData.value = {
       trade_date: new Date().toISOString().split('T')[0],
@@ -393,6 +405,7 @@ const fetchFearGreedWidget = async () => {
       factor_futures_basis: null,
       factor_stock_strength: null
     }
+    fearGreedDataSource.value = 'simulated'
   } finally {
     fearGreedLoading.value = false
   }
@@ -404,9 +417,9 @@ const fetchERPWidget = async () => {
     const data = await getERPSpread()
     if (data && Array.isArray(data) && data.length > 0) {
       erpData.value = data[0]
+      erpDataSource.value = 'real'
     }
-  } catch (e) {
-    console.error('ERP widget failed:', e)
+  } catch {
     // Fallback: placeholder data
     erpData.value = {
       index_code: '000300',
@@ -418,6 +431,7 @@ const fetchERPWidget = async () => {
       percentile_rank_10y: 50,
       index_close_price: null
     }
+    erpDataSource.value = 'simulated'
   } finally {
     erpLoading.value = false
   }
@@ -429,11 +443,12 @@ const fetchCrowdingWidget = async () => {
     const data = await getCrowdingAnalysis()
     if (data && Array.isArray(data)) {
       crowdingData.value = data
+      crowdingDataSource.value = 'real'
     }
-  } catch (e) {
-    console.error('Crowding widget failed:', e)
+  } catch {
     // Fallback: empty array - widget will show empty state
     crowdingData.value = []
+    crowdingDataSource.value = 'simulated'
   } finally {
     crowdingLoading.value = false
   }
@@ -445,11 +460,12 @@ const fetchStyleStrengthWidget = async () => {
     const data = await getStyleStrength()
     if (data && Array.isArray(data)) {
       styleStrengthData.value = data
+      styleStrengthDataSource.value = 'real'
     }
-  } catch (e) {
-    console.error('Style strength widget failed:', e)
+  } catch {
     // Fallback: empty array
     styleStrengthData.value = []
+    styleStrengthDataSource.value = 'simulated'
   } finally {
     styleStrengthLoading.value = false
   }
@@ -471,9 +487,10 @@ const fetchHeatmapWidget = async () => {
         rowIndexMap.get(c.row) ?? 0,
         c.value
       ])
+      heatmapDataSource.value = 'real'
     }
-  } catch (e) {
-    console.error('Heatmap widget failed:', e)
+  } catch {
+    heatmapDataSource.value = 'simulated'
   } finally {
     heatmapLoading.value = false
   }
@@ -489,11 +506,12 @@ const fetchSectorsWidget = async () => {
         change_pct: sector.change_pct,
         volume: 0
       }))
+      sectorsDataSource.value = 'real'
     }
-  } catch (e) {
-    console.error('Sectors widget failed:', e)
+  } catch {
     // Fallback: empty array
     sectorPerformance.value = []
+    sectorsDataSource.value = 'simulated'
   } finally {
     sectorsLoading.value = false
   }
@@ -506,12 +524,13 @@ const fetchTopFundsWidget = async () => {
     if (data) {
       topGainers.value = data.gainers as FundItem[]
       topLosers.value = data.losers as FundItem[]
+      gainersDataSource.value = 'real'
     }
-  } catch (e) {
-    console.error('Top funds widget failed:', e)
+  } catch {
     // Fallback: empty arrays
     topGainers.value = []
     topLosers.value = []
+    gainersDataSource.value = 'simulated'
   } finally {
     gainersLoading.value = false
   }
@@ -673,261 +692,275 @@ onUnmounted(() => {
       <div class="card widget-fear-greed">
         <div class="card-header">
           <div class="card-title">恐惧贪婪指数</div>
-          <div class="card-subtitle" v-if="fearGreedData && !fearGreedLoading">
-            {{ fearGreedData.trade_date }}
-          </div>
+          <DataConfidenceBadge 
+            :source="fearGreedDataSource" 
+            :timestamp="fearGreedData?.trade_date" 
+          />
         </div>
         
-        <!-- Skeleton when loading -->
-        <template v-if="fearGreedLoading">
-          <div class="widget-content">
-            <SkeletonLoader variant="gauge" height="200px" />
-          </div>
-          <div class="factor-breakdown">
-            <div class="factor-item" v-for="i in 3" :key="`factor-${i}`">
-              <span class="skeleton skeleton-text" style="width: 40px; height: 11px;"></span>
-              <span class="skeleton skeleton-text" style="width: 60px; height: 14px;"></span>
+        <ErrorBoundary>
+          <!-- Skeleton when loading -->
+          <template v-if="fearGreedLoading">
+            <div class="widget-content">
+              <SkeletonLoader variant="gauge" height="200px" />
             </div>
-          </div>
-        </template>
-        
-        <!-- Actual content when loaded -->
-        <template v-else>
-          <div class="widget-content">
-            <div class="gauge-container">
-              <EChartsWrapper
-                :option="fearGreedOption"
-                height="200px"
-              />
+            <div class="factor-breakdown">
+              <div class="factor-item" v-for="i in 3" :key="`factor-${i}`">
+                <span class="skeleton skeleton-text" style="width: 40px; height: 11px;"></span>
+                <span class="skeleton skeleton-text" style="width: 60px; height: 14px;"></span>
+              </div>
             </div>
-            <div class="history-chart">
-              <EChartsWrapper
-                :option="fearGreedHistoryOption"
-                height="100px"
-              />
+          </template>
+          
+          <!-- Actual content when loaded -->
+          <template v-else>
+            <div class="widget-content">
+              <div class="gauge-container">
+                <EChartsWrapper
+                  :option="fearGreedOption"
+                  height="200px"
+                />
+              </div>
+              <div class="history-chart">
+                <EChartsWrapper
+                  :option="fearGreedHistoryOption"
+                  height="100px"
+                />
+              </div>
             </div>
-          </div>
-          <div class="factor-breakdown" v-if="fearGreedData">
-            <div class="factor-item">
-              <JargonTooltip term="波动率" definition="衡量价格波动幅度的统计指标，反映风险水平" />
-              <span class="factor-value">{{ formatNumber(fearGreedData.factor_volatility) }}</span>
+            <div class="factor-breakdown" v-if="fearGreedData">
+              <div class="factor-item">
+                <JargonTooltip term="波动率" definition="衡量价格波动幅度的统计指标，反映风险水平" />
+                <span class="factor-value">{{ formatNumber(fearGreedData.factor_volatility) }}</span>
+              </div>
+              <div class="factor-item">
+                <JargonTooltip term="避险情绪" definition="市场恐慌时资金流向安全资产(如黄金、国债)的倾向" />
+                <span class="factor-value">{{ formatNumber(fearGreedData.factor_safe_haven) }}</span>
+              </div>
+              <div class="factor-item">
+                <JargonTooltip term="杠杆水平" definition="融资交易占总交易的比例，反映市场风险偏好" />
+                <span class="factor-value">{{ formatNumber(fearGreedData.factor_margin_ratio) }}</span>
+              </div>
             </div>
-            <div class="factor-item">
-              <JargonTooltip term="避险情绪" definition="市场恐慌时资金流向安全资产(如黄金、国债)的倾向" />
-              <span class="factor-value">{{ formatNumber(fearGreedData.factor_safe_haven) }}</span>
+            <div class="risk-warning" v-if="!fearGreedLoading">
+              <el-icon><Warning /></el-icon>
+              <span>投资有风险，决策需谨慎</span>
             </div>
-            <div class="factor-item">
-              <JargonTooltip term="杠杆水平" definition="融资交易占总交易的比例，反映市场风险偏好" />
-              <span class="factor-value">{{ formatNumber(fearGreedData.factor_margin_ratio) }}</span>
-            </div>
-          </div>
-          <div class="risk-warning" v-if="!fearGreedLoading">
-            <el-icon><Warning /></el-icon>
-            <span>投资有风险，决策需谨慎</span>
-          </div>
-        </template>
+          </template>
+        </ErrorBoundary>
       </div>
 
       <!-- ERP Spread Widget -->
       <div class="card widget-erp">
         <div class="card-header">
           <div class="card-title">股债性价比 (ERP)</div>
-          <div class="card-subtitle" v-if="erpData && !erpLoading">
-            {{ erpData.index_name }} | {{ erpData.trade_date }}
-          </div>
+          <DataConfidenceBadge 
+            :source="erpDataSource" 
+            :timestamp="erpData?.trade_date" 
+          />
         </div>
         
-        <!-- Skeleton when loading -->
-        <template v-if="erpLoading">
-          <div class="widget-content">
-            <SkeletonLoader variant="gauge" height="220px" />
-          </div>
-        </template>
-        
-        <!-- Actual content when loaded -->
-        <template v-else>
-          <div class="widget-content">
-            <EChartsWrapper
-              :option="erpOption"
-              height="300px"
-            />
-          </div>
-          <div class="erp-details" v-if="erpData">
-            <div class="detail-row">
-              <JargonTooltip term="PE(TTM)" definition="滚动市盈率，当前股价/过去12个月每股收益" />
-              <span class="detail-value">{{ erpData.pe_ttm.toFixed(2) }}</span>
+        <ErrorBoundary>
+          <!-- Skeleton when loading -->
+          <template v-if="erpLoading">
+            <div class="widget-content">
+              <SkeletonLoader variant="gauge" height="220px" />
             </div>
-            <div class="detail-row">
-              <span class="detail-label">10Y国债收益率</span>
-              <span class="detail-value">{{ erpData.treasury_yield_10y.toFixed(2) }}%</span>
+          </template>
+          
+          <!-- Actual content when loaded -->
+          <template v-else>
+            <div class="widget-content">
+              <EChartsWrapper
+                :option="erpOption"
+                height="300px"
+              />
             </div>
-            <div class="detail-row">
-              <span class="detail-label">指数收盘</span>
-              <span class="detail-value">{{ erpData.index_close_price?.toFixed(2) ?? '-' }}</span>
+            <div class="erp-details" v-if="erpData">
+              <div class="detail-row">
+                <JargonTooltip term="PE(TTM)" definition="滚动市盈率，当前股价/过去12个月每股收益" />
+                <span class="detail-value">{{ erpData.pe_ttm.toFixed(2) }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">10Y国债收益率</span>
+                <span class="detail-value">{{ erpData.treasury_yield_10y.toFixed(2) }}%</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">指数收盘</span>
+                <span class="detail-value">{{ erpData.index_close_price?.toFixed(2) ?? '-' }}</span>
+              </div>
             </div>
-          </div>
-          <div class="risk-warning" v-if="!erpLoading">
-            <el-icon><Warning /></el-icon>
-            <span>仅供参考，不构成投资建议。投资有风险，决策需谨慎</span>
-          </div>
-        </template>
+            <div class="risk-warning" v-if="!erpLoading">
+              <el-icon><Warning /></el-icon>
+              <span>仅供参考，不构成投资建议。投资有风险，决策需谨慎</span>
+            </div>
+          </template>
+        </ErrorBoundary>
       </div>
 
       <!-- Market Crowding Widget -->
       <div class="card widget-crowding">
         <div class="card-header">
           <div class="card-title">市场拥挤度</div>
-          <div class="card-subtitle">行业/板块拥挤度分布</div>
+          <DataConfidenceBadge :source="crowdingDataSource" />
         </div>
         
-        <!-- Skeleton when loading -->
-        <template v-if="crowdingLoading">
-          <div class="widget-content">
-            <SkeletonLoader variant="heatmap" height="280px" />
-          </div>
-        </template>
-        
-        <!-- Actual content when loaded -->
-        <template v-else>
-          <div class="widget-content">
-            <EChartsWrapper
-              :option="crowdingOption"
-              height="280px"
-            />
-          </div>
-          <div class="crowding-legend">
-            <span class="legend-item">
-              <span class="legend-dot low"></span>低拥挤
-            </span>
-            <span class="legend-item">
-              <span class="legend-dot mid"></span>中等
-            </span>
-            <span class="legend-item">
-              <span class="legend-dot high"></span>高拥挤
-            </span>
-          </div>
-        </template>
+        <ErrorBoundary>
+          <!-- Skeleton when loading -->
+          <template v-if="crowdingLoading">
+            <div class="widget-content">
+              <SkeletonLoader variant="heatmap" height="280px" />
+            </div>
+          </template>
+          
+          <!-- Actual content when loaded -->
+          <template v-else>
+            <div class="widget-content">
+              <EChartsWrapper
+                :option="crowdingOption"
+                height="280px"
+              />
+            </div>
+            <div class="crowding-legend">
+              <span class="legend-item">
+                <span class="legend-dot low"></span>低拥挤
+              </span>
+              <span class="legend-item">
+                <span class="legend-dot mid"></span>中等
+              </span>
+              <span class="legend-item">
+                <span class="legend-dot high"></span>高拥挤
+              </span>
+            </div>
+          </template>
+        </ErrorBoundary>
       </div>
 
       <!-- Style Strength Widget -->
       <div class="card widget-style">
         <div class="card-header">
           <div class="card-title">风格强度</div>
-          <div class="card-subtitle">大小盘/价值成长轮动</div>
+          <DataConfidenceBadge :source="styleStrengthDataSource" />
         </div>
         
-        <!-- Skeleton when loading -->
-        <template v-if="styleStrengthLoading">
-          <div class="widget-content">
-            <SkeletonLoader variant="image" height="280px" />
-          </div>
-        </template>
-        
-        <!-- Actual content when loaded -->
-        <template v-else>
-          <div class="widget-content">
-            <EChartsWrapper
-              :option="styleStrengthOption"
-              height="280px"
-            />
-          </div>
-        </template>
+        <ErrorBoundary>
+          <!-- Skeleton when loading -->
+          <template v-if="styleStrengthLoading">
+            <div class="widget-content">
+              <SkeletonLoader variant="image" height="280px" />
+            </div>
+          </template>
+          
+          <!-- Actual content when loaded -->
+          <template v-else>
+            <div class="widget-content">
+              <EChartsWrapper
+                :option="styleStrengthOption"
+                height="280px"
+              />
+            </div>
+          </template>
+        </ErrorBoundary>
       </div>
 
       <!-- Top Gainers Table -->
       <div class="card widget-gainers">
         <div class="card-header">
           <div class="card-title">涨幅榜 TOP10</div>
-          <el-tag size="small" type="danger">近1年</el-tag>
+          <DataConfidenceBadge :source="gainersDataSource" />
         </div>
         
-        <!-- Skeleton when loading -->
-        <SkeletonLoader
-          v-if="gainersLoading"
-          variant="table"
-          :rows="10"
-          :columns="4"
-        />
-        
-        <!-- Desktop: Table with sticky first column -->
-        <div v-else-if="!isMobile" class="table-container">
-          <el-table
-            :data="topGainers"
-            size="small"
-            max-height="300"
-          >
-            <el-table-column prop="fund_code" label="代码" width="80" class-name="sticky-column" />
-            <el-table-column prop="fund_name" label="名称" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="fund_type" label="类型" width="80" />
-            <el-table-column prop="return_1y" label="收益%" width="90" sortable>
-              <template #default="{ row }">
-                <span class="text-up">{{ formatNumber(row.return_1y) }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div class="scroll-indicator scroll-indicator-left"></div>
-          <div class="scroll-indicator scroll-indicator-right"></div>
-        </div>
-        
-        <!-- Mobile/XS: Card layout -->
-        <div v-else class="fund-cards-mobile">
-          <div v-for="fund in topGainers" :key="fund.fund_code" class="fund-card">
-            <div class="fund-header">
-              <span class="fund-code">{{ fund.fund_code }}</span>
-              <span class="fund-return text-up">{{ formatNumber(fund.return_1y) }}%</span>
-            </div>
-            <div class="fund-name">{{ fund.fund_name }}</div>
-            <div v-if="!isXs" class="fund-type">{{ fund.fund_type }}</div>
+        <ErrorBoundary>
+          <!-- Skeleton when loading -->
+          <SkeletonLoader
+            v-if="gainersLoading"
+            variant="table"
+            :rows="10"
+            :columns="4"
+          />
+          
+          <!-- Desktop: Table with sticky first column -->
+          <div v-else-if="!isMobile" class="table-container">
+            <el-table
+              :data="topGainers"
+              size="small"
+              max-height="300"
+            >
+              <el-table-column prop="fund_code" label="代码" width="80" class-name="sticky-column" />
+              <el-table-column prop="fund_name" label="名称" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="fund_type" label="类型" width="80" />
+              <el-table-column prop="return_1y" label="收益%" width="90" sortable>
+                <template #default="{ row }">
+                  <span class="text-up">{{ formatNumber(row.return_1y) }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="scroll-indicator scroll-indicator-left"></div>
+            <div class="scroll-indicator scroll-indicator-right"></div>
           </div>
-        </div>
+          
+          <!-- Mobile/XS: Card layout -->
+          <div v-else class="fund-cards-mobile">
+            <div v-for="fund in topGainers" :key="fund.fund_code" class="fund-card">
+              <div class="fund-header">
+                <span class="fund-code">{{ fund.fund_code }}</span>
+                <span class="fund-return text-up">{{ formatNumber(fund.return_1y) }}%</span>
+              </div>
+              <div class="fund-name">{{ fund.fund_name }}</div>
+              <div v-if="!isXs" class="fund-type">{{ fund.fund_type }}</div>
+            </div>
+          </div>
+        </ErrorBoundary>
       </div>
 
       <!-- Top Losers Table -->
       <div class="card widget-losers">
         <div class="card-header">
           <div class="card-title">跌幅榜 TOP10</div>
-          <el-tag size="small" type="success">近1年</el-tag>
+          <DataConfidenceBadge :source="gainersDataSource" />
         </div>
         
-        <!-- Skeleton when loading -->
-        <SkeletonLoader
-          v-if="gainersLoading"
-          variant="table"
-          :rows="10"
-          :columns="4"
-        />
-        
-        <!-- Desktop: Table with sticky first column -->
-        <div v-else-if="!isMobile" class="table-container">
-          <el-table
-            :data="topLosers"
-            size="small"
-            max-height="300"
-          >
-            <el-table-column prop="fund_code" label="代码" width="80" class-name="sticky-column" />
-            <el-table-column prop="fund_name" label="名称" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="fund_type" label="类型" width="80" />
-            <el-table-column prop="return_1y" label="收益%" width="90" sortable>
-              <template #default="{ row }">
-                <span class="text-down">{{ formatNumber(row.return_1y) }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div class="scroll-indicator scroll-indicator-left"></div>
-          <div class="scroll-indicator scroll-indicator-right"></div>
-        </div>
-        
-        <!-- Mobile/XS: Card layout -->
-        <div v-else class="fund-cards-mobile">
-          <div v-for="fund in topLosers" :key="fund.fund_code" class="fund-card">
-            <div class="fund-header">
-              <span class="fund-code">{{ fund.fund_code }}</span>
-              <span class="fund-return text-down">{{ formatNumber(fund.return_1y) }}%</span>
-            </div>
-            <div class="fund-name">{{ fund.fund_name }}</div>
-            <div v-if="!isXs" class="fund-type">{{ fund.fund_type }}</div>
+        <ErrorBoundary>
+          <!-- Skeleton when loading -->
+          <SkeletonLoader
+            v-if="gainersLoading"
+            variant="table"
+            :rows="10"
+            :columns="4"
+          />
+          
+          <!-- Desktop: Table with sticky first column -->
+          <div v-else-if="!isMobile" class="table-container">
+            <el-table
+              :data="topLosers"
+              size="small"
+              max-height="300"
+            >
+              <el-table-column prop="fund_code" label="代码" width="80" class-name="sticky-column" />
+              <el-table-column prop="fund_name" label="名称" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="fund_type" label="类型" width="80" />
+              <el-table-column prop="return_1y" label="收益%" width="90" sortable>
+                <template #default="{ row }">
+                  <span class="text-down">{{ formatNumber(row.return_1y) }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="scroll-indicator scroll-indicator-left"></div>
+            <div class="scroll-indicator scroll-indicator-right"></div>
           </div>
-        </div>
+          
+          <!-- Mobile/XS: Card layout -->
+          <div v-else class="fund-cards-mobile">
+            <div v-for="fund in topLosers" :key="fund.fund_code" class="fund-card">
+              <div class="fund-header">
+                <span class="fund-code">{{ fund.fund_code }}</span>
+                <span class="fund-return text-down">{{ formatNumber(fund.return_1y) }}%</span>
+              </div>
+              <div class="fund-name">{{ fund.fund_name }}</div>
+              <div v-if="!isXs" class="fund-type">{{ fund.fund_type }}</div>
+            </div>
+          </div>
+        </ErrorBoundary>
       </div>
     </div>
 
@@ -935,22 +968,24 @@ onUnmounted(() => {
     <div class="card heatmap-card">
       <div class="card-header">
         <div class="card-title">多周期热力矩阵</div>
-        <div class="card-subtitle">行业/指数多周期涨跌分布</div>
+        <DataConfidenceBadge :source="heatmapDataSource" />
       </div>
       
-      <!-- Skeleton when loading -->
-      <SkeletonLoader
-        v-if="heatmapLoading"
-        variant="heatmap"
-        height="400px"
-      />
-      
-      <!-- Actual chart when loaded -->
-      <EChartsWrapper
-        v-else
-        :option="heatmapOption"
-        height="400px"
-      />
+      <ErrorBoundary>
+        <!-- Skeleton when loading -->
+        <SkeletonLoader
+          v-if="heatmapLoading"
+          variant="heatmap"
+          height="400px"
+        />
+        
+        <!-- Actual chart when loaded -->
+        <EChartsWrapper
+          v-else
+          :option="heatmapOption"
+          height="400px"
+        />
+      </ErrorBoundary>
     </div>
 
     <!-- Sector Performance Overview -->
@@ -958,6 +993,7 @@ onUnmounted(() => {
       <div class="card-header">
         <div class="card-title">板块表现概览</div>
         <div class="card-actions">
+          <DataConfidenceBadge :source="sectorsDataSource" />
           <el-radio-group v-model="sectorPeriod" size="small">
             <el-radio-button value="today">今日</el-radio-button>
             <el-radio-button value="5d">近5日</el-radio-button>
@@ -966,46 +1002,48 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Desktop: Grid layout -->
-      <div v-if="!isMobile" class="sector-grid">
-        <div
-          v-for="sector in sectorPerformance"
-          :key="sector.name"
-          class="sector-item"
-          :class="getValueClass(sector.change_pct)"
-        >
-          <div class="sector-name">{{ sector.name }}</div>
-          <div class="sector-change">{{ formatChange(sector.change_pct) }}</div>
-        </div>
-      </div>
-
-      <!-- Mobile: Accordion layout -->
-      <el-collapse v-else class="sector-collapse" accordion>
-        <el-collapse-item
-          v-for="sector in sectorPerformance"
-          :key="sector.name"
-          :name="sector.name"
-        >
-          <template #title>
-            <div class="sector-collapse-title" :class="getValueClass(sector.change_pct)">
-              <span class="sector-name">{{ sector.name }}</span>
-              <span class="sector-change">{{ formatChange(sector.change_pct) }}</span>
-            </div>
-          </template>
-          <div class="sector-collapse-content">
-            <div class="sector-detail">
-              <span class="detail-label">涨跌幅</span>
-              <span class="detail-value" :class="getValueClass(sector.change_pct)">
-                {{ formatChange(sector.change_pct) }}
-              </span>
-            </div>
+      <ErrorBoundary>
+        <!-- Desktop: Grid layout -->
+        <div v-if="!isMobile" class="sector-grid">
+          <div
+            v-for="sector in sectorPerformance"
+            :key="sector.name"
+            class="sector-item"
+            :class="getValueClass(sector.change_pct)"
+          >
+            <div class="sector-name">{{ sector.name }}</div>
+            <div class="sector-change">{{ formatChange(sector.change_pct) }}</div>
           </div>
-        </el-collapse-item>
-      </el-collapse>
+        </div>
 
-      <div v-if="sectorsLoading" class="sector-loading">
-        <SkeletonLoader variant="table" :rows="4" :columns="3" />
-      </div>
+        <!-- Mobile: Accordion layout -->
+        <el-collapse v-else class="sector-collapse" accordion>
+          <el-collapse-item
+            v-for="sector in sectorPerformance"
+            :key="sector.name"
+            :name="sector.name"
+          >
+            <template #title>
+              <div class="sector-collapse-title" :class="getValueClass(sector.change_pct)">
+                <span class="sector-name">{{ sector.name }}</span>
+                <span class="sector-change">{{ formatChange(sector.change_pct) }}</span>
+              </div>
+            </template>
+            <div class="sector-collapse-content">
+              <div class="sector-detail">
+                <span class="detail-label">涨跌幅</span>
+                <span class="detail-value" :class="getValueClass(sector.change_pct)">
+                  {{ formatChange(sector.change_pct) }}
+                </span>
+              </div>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+
+        <div v-if="sectorsLoading" class="sector-loading">
+          <SkeletonLoader variant="table" :rows="4" :columns="3" />
+        </div>
+      </ErrorBoundary>
     </div>
   </div>
 </template>

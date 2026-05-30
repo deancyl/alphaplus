@@ -2,6 +2,7 @@
 import { storeToRefs } from 'pinia'
 import { onMounted, onUnmounted } from 'vue'
 import { useIndicesStore } from '@/stores/indices'
+import DataConfidenceBadge from '@/components/DataConfidenceBadge.vue'
 
 const indicesStore = useIndicesStore()
 
@@ -72,13 +73,17 @@ onUnmounted(() => {
         </span>
       </div>
       
-      <div
-        v-if="meta?.is_fallback"
-        class="fallback-indicator"
-        title="数据为模拟值，非实时行情"
-      >
-        <span class="fallback-badge">模拟</span>
-      </div>
+      <!-- Data Confidence Badge -->
+      <DataConfidenceBadge 
+        v-if="meta?.is_fallback" 
+        source="simulated" 
+        :timestamp="meta?.timestamp"
+      />
+      <DataConfidenceBadge 
+        v-else-if="Object.keys(indices).length > 0" 
+        source="real" 
+        :timestamp="meta?.timestamp"
+      />
     </div>
   </div>
 </template>
@@ -122,21 +127,5 @@ onUnmounted(() => {
 
 .index-change {
   font-size: 12px;
-}
-
-.fallback-indicator {
-  display: flex;
-  align-items: center;
-  margin-left: 8px;
-}
-
-.fallback-badge {
-  font-size: 10px;
-  padding: 2px 6px;
-  background: rgba(255, 193, 7, 0.2);
-  color: #ffc107;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 193, 7, 0.4);
-  cursor: help;
 }
 </style>
