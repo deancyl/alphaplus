@@ -9,6 +9,7 @@ import {
   type AIPCalculateRequest,
   type AIPCalculateResponse
 } from '@/api/fund'
+import { formatNumber, formatPercent, formatSign } from '@/utils/formatters'
 
 // Form state
 const formData = ref<AIPCalculateRequest>({
@@ -169,23 +170,10 @@ const loadLastCalculation = () => {
   }
 }
 
-// Format number
-const formatNumber = (val: number | null | undefined, suffix = ''): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}${suffix}`
-}
-
 // Format currency
 const formatCurrency = (val: number | null | undefined): string => {
   if (val === null || val === undefined) return '-'
-  return `¥${val.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-// Format percent
-const formatPercent = (val: number | null | undefined): string => {
-  if (val === null || val === undefined) return '-'
-  const sign = val >= 0 ? '+' : ''
-  return `${sign}${val.toFixed(2)}%`
+  return `¥${formatNumber(val)}`
 }
 
 // Get value class

@@ -5,6 +5,7 @@ import { Search } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
 import { getFundCompanies, getCompanyDistribution } from '@/api/fund'
+import { formatNumber } from '@/utils/formatters'
 
 // Types
 interface CompanyItem {
@@ -82,7 +83,7 @@ const treemapChartOption = ref<EChartsOption>({
       if (params.data?.name) {
         const value = params.data.value || 0
         const percentage = params.treePathInfo?.[1]?.value
-          ? ((value / params.treePathInfo[1].value) * 100).toFixed(1)
+          ? ((value / params.treePathInfo[1].value) * 100).toFixed(2)
           : '0'
         return `${params.data.name}<br/>规模: ${value.toFixed(2)}亿<br/>占比: ${percentage}%`
       }
@@ -171,12 +172,6 @@ const sortOptions = [
   { label: '按基金数量', value: 'fund_count' },
   { label: '按经理人数', value: 'manager_count' },
 ]
-
-// Format helpers
-const formatNumber = (val: number | null, suffix = ''): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}${suffix}`
-}
 
 const formatInteger = (val: number | null): string => {
   if (val === null || val === undefined) return '-'

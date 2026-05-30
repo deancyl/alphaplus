@@ -6,26 +6,30 @@ import { useIndicesStore } from '@/stores/indices'
 const indicesStore = useIndicesStore()
 
 // Use store's reactive state
-const { indices, loading } = storeToRefs(indicesStore)
+const { indices, loading, meta } = storeToRefs(indicesStore)
 
-// Format helpers
-const formatPrice = (price: number): string => {
+// Format helpers with null safety
+const formatPrice = (price: number | undefined | null): string => {
+  if (price === undefined || price === null) return '--'
   return price.toFixed(2)
 }
 
-const formatChange = (change: number): string => {
+const formatChange = (change: number | undefined | null): string => {
+  if (change === undefined || change === null) return '--'
   const sign = change >= 0 ? '+' : ''
   return `${sign}${change.toFixed(2)}`
 }
 
-const formatChangePct = (pct: number): string => {
+const formatChangePct = (pct: number | undefined | null): string => {
+  if (pct === undefined || pct === null) return '--%'
   const sign = pct >= 0 ? '+' : ''
   return `${sign}${pct.toFixed(2)}%`
 }
 
 // Start auto-refresh on mount (singleton - only starts once globally)
+// Note: Using 30s interval to match Dashboard.vue, avoiding race condition
 onMounted(() => {
-  indicesStore.startAutoRefresh(5000)
+  indicesStore.startAutoRefresh(30000)
 })
 
 // Stop on unmount
@@ -52,20 +56,28 @@ onUnmounted(() => {
         :key="code"
         class="index-item"
       >
-        <span class="index-name">{{ quote.name }}</span>
+        <span class="index-name">{{ quote?.name || code }}</span>
         <span
           class="index-price"
-          :class="quote.change >= 0 ? 'text-up' : 'text-down'"
+          :class="(quote?.change ?? 0) >= 0 ? 'text-up' : 'text-down'"
         >
-          {{ formatPrice(quote.price) }}
+          {{ formatPrice(quote?.price) }}
         </span>
         <span
           class="index-change"
-          :class="quote.change >= 0 ? 'text-up' : 'text-down'"
+          :class="(quote?.change ?? 0) >= 0 ? 'text-up' : 'text-down'"
         >
-          {{ formatChange(quote.change) }}
-          {{ formatChangePct(quote.change_pct) }}
+          {{ formatChange(quote?.change) }}
+          {{ formatChangePct(quote?.change_pct) }}
         </span>
+      </div>
+      
+      <div
+        v-if="meta?.is_fallback"
+        class="fallback-indicator"
+        title="数据为模拟值，非实时行情"
+      >
+        <span class="fallback-badge">模拟</span>
       </div>
     </div>
   </div>
@@ -110,5 +122,21 @@ onUnmounted(() => {
 
 .index-change {
   font-size: 12px;
+}
+
+.fallback-indicator {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.fallback-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 193, 7, 0.4);
+  cursor: help;
 }
 </style>

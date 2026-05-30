@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { calculateInsurance, type InsurancePolicyRequest, type InsuranceCalculateResponse } from '@/api/insurance'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { formatPercent } from '@/utils/formatters'
 
 // Form state
 const formData = ref<InsurancePolicyRequest>({
@@ -112,13 +113,6 @@ const formatCurrency = (val: number | null | undefined): string => {
 }
 
 // Format percent
-const formatPercent = (val: number | null | undefined): string => {
-  if (val === null || val === undefined) return '-'
-  const sign = val >= 0 ? '+' : ''
-  return `${sign}${val.toFixed(2)}%`
-}
-
-// Get value class
 const getValueClass = (val: number | null | undefined): string => {
   if (val === null || val === undefined) return ''
   return val >= 0 ? 'text-up' : 'text-down'

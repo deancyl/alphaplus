@@ -213,9 +213,9 @@ onMounted(() => {
                   :marks="{ 0: '0%', 2.5: '2.5%', 5: '5%', 7.5: '7.5%', 10: '10%' }"
                 />
                 <div class="range-display">
-                  <span class="range-badge">{{ yieldRange[0].toFixed(1) }}%</span>
+                  <span class="range-badge">{{ yieldRange[0].toFixed(2) }}%</span>
                   <span class="range-separator">—</span>
-                  <span class="range-badge">{{ yieldRange[1].toFixed(1) }}%</span>
+                  <span class="range-badge">{{ yieldRange[1].toFixed(2) }}%</span>
                 </div>
               </div>
             </div>

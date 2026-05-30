@@ -241,7 +241,7 @@ onUnmounted(() => {
                 }"
               ></div>
             </div>
-            <div class="percentile-value">{{ item.pe_percentile.toFixed(1) }}%</div>
+            <div class="percentile-value">{{ item.pe_percentile.toFixed(2) }}%</div>
           </div>
 
           <div class="zone-badge" :class="getZoneBgClass(item.zone)">

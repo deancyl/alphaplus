@@ -132,7 +132,7 @@ const initGaugeChart = () => {
         },
         pointer: {
           width: 6,
-          length: '55%',
+          length: '50%',
           itemStyle: {
             color: color,
             shadowColor: 'rgba(0, 0, 0, 0.3)',
@@ -193,10 +193,10 @@ const initGaugeChart = () => {
         detail: {
           valueAnimation: true,
           formatter: '{value}',
-          fontSize: 48,
+          fontSize: 44,
           fontWeight: 'bold',
           color: color,
-          offsetCenter: [0, '-5%'],
+          offsetCenter: [0, '30%'],
           fontFamily: 'DIN Alternate, -apple-system, sans-serif',
         },
         data: [
@@ -511,7 +511,7 @@ onUnmounted(() => {
               class="satellite-value"
               :style="{ color: getSentimentColor(getFactorValue(factor.key)) }"
             >
-              {{ getFactorValue(factor.key).toFixed(1) }}
+              {{ getFactorValue(factor.key).toFixed(2) }}
             </span>
           </div>
           <div class="progress-bar">
@@ -534,7 +534,7 @@ onUnmounted(() => {
           <div class="mobile-header-item">
             <span class="mobile-header-label">当前指数</span>
             <span class="mobile-header-value" :style="{ color: getSentimentColor(currentData.composite_score) }">
-              {{ currentData.composite_score }}
+              {{ currentData.composite_score.toFixed(2) }}
             </span>
           </div>
           <div class="mobile-header-item">
@@ -592,7 +592,7 @@ onUnmounted(() => {
                 class="factor-detail-value"
                 :style="{ color: getSentimentColor(getFactorValue(factor.key)) }"
               >
-                {{ getFactorValue(factor.key).toFixed(1) }}
+                {{ getFactorValue(factor.key).toFixed(2) }}
               </span>
             </div>
             <div class="factor-detail-bar">

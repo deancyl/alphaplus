@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getBondYieldCurve } from '@/api/market'
+import { formatNumber } from '@/utils/formatters'
 
 // 债券类型
 const bondTypes = [
@@ -211,12 +212,6 @@ const getRatingClass = (rating: string): string => {
   if (rating.startsWith('AA')) return 'rating-aa'
   if (rating.startsWith('A')) return 'rating-a'
   return 'rating-bbb'
-}
-
-// 格式化数字
-const formatNumber = (val: number | null | undefined, suffix = ''): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}${suffix}`
 }
 
 // 窗口大小变化时重绘图表

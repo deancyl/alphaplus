@@ -216,7 +216,7 @@ const initGaugeChart = () => {
         },
         pointer: {
           width: 6,
-          length: '60%',
+          length: '50%',
           itemStyle: {
             color: color,
           },
@@ -256,7 +256,7 @@ const initGaugeChart = () => {
           fontSize: 40,
           fontWeight: 'bold',
           color: color,
-          offsetCenter: [0, '10%'],
+          offsetCenter: [0, '35%'],
         },
         data: [
           {
@@ -428,7 +428,7 @@ const initBarChart = () => {
           <div style="padding: 8px;">
             <div style="font-weight: 600; margin-bottom: 4px;">${p[0].name}</div>
             <div>${p[0].marker} 拥挤度: <strong>${p[0].value}</strong></div>
-            <div>PE分位: ${item?.pe_percentile.toFixed(1) || '-'}%</div>
+            <div>PE分位: ${item?.pe_percentile.toFixed(2) || '-'}%</div>
             ${zScoreInfo}
           </div>
         `
@@ -692,8 +692,8 @@ const initTrajectoryChart = () => {
         return `
           <div style="padding: 8px;">
             <div style="font-weight: 600; margin-bottom: 4px;">${name}</div>
-            <div>拥挤度: <strong>${crowding.toFixed(1)}</strong></div>
-            <div>PE分位: <strong>${pe.toFixed(1)}%</strong></div>
+            <div>拥挤度: <strong>${crowding.toFixed(2)}</strong></div>
+            <div>PE分位: <strong>${pe.toFixed(2)}%</strong></div>
             <div style="color: ${getCrowdingColor(crowding)};">${getCrowdingLabel(crowding)}</div>
           </div>
         `

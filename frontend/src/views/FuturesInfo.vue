@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getFuturesQuotes } from '@/api/market'
+import { formatNumber } from '@/utils/formatters'
 
 // 期货合约类型定义
 interface FuturesContract {
@@ -223,12 +224,6 @@ const updateChart = () => {
 const handleSelectContract = (contract: FuturesContract) => {
   selectedContract.value = contract
   updateChart()
-}
-
-// 格式化数字
-const formatNumber = (val: number | null | undefined, decimals = 2): string => {
-  if (val === null || val === undefined) return '-'
-  return val.toFixed(decimals)
 }
 
 // 获取涨跌样式

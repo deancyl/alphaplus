@@ -3,6 +3,7 @@ import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import api from '@/api/index'
+import { formatNumber } from '@/utils/formatters'
 
 // Types
 interface StockSearchResult {
@@ -56,12 +57,6 @@ const chartContainer = ref<HTMLElement | null>(null)
 
 // Debounce timer
 let searchTimer: ReturnType<typeof setTimeout> | null = null
-
-// Format helpers
-const formatNumber = (val: number | null | undefined, decimals = 2): string => {
-  if (val === null || val === undefined) return '-'
-  return val.toFixed(decimals)
-}
 
 const formatVolume = (val: number | null | undefined): string => {
   if (val === null || val === undefined) return '-'

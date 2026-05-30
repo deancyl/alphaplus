@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
 import { getGlobalMarket } from '@/api/market'
+import { formatPercent } from '@/utils/formatters'
 
 // Types
 interface IndexData {
@@ -126,13 +127,6 @@ const formatChange = (val: number | null): string => {
   if (val === null || val === undefined) return '-'
   const sign = val >= 0 ? '+' : ''
   return `${sign}${val.toFixed(2)}`
-}
-
-// Format percentage
-const formatPercent = (val: number | null): string => {
-  if (val === null || val === undefined) return '-'
-  const sign = val >= 0 ? '+' : ''
-  return `${sign}${val.toFixed(2)}%`
 }
 
 // Get value class for styling

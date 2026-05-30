@@ -22,6 +22,7 @@ import {
 import { Plus, Star, Delete, Rank, ArrowRight } from '@element-plus/icons-vue'
 import { poolApi, type PoolFund, type PoolAddRequest } from '@/api/pool'
 import type { Favorite } from '@/api/favorites'
+import { formatNumber } from '@/utils/formatters'
 
 // Route
 const route = useRoute()
@@ -92,12 +93,6 @@ const loadPool = async (poolType: string | number) => {
     pools.value[poolTypeStr] = response.funds
   } catch (error) {
   }
-}
-
-// Format number
-const formatNumber = (val: number | null | undefined, suffix = ''): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}${suffix}`
 }
 
 // Get return class

@@ -52,6 +52,25 @@ export const filterFunds = async (params: FundFilterParams): Promise<FundFilterR
   return api.post('/fund/filter', params)
 }
 
+// Get top gainers and losers
+export const getTopFunds = async (limit = 10): Promise<{
+  gainers: Array<{
+    fund_code: string
+    fund_name: string
+    fund_type: string
+    return_1y: number | null
+  }>
+  losers: Array<{
+    fund_code: string
+    fund_name: string
+    fund_type: string
+    return_1y: number | null
+  }>
+  timestamp: string
+}> => {
+  return api.get('/fund/top-funds', { params: { limit } })
+}
+
 // Get fund detail
 export const getFundDetail = async (fundCode: string): Promise<FundItem> => {
   return api.get(`/fund/${fundCode}`)

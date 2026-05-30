@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
 import { getDomesticMarket } from '@/api/market'
+import { formatNumber, formatPercent } from '@/utils/formatters'
 
 // Types
 interface IndexData {
@@ -240,22 +241,10 @@ const capitalFlowOption = ref<EChartsOption>({
   ],
 })
 
-// Format helpers
-const formatNumber = (val: number | null | undefined, decimals = 2): string => {
-  if (val === null || val === undefined) return '-'
-  return val.toFixed(decimals)
-}
-
 const formatChange = (val: number | null | undefined): string => {
   if (val === null || val === undefined) return '-'
   const sign = val >= 0 ? '+' : ''
   return `${sign}${val.toFixed(2)}`
-}
-
-const formatPercent = (val: number | null | undefined): string => {
-  if (val === null || val === undefined) return '-'
-  const sign = val >= 0 ? '+' : ''
-  return `${sign}${val.toFixed(2)}%`
 }
 
 const formatAmount = (val: number | null | undefined): string => {

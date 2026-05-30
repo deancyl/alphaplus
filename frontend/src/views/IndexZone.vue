@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getIndexValuation, type IndexValuationItem } from '@/api/market'
+import { formatNumber, formatPercent } from '@/utils/formatters'
 
 // Category configuration
 const categories = [
@@ -36,17 +37,6 @@ const currentCategoryIndices = computed(() => {
 })
 
 const canCompare = computed(() => selectedForComparison.value.length >= 2)
-
-// Format helpers
-const formatNumber = (val: number | null, suffix = ''): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}${suffix}`
-}
-
-const formatPercent = (val: number | null): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}%`
-}
 
 const getValueClass = (val: number | null): string => {
   if (val === null) return ''

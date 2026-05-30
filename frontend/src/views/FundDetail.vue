@@ -94,7 +94,7 @@ const industryChartOption = computed<EChartsOption>(() => {
       formatter: (name: string) => {
         const item = industries.value.find(i => i.industry_name === name)
         if (item) {
-          return `${name}  ${item.weight.toFixed(1)}%`
+          return `${name}  ${item.weight.toFixed(2)}%`
         }
         return name
       }

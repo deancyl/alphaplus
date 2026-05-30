@@ -403,7 +403,7 @@ const calculateSimilarity = async () => {
 
 // Format similarity score
 const formatScore = (score: number): string => {
-  return `${(score * 100).toFixed(1)}%`
+  return `${(score * 100).toFixed(2)}%`
 }
 
 // Get score color based on value

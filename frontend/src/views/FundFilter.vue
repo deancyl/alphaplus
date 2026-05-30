@@ -152,7 +152,7 @@ const fetchSparklineData = async (fundCode: string) => {
   try {
     const response = await getFundNavTrend(fundCode, 30)
     
-    if (response.nav_values.length > 0) {
+    if (response.nav_values?.length > 0) {
       const firstValue = response.nav_values[0]
       const lastValue = response.nav_values[response.nav_values.length - 1]
       const isUp = lastValue >= firstValue
@@ -429,7 +429,7 @@ onMounted(() => {
           
           <!-- Empty state when no results -->
           <EmptyState
-            v-else-if="!loading && tableData.length === 0"
+            v-else-if="!loading && tableData?.length === 0"
             icon="search"
             title="未找到符合条件的基金"
             description="请尝试调整筛选条件或重置筛选器"

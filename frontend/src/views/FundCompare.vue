@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { filterFunds, compareFunds, type FundFilterParams, type FundItem } from '@/api/fund'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import { formatNumber } from '@/utils/formatters'
 
 // Types
 interface CompareFund extends FundItem {
@@ -447,12 +448,6 @@ const renderRadarChart = () => {
 const renderCharts = () => {
   renderCorrelationChart()
   renderRadarChart()
-}
-
-// Format number
-const formatNumber = (val: number | null, suffix = ''): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}${suffix}`
 }
 
 // Get value class

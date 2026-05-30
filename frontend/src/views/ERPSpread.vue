@@ -5,6 +5,7 @@ import type { EChartsOption } from 'echarts'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import { getERPSpread } from '@/api/analytics'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { formatNumber } from '@/utils/formatters'
 
 // ERP数据类型
 interface ERPDataItem {
@@ -292,7 +293,7 @@ const gaugeChartOption = computed<EChartsOption>(() => {
         },
         pointer: {
           icon: 'path://M12.8,0.7l12,40.1H0.7L12.8,0.7z',
-          length: '60%',
+          length: '50%',
           width: 8,
           offsetCenter: [0, '-10%'],
           itemStyle: { color: '#1A1A1A' },
@@ -327,7 +328,7 @@ const gaugeChartOption = computed<EChartsOption>(() => {
           formatter: '{value}%',
           fontSize: 24,
           fontWeight: 'bold',
-          offsetCenter: [0, '0%'],
+          offsetCenter: [0, '35%'],
           color: '#1A1A1A',
         },
         data: [{ value: percentile, name: '历史百分位' }],
@@ -462,18 +463,6 @@ const fetchComparison = async () => {
   )
   comparisonData.value = results
 }
-
-// 格式化数字
-const formatNumber = (val: number | null | undefined, suffix = ''): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}${suffix}`
-}
-
-// 监听指数切换
-watch(selectedIndex, () => {
-  fetchData()
-  fetchComparison()
-})
 
 // 监听无风险利率切换
 watch(riskFreeType, () => {
@@ -615,7 +604,7 @@ onMounted(() => {
           </div>
           <div class="mobile-header-item">
             <span class="mobile-header-label">历史百分位</span>
-            <span class="mobile-header-value">{{ currentERP.percentile_rank_10y?.toFixed(1) ?? '-' }}%</span>
+            <span class="mobile-header-value">{{ currentERP.percentile_rank_10y?.toFixed(2) ?? '-' }}%</span>
           </div>
           <div class="mobile-header-item">
             <span class="mobile-header-label">更新日期</span>

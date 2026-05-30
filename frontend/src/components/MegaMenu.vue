@@ -23,9 +23,7 @@ const route = useRoute()
 const menuItems = [
   {
     label: '首页',
-    children: [
-      { label: '宏观复盘看板', path: '/' },
-    ],
+    path: '/',
   },
   {
     label: '产品研究',
@@ -38,7 +36,6 @@ const menuItems = [
       { label: '基金公司', path: '/fof/fundCompany', group: '公募基金研究' },
       { label: '定投计算器', path: '/fof/fundCalcAIP', group: '公募基金研究', isNew: true },
       { label: '银行理财筛选', path: '/product/wmpFilter', group: '理财产品', isNew: true },
-      { label: '理财对比', path: '/product/wmpCompare', group: '理财产品', isNew: true },
       { label: '保险筛选', path: '/product/insuranceFilter', group: '其他产品', isNew: true },
       { label: '存款产品', path: '/product/deposit', group: '其他产品', isNew: true },
       { label: '黄金产品', path: '/product/gold', group: '其他产品', isNew: true },
@@ -91,6 +88,17 @@ const isTouchDevice = ref(false)
 // Check for touch capability on mount
 if (typeof window !== 'undefined') {
   isTouchDevice.value = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+}
+
+// Handle click on menu item - toggle dropdown or navigate
+const handleMenuClick = (item: any) => {
+  if (item.path) {
+    // Item has direct path - navigate
+    navigateTo(item.path)
+  } else if (item.children) {
+    // Item has children - toggle dropdown
+    activeMenu.value = activeMenu.value === item.label ? null : item.label
+  }
 }
 
 const handleMouseEnter = (menu: string) => {
@@ -188,14 +196,16 @@ onUnmounted(() => {
         v-for="item in menuItems"
         :key="item.label"
         class="menu-item"
-        @mouseenter="handleMouseEnter(item.label)"
-        @mouseleave="handleMouseLeave"
+        :class="{ 'has-dropdown': item.children }"
+        @click="handleMenuClick(item)"
+        @mouseenter="item.children ? handleMouseEnter(item.label) : undefined"
+        @mouseleave="item.children ? handleMouseLeave() : undefined"
       >
         <span class="menu-label">{{ item.label }}</span>
         
         <Transition name="dropdown">
           <div
-            v-if="activeMenu === item.label"
+            v-if="item.children && activeMenu === item.label"
             class="dropdown-panel"
             :class="{ 'has-groups': item.children.some((c: any) => c.group) }"
           >
@@ -334,6 +344,8 @@ onUnmounted(() => {
   padding: 0 var(--spacing-md);
   background-color: var(--brand-navy-dark);
   color: white;
+  position: relative;
+  z-index: var(--z-sticky);
 }
 
 .menu-brand {

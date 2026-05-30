@@ -13,9 +13,16 @@ export interface IndexQuote {
   change_pct: number
 }
 
+export interface IndexMeta {
+  is_fallback?: boolean
+  source?: string
+  timestamp?: string
+}
+
 export const useIndicesStore = defineStore('indices', () => {
   // State
   const indices = ref<Record<string, IndexQuote>>({})
+  const meta = ref<IndexMeta | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
   const lastFetchTime = ref<number>(0)
@@ -31,6 +38,7 @@ export const useIndicesStore = defineStore('indices', () => {
   /**
    * Fetch indices data from API
    * Prevents duplicate fetches when already loading
+   * Filters out _meta key and stores it separately
    */
   async function fetchIndices() {
     if (loading.value) return // Prevent duplicate fetches
@@ -40,7 +48,20 @@ export const useIndicesStore = defineStore('indices', () => {
     
     try {
       const data = await getIndices()
-      indices.value = data || {}
+      
+      // Extract and store _meta separately
+      if (data && '_meta' in data) {
+        meta.value = data._meta as IndexMeta
+        // Filter out _meta key from indices
+        const indexData = Object.fromEntries(
+          Object.entries(data).filter(([key]) => key !== '_meta')
+        )
+        indices.value = indexData
+      } else {
+        meta.value = null
+        indices.value = data || {}
+      }
+      
       lastFetchTime.value = Date.now()
     } catch (err: any) {
       error.value = err.message || 'Failed to fetch indices'
@@ -53,12 +74,30 @@ export const useIndicesStore = defineStore('indices', () => {
   /**
    * Start auto-refresh interval
    * Only starts if not already running (singleton pattern)
+   * Includes visibility detection to pause when tab is hidden
    */
-  function startAutoRefresh(intervalMs = 5000) {
-    if (refreshInterval) return // Already running
+  function startAutoRefresh(intervalMs = 30000) {
+    if (refreshInterval) return
     
-    fetchIndices() // Initial fetch
-    refreshInterval = setInterval(fetchIndices, intervalMs)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchIndices()
+        if (!refreshInterval) {
+          refreshInterval = setInterval(fetchIndices, intervalMs)
+        }
+      } else {
+        if (refreshInterval) {
+          clearInterval(refreshInterval)
+          refreshInterval = null
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    fetchIndices()
+    if (document.visibilityState === 'visible') {
+      refreshInterval = setInterval(fetchIndices, intervalMs)
+    }
   }
   
   /**
@@ -75,6 +114,7 @@ export const useIndicesStore = defineStore('indices', () => {
   return {
     // State
     indices,
+    meta,
     loading,
     error,
     isStale,

@@ -43,6 +43,55 @@ export const getIndices = async (): Promise<Record<string, {
   return api.get('/market/indices')
 }
 
+// Dashboard aggregated metrics
+export interface DashboardMetrics {
+  fear_greed: Array<{
+    trade_date: string
+    composite_score: number
+    sentiment_status: string
+    factor_volatility: number | null
+    factor_safe_haven: number | null
+    factor_margin_ratio: number | null
+    factor_volume_deviation: number | null
+    factor_futures_basis: number | null
+    factor_stock_strength: number | null
+  }>
+  erp: Array<{
+    index_code: string
+    index_name: string
+    trade_date: string
+    pe_ttm: number
+    treasury_yield_10y: number
+    erp_spread: number
+    percentile_rank_10y: number | null
+    index_close_price: number | null
+  }>
+  style_strength: Array<{
+    trade_date: string
+    index_code_num: string
+    index_code_den: string
+    ratio_value: number
+    percentile_rank_3y: number | null
+  }>
+  crowding: Array<{
+    asset_code: string
+    trade_date: string
+    category: string
+    crowding_score: number
+    pe_percentile: number
+    close_price: number | null
+  }>
+  timestamp: string
+  data_quality: {
+    partial: boolean
+    errors: Record<string, string | null>
+  }
+}
+
+export const getDashboardMetrics = async (): Promise<DashboardMetrics> => {
+  return api.get('/market/dashboard')
+}
+
 // Get index valuation
 export const getIndexValuationHistory = async (
   indexCode: string

@@ -115,7 +115,7 @@ const formatPct = (val: number | null, decimals = 2): string => {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const formatBP = (val: number | null): string => {
   if (val === null || val === undefined) return '-'
-  return `${val.toFixed(1)}BP`
+  return `${val.toFixed(2)}BP`
 }
 
 // Format issuance amount
@@ -377,7 +377,7 @@ const initSpreadChart = () => {
         if (!items || items.length === 0) return ''
         let html = `<div style="padding: 8px;"><div style="font-weight: 600; margin-bottom: 8px;">期限: ${items[0].axisValue}</div>`
         items.forEach(item => {
-          html += `<div>${item.marker} ${item.seriesName}: <strong>${item.value.toFixed(1)}BP</strong></div>`
+          html += `<div>${item.marker} ${item.seriesName}: <strong>${item.value.toFixed(2)}BP</strong></div>`
         })
         html += '</div>'
         return html

@@ -107,7 +107,7 @@ const pieChartOption = computed<EChartsOption>(() => {
       formatter: (name: string) => {
         const item = top10.find(f => f.fund_name === name)
         if (item) {
-          return `${name}  ${(item.holding_ratio * 100).toFixed(1)}%`
+          return `${name}  ${(item.holding_ratio * 100).toFixed(2)}%`
         }
         return name
       }
@@ -210,7 +210,7 @@ const heatmapOption = computed<EChartsOption>(() => {
         show: true,
         position: 'top' as const,
         fontSize: 12,
-        formatter: (params: any) => params.value.toFixed(1),
+        formatter: (params: any) => params.value.toFixed(2),
       }
     }]
   }
