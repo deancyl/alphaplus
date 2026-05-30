@@ -143,3 +143,81 @@ async def fetch_with_fallback():
 - README.md "启动优化" 章节
 - backend/services/warmup_fallback.py
 - backend/core/config.py
+
+---
+
+## 7. 数值格式化标准
+
+### 7.1 小数位数规范
+
+| 数据类型 | 小数位数 | 使用场景 |
+|----------|----------|----------|
+| **价格** | 2位 | 指数价格、基金净值、股票价格 |
+| **百分比** | 2位 | 涨跌幅、收益率、PE百分位 |
+| **评分** | 1-2位 | 恐惧贪婪指数、拥挤度 |
+| **相关性** | 4位 | Pearson相关系数 |
+| **因子权重** | 4位 | 因子暴露权重 |
+| **黄金纯度** | 6位 | 黄金成色系数 (domain-specific) |
+
+### 7.2 后端格式化规则
+
+**使用 `backend/utils/formatters.py`**:
+
+```python
+from backend.utils.formatters import round2, round4
+
+# 价格、百分比、收益 → 2位小数
+price = round2(100.12345)  # 100.12
+
+# 相关性、因子权重 → 4位小数  
+correlation = round4(0.123456)  # 0.1235
+```
+
+**禁止模式**:
+❌ `round(x, 2)` - 使用 `round2(x)` 替代
+❌ `round(x, 4)` - 使用 `round4(x)` 替代
+❌ 在Pydantic schema中缺少validator
+
+### 7.3 前端格式化规则
+
+**使用 `frontend/src/utils/formatters.ts`**:
+
+```typescript
+import { formatNumber, formatPercent, formatPrice } from '@/utils/formatters'
+
+// 基本格式化
+formatNumber(1.2345)  // '1.23'
+formatPercent(50.123)  // '50.12%'
+formatPrice(100.123)  // '100.12'
+
+// 带符号格式化
+formatSign(1.23)  // '+1.23'
+formatSignPercent(1.23)  // '+1.23%'
+```
+
+**禁止模式**:
+❌ 组件内定义本地 `formatNumber` 函数
+❌ 内联使用 `.toFixed(2)` - 使用 `formatNumber()` 替代
+❌ 重复导入未使用 centralized formatters
+
+### 7.4 ECharts 格式化规则
+
+```typescript
+// Tooltip formatter
+formatter: (params: any) => {
+  return `${params.name}: ${formatNumber(params.value)}`
+}
+
+// Axis label formatter
+axisLabel: {
+  formatter: (value: number) => formatNumber(value)
+}
+```
+
+### 7.5 PR检查清单
+
+- [ ] 所有float字段有Pydantic validator
+- [ ] 服务层使用 `round2()`/`round4()` 而非 `round()`
+- [ ] 前端组件导入自 `@/utils/formatters`
+- [ ] 无本地 `formatNumber` 函数定义
+- [ ] ECharts formatters 使用 centralized utility
