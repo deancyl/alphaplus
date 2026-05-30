@@ -360,13 +360,9 @@ const handleFundSearch = async (query: string, index: number) => {
   
   try {
     const results = await searchFunds(query)
-    if (results && Array.isArray(results)) {
-      fundSearchResults.value = results
-    } else {
-      fundSearchResults.value = []
-    }
-  } catch {
-    fundSearchResults.value = []
+    fundSearchResults.value = results
+  } catch (error) {
+    console.error('Fund search failed:', error)
   } finally {
     fundSearchLoading.value = null
   }
@@ -421,7 +417,8 @@ const savePortfolio = async () => {
     ElMessage.success('组合保存成功')
     activePortfolioId.value = portfolio.id
     await loadPortfolios()
-  } catch {
+  } catch (error) {
+    console.error('Failed to save portfolio:', error)
     ElMessage.error('保存失败，请重试')
   } finally {
     savingPortfolio.value = false
@@ -435,8 +432,10 @@ const loadPortfolios = async () => {
   loadingPortfolios.value = true
   
   try {
-    portfolios.value = (await getPortfolios()) || []
-  } catch {
+    portfolios.value = await getPortfolios()
+  } catch (error) {
+    console.error('Failed to load portfolios:', error)
+    // Use empty array on error
     portfolios.value = []
   } finally {
     loadingPortfolios.value = false
@@ -475,6 +474,7 @@ const handleDeletePortfolio = async (portfolio: PortfolioItem) => {
     await loadPortfolios()
   } catch (error) {
     if (error !== 'cancel') {
+      console.error('Failed to delete portfolio:', error)
       ElMessage.error('删除失败')
     }
   }
@@ -518,6 +518,7 @@ const runBacktestHandler = async () => {
       ElMessage.success('回测完成')
     }
   } catch (error) {
+    console.error('Backtest failed:', error)
     ElMessage.error('回测失败，请重试')
   } finally {
     runningBacktest.value = false
@@ -954,6 +955,7 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
             </div>
             
             <!-- Multi-Period Brinson Attribution -->
+            <div class="chart-section">
               <h3 class="chart-title">
                 多期归因分析
                 <el-tag size="small" type="info" style="margin-left: 8px">
@@ -1019,8 +1021,7 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
 
 <style scoped>
 .fof-backtest {
-  height: calc(100vh - 100px); /* Fallback for older browsers */
-  height: calc(100dvh - 100px);
+  height: calc(100vh - 100px);
   padding: 0;
 }
 
@@ -1421,8 +1422,7 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity],
 @media (max-width: 768px) {
   .fof-backtest {
     height: auto;
-    min-height: calc(100vh - 100px); /* Fallback for older browsers */
-    min-height: calc(100dvh - 100px);
+    min-height: calc(100vh - 100px);
   }
   
   .config-panel {
