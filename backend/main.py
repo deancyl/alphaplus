@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _warmup_status = {
     "started": False,
     "completed": False,
-    "tasks_total": 5,
+    "tasks_total": 9,
     "tasks_completed": 0,
     "errors": [],
     "start_time": None,
@@ -101,7 +101,7 @@ async def _warmup_cache():
         return
     
     # Immediately inject fallback data so service is operational
-    _inject_fallback_data()
+    await _inject_fallback_data()
     
     _warmup_status["started"] = True
     _warmup_status["start_time"] = datetime.now().isoformat()
@@ -118,11 +118,11 @@ async def _warmup_cache():
         except asyncio.TimeoutError:
             logger.warning(f"Warmup timed out after {settings.warmup_timeout_seconds}s")
             _warmup_status["errors"].append("timeout")
-            _inject_fallback_data()
+            await _inject_fallback_data()
         except Exception as e:
             logger.error(f"Warmup failed: {e}")
             _warmup_status["errors"].append(str(e))
-            _inject_fallback_data()
+            await _inject_fallback_data()
     
     if settings.warmup_blocking:
         await execute_warmup()
@@ -136,6 +136,13 @@ async def _run_warmup_tasks():
     tasks = [
         _warmup_hot_keys(),
         _warmup_hot_funds(),
+        _warmup_sectors_with_fallback(),
+        _warmup_top_funds_with_fallback(),
+        _warmup_fear_greed_endpoint(),
+        _warmup_erp_endpoint(),
+        _warmup_crowding_endpoint(),
+        _warmup_style_strength_endpoint(),
+        _warmup_heatmap_with_fallback(),
     ]
     
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -222,6 +229,22 @@ async def _warmup_index_quotes_with_fallback():
         return 0
 
 
+async def _warmup_sectors_with_fallback():
+    """Warmup sector performance data with fallback injection."""
+    try:
+        sectors = await akshare_data_service.get_domestic_sectors()
+        await realtime_cache.set("domestic_sectors", sectors, ttl_seconds=300)
+        logger.info(f"Warmed up {len(sectors)} sectors")
+        return len(sectors)
+    except Exception as e:
+        logger.warning(f"Sectors warmup failed: {e}")
+        from backend.services.warmup_fallback import get_fallback_sectors
+        fallback_data = get_fallback_sectors()
+        await realtime_cache.set("domestic_sectors", fallback_data, ttl_seconds=300)
+        logger.info("Injected fallback sectors data")
+        return 0
+
+
 async def _warmup_hot_keys():
     """Warm L1 cache with hot keys from metadata."""
     try:
@@ -252,7 +275,237 @@ async def _warmup_hot_funds():
         return 0
 
 
-def _inject_fallback_data():
+async def _warmup_top_funds_with_fallback():
+    """Warmup top-funds endpoint cache with fallback injection."""
+    try:
+        from backend.services.pandas_cache import pandas_filter_service
+        
+        for limit in [10, 20, 50]:
+            gainers_df, _ = pandas_filter_service.filter_funds(
+                conditions={},
+                page=1,
+                page_size=limit,
+                sort_by='return_1y',
+                sort_order='desc',
+            )
+            
+            losers_df, _ = pandas_filter_service.filter_funds(
+                conditions={},
+                page=1,
+                page_size=limit,
+                sort_by='return_1y',
+                sort_order='asc',
+            )
+            
+            if gainers_df.empty or losers_df.empty:
+                logger.warning(f"Top funds data empty for limit={limit}")
+                continue
+            
+            gainers = [
+                {
+                    "fund_code": row['fund_code'],
+                    "fund_name": row['fund_name'],
+                    "fund_type": row['fund_type'],
+                    "return_1y": row['return_1y'],
+                }
+                for _, row in gainers_df.iterrows()
+            ]
+            
+            losers = [
+                {
+                    "fund_code": row['fund_code'],
+                    "fund_name": row['fund_name'],
+                    "fund_type": row['fund_type'],
+                    "return_1y": row['return_1y'],
+                }
+                for _, row in losers_df.iterrows()
+            ]
+            
+            result = {
+                "gainers": gainers,
+                "losers": losers,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            
+            cache_key = f"top_funds:{limit}"
+            await realtime_cache.set(cache_key, result, ttl_seconds=300)
+        
+        logger.info("Warmed up top-funds cache for limits [10, 20, 50]")
+        return 3
+    except Exception as e:
+        logger.warning(f"Top funds warmup failed: {e}")
+        from backend.services.warmup_fallback import get_fallback_top_funds
+        for limit in [10]:
+            fallback_data = get_fallback_top_funds()
+            cache_key = f"top_funds:{limit}"
+            await realtime_cache.set(cache_key, fallback_data, ttl_seconds=300)
+        logger.info("Injected fallback top-funds data")
+        return 0
+
+
+async def _warmup_fear_greed_endpoint():
+    """Warmup fear-greed endpoint cache."""
+    try:
+        from backend.models.fund import MarketFearGreedSentimentHistory
+        from backend.core import async_engine
+        from sqlalchemy import select
+        
+        async with async_engine.connect() as conn:
+            result = await conn.execute(
+                select(MarketFearGreedSentimentHistory)
+                .order_by(MarketFearGreedSentimentHistory.trade_date.desc())
+                .limit(30)
+            )
+            rows = result.fetchall()
+            if rows:
+                data = [
+                    {
+                        "trade_date": row.trade_date,
+                        "composite_score": row.composite_score,
+                        "sentiment_status": row.sentiment_status,
+                        "factor_volatility": row.factor_volatility,
+                        "factor_safe_haven": row.factor_safe_haven,
+                        "factor_margin_ratio": row.factor_margin_ratio,
+                        "factor_volume_deviation": row.factor_volume_deviation,
+                        "factor_futures_basis": row.factor_futures_basis,
+                        "factor_stock_strength": row.factor_stock_strength,
+                    }
+                    for row in rows
+                ]
+                response = {"data": data, "_meta": {"is_fallback": False, "source": "database"}}
+                await realtime_cache.set("market:fear-greed", response, ttl_seconds=60)
+                logger.info(f"Warmed up fear-greed endpoint with {len(data)} records")
+                return len(data)
+    except Exception as e:
+        logger.warning(f"Fear-greed endpoint warmup failed: {e}")
+    return 0
+
+
+async def _warmup_erp_endpoint():
+    """Warmup ERP endpoint cache."""
+    try:
+        from backend.models.fund import BondEquityYieldSpreadHistory
+        from backend.core import async_engine
+        from sqlalchemy import select
+        
+        async with async_engine.connect() as conn:
+            result = await conn.execute(
+                select(BondEquityYieldSpreadHistory)
+                .where(BondEquityYieldSpreadHistory.index_code == "000300")
+                .order_by(BondEquityYieldSpreadHistory.trade_date.desc())
+                .limit(100)
+            )
+            rows = result.fetchall()
+            if rows:
+                data = [
+                    {
+                        "index_code": row.index_code,
+                        "index_name": "沪深300",
+                        "trade_date": row.trade_date,
+                        "pe_ttm": row.pe_ttm,
+                        "treasury_yield_10y": row.treasury_yield_10y,
+                        "erp_spread": row.erp_spread,
+                        "percentile_rank_10y": row.percentile_rank_10y,
+                        "index_close_price": row.index_close_price,
+                    }
+                    for row in rows
+                ]
+                response = {"data": data, "_meta": {"is_fallback": False, "source": "database"}}
+                await realtime_cache.set("market:erp", response, ttl_seconds=60)
+                logger.info(f"Warmed up ERP endpoint with {len(data)} records")
+                return len(data)
+    except Exception as e:
+        logger.warning(f"ERP endpoint warmup failed: {e}")
+    return 0
+
+
+async def _warmup_crowding_endpoint():
+    """Warmup crowding endpoint cache."""
+    try:
+        from backend.models.fund import MarketCrowdingValuationHistory
+        from backend.core import async_engine
+        from sqlalchemy import select
+        
+        async with async_engine.connect() as conn:
+            result = await conn.execute(
+                select(MarketCrowdingValuationHistory)
+                .order_by(MarketCrowdingValuationHistory.trade_date.desc())
+                .limit(100)
+            )
+            rows = result.fetchall()
+            if rows:
+                data = [
+                    {
+                        "asset_code": row.asset_code,
+                        "trade_date": row.trade_date,
+                        "category": row.category,
+                        "crowding_score": row.crowding_score,
+                        "pe_percentile": row.pe_percentile,
+                        "close_price": row.close_price,
+                    }
+                    for row in rows
+                ]
+                response = {"data": data, "_meta": {"is_fallback": False, "source": "database"}}
+                await realtime_cache.set("market:crowding", response, ttl_seconds=60)
+                logger.info(f"Warmed up crowding endpoint with {len(data)} records")
+                return len(data)
+    except Exception as e:
+        logger.warning(f"Crowding endpoint warmup failed: {e}")
+    return 0
+
+
+async def _warmup_style_strength_endpoint():
+    """Warmup style-strength endpoint cache."""
+    try:
+        from backend.models.fund import MarketStyleStrengthHistory
+        from backend.core import async_engine
+        from sqlalchemy import select
+        
+        async with async_engine.connect() as conn:
+            result = await conn.execute(
+                select(MarketStyleStrengthHistory)
+                .order_by(MarketStyleStrengthHistory.trade_date.desc())
+                .limit(100)
+            )
+            rows = result.fetchall()
+            if rows:
+                data = [
+                    {
+                        "trade_date": row.trade_date,
+                        "index_code_num": row.index_code_num,
+                        "index_code_den": row.index_code_den,
+                        "ratio_value": row.ratio_value,
+                        "percentile_rank_3y": row.percentile_rank_3y,
+                    }
+                    for row in rows
+                ]
+                response = {"data": data, "_meta": {"is_fallback": False, "source": "database"}}
+                await realtime_cache.set("market:style-strength", response, ttl_seconds=60)
+                logger.info(f"Warmed up style-strength endpoint with {len(data)} records")
+                return len(data)
+    except Exception as e:
+        logger.warning(f"Style-strength endpoint warmup failed: {e}")
+    return 0
+
+
+async def _warmup_heatmap_with_fallback():
+    """Warmup market heatmap with fallback injection."""
+    try:
+        heatmap_data = await akshare_data_service.get_market_heatmap()
+        if heatmap_data and heatmap_data.get("cells"):
+            await realtime_cache.set("market:heatmap", heatmap_data, ttl_seconds=3600)
+            logger.info(f"Warmed up heatmap with {len(heatmap_data['cells'])} cells")
+            return len(heatmap_data['cells'])
+    except Exception as e:
+        logger.warning(f"Heatmap warmup failed: {e}")
+        from backend.services.warmup_fallback import get_fallback_heatmap
+        fallback_data = get_fallback_heatmap()
+        await realtime_cache.set("market:heatmap", fallback_data, ttl_seconds=3600)
+        logger.info("Injected fallback heatmap data")
+        return 0
+
+
+async def _inject_fallback_data():
     """Inject all fallback data when warmup fails completely."""
     from backend.services.warmup_fallback import (
         get_fallback_index_valuations,
@@ -267,6 +520,17 @@ def _inject_fallback_data():
     tiered_cache.set("fear_greed:latest", get_fallback_fear_greed(), ttl=300)
     
     tiered_cache.set("index_quotes:all", get_fallback_index_quotes(), ttl=300)
+    
+    # Initialize realtime_cache with fallback index data
+    fallback_quotes = get_fallback_index_quotes()
+    await realtime_cache.set("indices", fallback_quotes, ttl_seconds=300)
+    logger.info("Initialized realtime_cache with fallback index quotes")
+    
+    # Initialize realtime_cache with fallback sectors data
+    from backend.services.warmup_fallback import get_fallback_sectors
+    fallback_sectors = get_fallback_sectors()
+    await realtime_cache.set("domestic_sectors", fallback_sectors, ttl_seconds=300)
+    logger.info("Initialized realtime_cache with fallback sectors data")
     
     logger.info("Injected all fallback data into cache")
 

@@ -35,6 +35,7 @@ from backend.services.parquet_cache import (
     CACHE_DIR as PARQUET_CACHE_DIR,
 )
 from backend.services.pandas_cache import GLOBAL_FUND_DF, DataFrameLRUCache
+from backend.utils.formatters import round2, round4
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +87,12 @@ class LatencyMetrics:
                 return samples[idx]
             
             return {
-                "avg_ms": round(sum(samples) / count, 4),
-                "p50_ms": round(percentile(50), 4),
-                "p95_ms": round(percentile(95), 4),
-                "p99_ms": round(percentile(99), 4),
-                "min_ms": round(samples[0], 4),
-                "max_ms": round(samples[-1], 4),
+                "avg_ms": round4(sum(samples) / count),
+                "p50_ms": round4(percentile(50)),
+                "p95_ms": round4(percentile(95)),
+                "p99_ms": round4(percentile(99)),
+                "min_ms": round4(samples[0]),
+                "max_ms": round4(samples[-1]),
                 "sample_count": count,
             }
     
@@ -581,13 +582,13 @@ class TieredCache:
                 "ttl_seconds": self.l1_ttl,
                 "hits": l1_hits,
                 "misses": l1_misses,
-                "hit_rate_pct": round(l1_hit_rate, 2),
+                "hit_rate_pct": round2(l1_hit_rate),
             },
             "l2": {
                 "hits": l2_hits,
                 "misses": l2_misses,
                 "evictions": l2_evictions,
-                "hit_rate_pct": round(l2_hit_rate, 2),
+                "hit_rate_pct": round2(l2_hit_rate),
                 "total_entries": meta_stats["total_entries"],
                 "total_size_bytes": meta_stats["total_size_bytes"],
                 "expired_count": meta_stats["expired_count"],
@@ -595,7 +596,7 @@ class TieredCache:
             "l3": {
                 "hits": l3_hits,
                 "misses": l3_misses,
-                "hit_rate_pct": round(l3_hit_rate, 2),
+                "hit_rate_pct": round2(l3_hit_rate),
                 "parquet": {
                     "file_count": l3_parquet_stats["file_count"],
                     "total_size_mb": l3_parquet_stats.get("total_size_mb", 0),
@@ -607,7 +608,7 @@ class TieredCache:
             "combined": {
                 "total_requests": total_requests,
                 "total_hits": total_hits,
-                "hit_rate_pct": round(combined_hit_rate, 2),
+                "hit_rate_pct": round2(combined_hit_rate),
                 "target_hit_rate_pct": 90.0,
                 "target_achieved": combined_hit_rate >= 90.0,
             },

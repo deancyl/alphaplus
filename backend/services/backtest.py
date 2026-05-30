@@ -14,6 +14,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.fund import FundNavHistory
+from backend.utils.formatters import round2, round4
 
 logger = logging.getLogger(__name__)
 
@@ -220,13 +221,13 @@ def calculate_statistics(
     calmar_ratio = annual_return / abs(max_drawdown) if max_drawdown != 0 else 0.0
     
     return BacktestStatistics(
-        total_return=round(total_return, 2),
-        annual_return=round(annual_return, 2),
-        max_drawdown=round(max_drawdown, 2),
-        sharpe_ratio=round(sharpe_ratio, 2),
-        volatility=round(volatility, 2),
-        sortino_ratio=round(sortino_ratio, 2) if not np.isnan(sortino_ratio) else None,
-        calmar_ratio=round(calmar_ratio, 2) if not np.isnan(calmar_ratio) else None
+        total_return=round2(total_return),
+        annual_return=round2(annual_return),
+        max_drawdown=round2(max_drawdown),
+        sharpe_ratio=round2(sharpe_ratio),
+        volatility=round2(volatility),
+        sortino_ratio=round2(sortino_ratio) if not np.isnan(sortino_ratio) else None,
+        calmar_ratio=round2(calmar_ratio) if not np.isnan(calmar_ratio) else None
     )
 
 
@@ -343,8 +344,8 @@ async def run_backtest(
     portfolio_returns = [
         DailyReturn(
             date=str(row["date"])[:10] if len(str(row["date"])) > 10 else str(row["date"]),
-            return_pct=round(float(row["daily_return"]), 4),
-            nav=round(float(row["nav"]), 4)
+            return_pct=round4(float(row["daily_return"])),
+            nav=round4(float(row["nav"]))
         )
         for _, row in portfolio_df.iterrows()
     ]
@@ -361,8 +362,8 @@ async def run_backtest(
             benchmark_returns = [
                 DailyReturn(
                     date=str(row["date"])[:10] if len(str(row["date"])) > 10 else str(row["date"]),
-                    return_pct=round(float(row["daily_return"]), 4),
-                    nav=round(float(row["nav"]), 4)
+                    return_pct=round4(float(row["daily_return"])),
+                    nav=round4(float(row["nav"]))
                 )
                 for _, row in benchmark_df.iterrows()
             ]
@@ -379,8 +380,8 @@ async def run_backtest(
             fund_total_return = ((nav_df.iloc[-1]["nav"] / nav_df.iloc[0]["nav"]) - 1) * 100
             fund_performance.append({
                 "fund_code": fund_code,
-                "weight": round(weight, 4),
-                "total_return": round(fund_total_return, 2)
+                "weight": round4(weight),
+                "total_return": round2(fund_total_return)
             })
     
     return BacktestResult(

@@ -16,35 +16,44 @@ class RealtimeCache:
     TTL-based refresh to avoid hitting free data sources too frequently.
     """
     
-    def __init__(self, ttl_seconds: int = 5):
+    def __init__(self, ttl_seconds: int = 5, stale_ttl: int = 300):
         self._cache: Dict[str, Any] = {}
         self._timestamps: Dict[str, datetime] = {}
         self._ttl = ttl_seconds
+        self._stale_ttl = stale_ttl  # Stale data TTL (default 5 minutes)
+        self._stale_data: Dict[str, Any] = {}  # Preserve expired data for stale-while-revalidate
         self._lock = asyncio.Lock()
         self._initialized = False
     
     async def initialize(self):
-        """Initialize cache with default values."""
-        default_indices = {
-            "000001": {"name": "上证指数", "price": 0, "change": 0, "change_pct": 0},
-            "399001": {"name": "深证成指", "price": 0, "change": 0, "change_pct": 0},
-            "000300": {"name": "沪深300", "price": 0, "change": 0, "change_pct": 0},
-            "000016": {"name": "上证50", "price": 0, "change": 0, "change_pct": 0},
-            "000905": {"name": "中证500", "price": 0, "change": 0, "change_pct": 0},
-            "399006": {"name": "创业板指", "price": 0, "change": 0, "change_pct": 0},
-            "000688": {"name": "科创50", "price": 0, "change": 0, "change_pct": 0},
-            "HSI": {"name": "恒生指数", "price": 0, "change": 0, "change_pct": 0},
-        }
-        
+        """Initialize cache with empty values - no fake zero data."""
+        # Empty initialization - will be populated with real data on first fetch
         async with self._lock:
-            self._cache["indices"] = default_indices
+            self._cache["indices"] = {}  # Empty, not zeros
             self._timestamps["indices"] = datetime.now()
             self._initialized = True
     
     async def get(self, key: str) -> Optional[Any]:
-        """Get value from cache if not expired."""
+        """
+        Get value from cache with stale-while-revalidate support.
+        
+        Returns:
+            - Fresh data (within TTL) as-is
+            - Stale data (within stale TTL) with metadata: {"_stale": True, "age_seconds": N, "data": ...}
+            - None if beyond stale TTL
+        """
         async with self._lock:
             if key not in self._cache:
+                if key in self._stale_data:
+                    timestamp = self._timestamps.get(key)
+                    if timestamp:
+                        elapsed = (datetime.now() - timestamp).total_seconds()
+                        if elapsed <= self._stale_ttl:
+                            return {
+                                "_stale": True,
+                                "age_seconds": int(elapsed),
+                                "data": self._stale_data[key]
+                            }
                 return None
             
             timestamp = self._timestamps.get(key)
@@ -52,14 +61,59 @@ class RealtimeCache:
                 return None
             
             elapsed = (datetime.now() - timestamp).total_seconds()
-            if elapsed > self._ttl:
-                return None
             
-            return self._cache[key]
+            if elapsed <= self._ttl:
+                return self._cache[key]
+            
+            if elapsed <= self._stale_ttl:
+                self._stale_data[key] = self._cache[key]
+                return {
+                    "_stale": True,
+                    "age_seconds": int(elapsed),
+                    "data": self._cache[key]
+                }
+            
+            return None
+    
+    async def get_stale(self, key: str) -> Optional[Dict[str, Any]]:
+        """
+        Explicitly get stale data regardless of TTL status.
+        
+        Returns:
+            Dict with stale metadata: {"_stale": True, "age_seconds": N, "data": ...}
+            None if no stale data exists or beyond stale TTL
+        """
+        async with self._lock:
+            if key in self._stale_data:
+                timestamp = self._timestamps.get(key)
+                if timestamp:
+                    elapsed = (datetime.now() - timestamp).total_seconds()
+                    if elapsed <= self._stale_ttl:
+                        return {
+                            "_stale": True,
+                            "age_seconds": int(elapsed),
+                            "data": self._stale_data[key]
+                        }
+            return None
+    
+    async def get_age(self, key: str) -> Optional[int]:
+        """
+        Get the age of cached data in seconds.
+        
+        Returns:
+            Age in seconds if key exists, None otherwise
+        """
+        async with self._lock:
+            timestamp = self._timestamps.get(key)
+            if timestamp:
+                return int((datetime.now() - timestamp).total_seconds())
+            return None
     
     async def set(self, key: str, value: Any, ttl_seconds: Optional[int] = None):
-        """Set value in cache with current timestamp."""
+        """Set value in cache with current timestamp, preserving previous data as stale."""
         async with self._lock:
+            if key in self._cache:
+                self._stale_data[key] = self._cache[key]
             self._cache[key] = value
             self._timestamps[key] = datetime.now()
             if ttl_seconds is not None:
@@ -79,10 +133,11 @@ class RealtimeCache:
         return fresh_value
     
     async def clear(self):
-        """Clear all cache."""
+        """Clear all cache including stale data."""
         async with self._lock:
             self._cache.clear()
             self._timestamps.clear()
+            self._stale_data.clear()
             self._initialized = False
     
     @property

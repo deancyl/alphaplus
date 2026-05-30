@@ -25,6 +25,7 @@ import logging
 from backend.models.fund import FundNavHistory
 from backend.services.cache import correlation_cache
 from backend.services.simulators import OUSimulator
+from backend.utils.formatters import round4
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ def compute_pearson_matrix(log_returns_df: pd.DataFrame) -> Dict[str, Dict[str, 
             if pd.isna(corr_value):
                 result[fund_i][fund_j] = 0.0
             else:
-                result[fund_i][fund_j] = float(round(corr_value, 4))
+                result[fund_i][fund_j] = round4(corr_value)
     
     return result
 
@@ -191,7 +192,7 @@ def generate_ou_correlation_fallback(
                 # Upper triangle: generate from O-U
                 raw_corr = simulated_values[idx] if idx < len(simulated_values) else 0.5
                 # Bound correlation to [-1, 1]
-                corr = float(round(np.clip(raw_corr, -0.9, 0.95), 4))
+                corr = round4(np.clip(raw_corr, -0.9, 0.95))
                 result[fund_i][fund_j] = corr
                 idx += 1
             else:

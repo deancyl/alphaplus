@@ -12,6 +12,7 @@ import numpy as np
 from backend.services.resilience import retry_with_backoff, RetryConfig
 from backend.services.simulators import GBMSimulator
 from backend.core.config import settings
+from backend.utils.formatters import round2
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def _calculate_percentile(current_value: float, historical_values: List[float]) 
     
     # Percentile formula: (below + 0.5 * equal) / total * 100
     percentile = (below_count + 0.5 * equal_count) / len(historical_array) * 100
-    return round(percentile, 2)
+    return round2(percentile)
 
 
 def _get_markarea_zones(percentile: float) -> Dict[str, Any]:
@@ -196,9 +197,9 @@ def _generate_simulated_valuation(index_code: str, index_name: str) -> Dict[str,
     return {
         "index_code": index_code,
         "index_name": index_name,
-        "pe_ttm": round(current_pe, 2),
-        "pb": round(current_pb, 2),
-        "dividend_yield": round(current_dividend, 2),
+        "pe_ttm": round2(current_pe),
+        "pb": round2(current_pb),
+        "dividend_yield": round2(current_dividend),
         "pe_percentile": pe_percentile,
         "pb_percentile": pb_percentile,
         "markarea": _get_markarea_zones(pe_percentile),
@@ -353,9 +354,9 @@ async def get_index_valuation_data(index_code: str) -> Dict[str, Any]:
             result = {
                 "index_code": index_code,
                 "index_name": index_name,
-                "pe_ttm": round(current_pe, 2),
-                "pb": round(current_pb, 2),
-                "dividend_yield": round(dividend_yield or 0, 2),
+                "pe_ttm": round2(current_pe),
+                "pb": round2(current_pb),
+                "dividend_yield": round2(dividend_yield or 0),
                 "pe_percentile": pe_percentile,
                 "pb_percentile": pb_percentile,
                 "markarea": _get_markarea_zones(pe_percentile),
@@ -419,7 +420,7 @@ async def get_index_pe_history(index_code: str, days: int = 365) -> List[Dict[st
                 percentile = _calculate_percentile(pe_value, historical_pe[:i+1])
                 result.append({
                     "date": f"day_{i}",  # Would be actual date from AkShare
-                    "pe_value": round(pe_value, 2),
+                    "pe_value": round2(pe_value),
                     "percentile": percentile,
                 })
             return result
@@ -449,7 +450,7 @@ async def get_index_pe_history(index_code: str, days: int = 365) -> List[Dict[st
         percentile = _calculate_percentile(pe_value, pe_history[:i+1])
         result.append({
             "date": f"day_{i}",
-            "pe_value": round(pe_value, 2),
+            "pe_value": round2(pe_value),
             "percentile": percentile,
             "is_simulated": True,
         })

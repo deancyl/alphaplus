@@ -9,6 +9,7 @@ from backend.services.duckdb_ingestion import (
     calculate_crowding_score as calc_crowding_score,
     search_funds_by_stock,
 )
+from backend.utils.formatters import round4
 import logging
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,7 @@ async def get_crowding_score(stock_code: str) -> Dict:
         'crowding_score': crowding['crowding_score'],
         'hhi_index': crowding['hhi_index'],
         'concentration_level': crowding['concentration_level'],
-        'overlap_coefficient': round(overlap, 4),
+        'overlap_coefficient': round4(overlap),
         'avg_weight': crowding['avg_weight'],
         'total_weight': aggregation['total_weight'],
         'max_weight': aggregation['max_weight'],

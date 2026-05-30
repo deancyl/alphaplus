@@ -51,6 +51,8 @@ import math
 from typing import List, Dict, Optional, Tuple
 import numpy as np
 
+from backend.utils.formatters import round4
+
 logger = logging.getLogger(__name__)
 
 
@@ -558,13 +560,13 @@ def calculate_brinson_attribution(
         )
     
     return {
-        "allocation_effect": round(allocation_effect, 4),
-        "selection_effect": round(selection_effect, 4),
-        "interaction_effect": round(interaction_effect, 4),
-        "total_effect": round(total_effect, 4),
-        "portfolio_total_return": round(portfolio_total_return, 4),
-        "benchmark_total_return": round(benchmark_total_return, 4),
-        "excess_return": round(excess_return, 4)
+        "allocation_effect": round4(allocation_effect),
+        "selection_effect": round4(selection_effect),
+        "interaction_effect": round4(interaction_effect),
+        "total_effect": round4(total_effect),
+        "portfolio_total_return": round4(portfolio_total_return),
+        "benchmark_total_return": round4(benchmark_total_return),
+        "excess_return": round4(excess_return)
     }
 
 
@@ -617,10 +619,10 @@ def calculate_brinson_by_category(
     total_effect = allocation_effect + selection_effect + interaction_effect
     
     return {
-        "allocation_effect": round(allocation_effect, 4),
-        "selection_effect": round(selection_effect, 4),
-        "interaction_effect": round(interaction_effect, 4),
-        "total_effect": round(total_effect, 4)
+        "allocation_effect": round4(allocation_effect),
+        "selection_effect": round4(selection_effect),
+        "interaction_effect": round4(interaction_effect),
+        "total_effect": round4(total_effect)
     }
 
 

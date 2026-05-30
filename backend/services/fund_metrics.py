@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.fund import FundIndicators, FundNavHistory
+from backend.utils.formatters import round2
 
 
 async def calculate_new_high_ratio(
@@ -67,7 +68,7 @@ async def calculate_new_high_ratio(
     if total_days == 0:
         return None
     
-    return round(float(new_high_days / total_days * 100), 2)
+    return round2(float(new_high_days / total_days * 100))
 
 
 async def batch_calculate_new_high_ratio(

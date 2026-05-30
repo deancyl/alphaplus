@@ -56,14 +56,14 @@ class ThreadPoolManager:
         self, 
         func: Callable[..., Any], 
         *args: Any, 
-        timeout: float = 30.0
+        timeout: float = 10.0  # Reduced from 30s to prevent long blocking
     ) -> Any:
         """Run a synchronous function in the thread pool.
         
         Args:
             func: Synchronous function to execute
             *args: Arguments to pass to the function
-            timeout: Maximum execution time in seconds (default: 30.0)
+            timeout: Maximum execution time in seconds (default: 10.0)
             
         Returns:
             Result of the function execution

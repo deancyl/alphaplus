@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from scipy.optimize import brentq, newton
 
+from backend.utils.formatters import round2
+
 logger = logging.getLogger(__name__)
 
 PaymentTiming = Literal["beginning", "end"]  # 年初/年末
@@ -432,9 +434,9 @@ def project_cash_values(
         projections.append(CashValueProjection(
             year=year,
             premium_paid=total_premium,
-            cash_value=round(cash_value, 2),
-            death_benefit=round(death_benefit, 2),
-            irr=round(irr, 2) if irr is not None else None
+            cash_value=round2(cash_value),
+            death_benefit=round2(death_benefit),
+            irr=round2(irr) if irr is not None else None
         ))
     
     return projections

@@ -13,6 +13,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.fund import FundNavHistory
+from backend.utils.formatters import round2, round4
 
 logger = logging.getLogger(__name__)
 
@@ -349,9 +350,9 @@ async def calculate_aip(
     lump_sum_return = ((lump_sum_value - total_investment) / total_investment) * 100 if total_investment > 0 else 0.0
     
     lump_sum_comparison = {
-        "lump_sum_value": round(lump_sum_value, 2),
-        "lump_sum_return": round(lump_sum_return, 2),
-        "lump_sum_units": round(lump_sum_units, 4)
+        "lump_sum_value": round2(lump_sum_value),
+        "lump_sum_return": round2(lump_sum_return),
+        "lump_sum_units": round4(lump_sum_units)
     }
     
     # Prepare nav_history for charting
@@ -359,22 +360,22 @@ async def calculate_aip(
     nav_history = [
         {
             "date": row["date"],
-            "nav": round(row["nav"], 4),
-            "units": round(row["units"], 4),
-            "value": round(row["value"], 2),
-            "cumulative_return": round(row["cumulative_return"], 2)
+            "nav": round4(row["nav"]),
+            "units": round4(row["units"]),
+            "value": round2(row["value"]),
+            "cumulative_return": round2(row["cumulative_return"])
         }
         for row in nav_history
     ]
     
     return AIPResult(
-        total_investment=round(total_investment, 2),
-        current_value=round(current_value, 2),
-        return_rate=round(return_rate, 2),
-        max_drawdown=round(max_drawdown, 2),
-        volatility=round(volatility, 2) if not np.isnan(volatility) else 0.0,
+        total_investment=round2(total_investment),
+        current_value=round2(current_value),
+        return_rate=round2(return_rate),
+        max_drawdown=round2(max_drawdown),
+        volatility=round2(volatility) if not np.isnan(volatility) else 0.0,
         periods=periods,
-        units_total=round(units_total, 4),
+        units_total=round4(units_total),
         lump_sum_comparison=lump_sum_comparison,
         investment_dates=[inv["date"] for inv in investments],
         nav_history=nav_history

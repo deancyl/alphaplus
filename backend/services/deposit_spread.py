@@ -7,6 +7,8 @@ from typing import Dict, List
 
 import akshare as ak
 
+from backend.utils.formatters import round4
+
 
 async def calculate_spread(deposit_rate: float, bond_rate: float) -> float:
     """
@@ -61,7 +63,7 @@ async def get_deposit_spread_history(tier: str, days: int = 90) -> List[Dict]:
                         "date": row.get('日期', row.name) if isinstance(row.get('日期'), str) else datetime.now().strftime("%Y-%m-%d"),
                         "deposit_rate": deposit_rate,
                         "bond_rate": bond_rate,
-                        "spread": round(deposit_rate - bond_rate, 4),
+                        "spread": round4(deposit_rate - bond_rate),
                     })
                 except (ValueError, TypeError):
                     continue
@@ -76,8 +78,8 @@ async def get_deposit_spread_history(tier: str, days: int = 90) -> List[Dict]:
             history.append({
                 "date": date.strftime("%Y-%m-%d"),
                 "deposit_rate": deposit_rate,
-                "bond_rate": round(simulated_bond_rate, 4),
-                "spread": round(deposit_rate - simulated_bond_rate, 4),
+                "bond_rate": round4(simulated_bond_rate),
+                "spread": round4(deposit_rate - simulated_bond_rate),
             })
     
     return sorted(history, key=lambda x: x["date"])

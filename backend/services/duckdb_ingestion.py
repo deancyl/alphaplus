@@ -7,6 +7,7 @@ from datetime import date
 from typing import List, Dict, Optional
 import duckdb
 from backend.core.duckdb_pool import duckdb_pool_manager
+from backend.utils.formatters import round2, round4
 import logging
 
 logger = logging.getLogger(__name__)
@@ -191,10 +192,10 @@ async def aggregate_by_stock(stock_code: str) -> Dict:
         'stock_code': stock_code,
         'stock_name': stock_name,
         'total_funds': len(result),
-        'total_weight': round(total_weight, 4),
-        'avg_weight': round(avg_weight, 4),
-        'max_weight': round(max_weight, 4),
-        'weight_std': round(weight_std, 4),
+        'total_weight': round4(total_weight),
+        'avg_weight': round4(avg_weight),
+        'max_weight': round4(max_weight),
+        'weight_std': round4(weight_std),
         'top_fund': top_fund,
         'quarter_distribution': quarter_dist
     }
@@ -270,10 +271,10 @@ async def calculate_crowding_score(stock_code: str) -> Dict:
     
     return {
         'stock_code': stock_code,
-        'crowding_score': round(crowding_score, 2),
-        'hhi_index': round(hhi, 2),
+        'crowding_score': round2(crowding_score),
+        'hhi_index': round2(hhi),
         'concentration_level': concentration_level,
         'num_funds': aggregation['total_funds'],
         'avg_weight': aggregation['avg_weight'],
-        'top_5_weight_pct': round(top_5_weight_pct, 2)
+        'top_5_weight_pct': round2(top_5_weight_pct)
     }

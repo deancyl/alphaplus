@@ -20,6 +20,8 @@ import time
 import threading
 from collections import deque
 
+from backend.utils.formatters import round2, round4
+
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(__file__).parent.parent.parent / "data" / "parquet"
@@ -53,10 +55,10 @@ class ParquetLatencyMetrics:
                 return samples[idx]
             
             return {
-                "avg_ms": round(sum(samples) / count, 4),
-                "p50_ms": round(percentile(50), 4),
-                "p95_ms": round(percentile(95), 4),
-                "p99_ms": round(percentile(99), 4),
+                "avg_ms": round4(sum(samples) / count),
+                "p50_ms": round4(percentile(50)),
+                "p95_ms": round4(percentile(95)),
+                "p99_ms": round4(percentile(99)),
             }
 
 
@@ -374,7 +376,7 @@ def get_parquet_cache_stats() -> Dict:
         stats['file_count'] += 1
         stats['total_size_bytes'] += single_file.stat().st_size
     
-    stats['total_size_mb'] = round(stats['total_size_bytes'] / 1024 / 1024, 2)
+    stats['total_size_mb'] = round2(stats['total_size_bytes'] / 1024 / 1024)
     
     return stats
 

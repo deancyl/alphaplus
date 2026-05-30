@@ -4,11 +4,13 @@ Provides typed methods for fetching real market data.
 """
 import asyncio
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 
 import akshare as ak
 
+from backend.core.config import settings
 from backend.core.thread_pool import thread_pool_manager
 from backend.services.rate_limiter import RateLimiter
 from backend.services.resilience import RetryConfig, retry_with_backoff
@@ -16,17 +18,33 @@ from backend.services.resilience import RetryConfig, retry_with_backoff
 logger = logging.getLogger(__name__)
 
 
-# Default fallback indices when data sources are unavailable
-DEFAULT_INDICES = [
-    {"code": "000001", "name": "上证指数", "price": 0, "change": 0, "change_pct": 0},
-    {"code": "399001", "name": "深证成指", "price": 0, "change": 0, "change_pct": 0},
-    {"code": "000300", "name": "沪深300", "price": 0, "change": 0, "change_pct": 0},
-    {"code": "000905", "name": "中证500", "price": 0, "change": 0, "change_pct": 0},
-    {"code": "000852", "name": "中证1000", "price": 0, "change": 0, "change_pct": 0},
-    {"code": "399006", "name": "创业板指", "price": 0, "change": 0, "change_pct": 0},
-    {"code": "000688", "name": "科创50", "price": 0, "change": 0, "change_pct": 0},
-    {"code": "000016", "name": "上证50", "price": 0, "change": 0, "change_pct": 0},
-]
+# Index symbol mapping for market heatmap
+INDEX_SYMBOLS = {
+    "沪深300": "sh000300",
+    "中证500": "sh000905",
+    "创业板指": "sz399006",
+    "科创50": "sh000688",
+    "上证50": "sh000016",
+    "中证1000": "sh000852",
+}
+
+# Period definitions for return calculation (trading days)
+PERIOD_DAYS = {
+    "近1周": 5,
+    "近1月": 22,
+    "近3月": 66,
+    "近6月": 132,
+    "YTD": None,  # Calculate from Jan 1 of current year
+    "近1年": 252,
+    "近3年": 756,
+    "近5年": 1260,
+    "近10年": 2520,
+}
+
+
+# Default indices for fallback - returns empty to avoid showing wrong zeros
+# Frontend should display "data unavailable" state instead of 0.00
+DEFAULT_INDICES = []  # Empty - no fake zero data
 
 
 def get_default_indices() -> list[dict]:
@@ -49,8 +67,15 @@ class AkShareDataService:
         self._rate_limit_delay = rate_limit_delay
         self._last_call_time: float = 0
         self._lock = asyncio.Lock()
-        self._rate_limiter = RateLimiter(rate=2.0, capacity=3)
-        self._retry_config = RetryConfig(max_retries=5, base_delay=1.0)
+        self._rate_limiter = RateLimiter(rate=4.0, capacity=5)  # Increased from 2.0/3
+        self._retry_config = RetryConfig(max_retries=3, base_delay=0.5)  # Reduced from 5/1.0
+        
+        # Configure proxy for AkShare API calls
+        self._proxy = settings.akshare_proxy or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
+        if self._proxy:
+            logger.info(f"AkShare proxy configured: {self._proxy}")
+        else:
+            logger.info("No proxy configured for AkShare - using direct connection")
 
     async def _rate_limit(self) -> None:
         """Enforce rate limiting between API calls."""
@@ -60,7 +85,19 @@ class AkShareDataService:
     async def _run_sync(self, func, *args, **kwargs):
         """Run synchronous AkShare function in thread pool with retry."""
         await self._rate_limit()
-        return await thread_pool_manager.run_in_thread(lambda: func(*args, **kwargs))
+        
+        def _execute_with_proxy():
+            if self._proxy:
+                os.environ["HTTP_PROXY"] = self._proxy
+                os.environ["HTTPS_PROXY"] = self._proxy
+            try:
+                return func(*args, **kwargs)
+            finally:
+                if self._proxy:
+                    os.environ.pop("HTTP_PROXY", None)
+                    os.environ.pop("HTTPS_PROXY", None)
+        
+        return await thread_pool_manager.run_in_thread(_execute_with_proxy)
 
     async def get_index_quotes(self) -> dict[str, dict]:
         """
@@ -98,6 +135,72 @@ class AkShareDataService:
         except Exception as e:
             logger.error(f"Failed to fetch index quotes: {e}")
             return {}
+
+    async def get_index_quotes_from_daily(self) -> dict[str, dict]:
+        """
+        Fetch latest index quotes from daily historical data.
+        Alternative endpoint when primary spot data is unavailable.
+        
+        Returns:
+            Dict mapping index code to quote data.
+            Example: {"000001": {"name": "上证指数", "price": 4098.636, ...}}
+        """
+        # Symbol mapping: code -> (akshare_symbol, name)
+        index_mapping = {
+            "000001": ("sh000001", "上证指数"),
+            "000300": ("sh000300", "沪深300"),
+            "000905": ("sh000905", "中证500"),
+            "000852": ("sh000852", "中证1000"),
+            "399006": ("sz399006", "创业板指"),
+            "000688": ("sh000688", "科创50"),
+            "000016": ("sh000016", "上证50"),
+            "399001": ("sz399001", "深证成指"),
+        }
+        
+        async def fetch_single_index(code: str, symbol: str, name: str) -> tuple[str, dict | None]:
+            """Fetch a single index's latest quote from daily data."""
+            try:
+                df = await self._run_sync(ak.stock_zh_index_daily, symbol=symbol)
+                
+                if df.empty or len(df) < 2:
+                    logger.warning(f"Insufficient data for index {code} ({name})")
+                    return (code, None)
+                
+                # Get last two rows (today and yesterday)
+                today = df.iloc[-1]
+                yesterday = df.iloc[-2]
+                
+                today_close = float(today["close"])
+                yesterday_close = float(yesterday["close"])
+                
+                change = today_close - yesterday_close
+                change_pct = (change / yesterday_close) * 100
+                
+                return (code, {
+                    "name": name,
+                    "price": round(today_close, 2),
+                    "change": round(change, 2),
+                    "change_pct": round(change_pct, 2),
+                })
+            except Exception as e:
+                logger.warning(f"Failed to fetch index {code} ({name}): {e}")
+                return (code, None)
+        
+        # Fetch all indices in parallel
+        tasks = [
+            fetch_single_index(code, symbol, name)
+            for code, (symbol, name) in index_mapping.items()
+        ]
+        
+        results = await asyncio.gather(*tasks)
+        
+        # Build result dict, filtering out None values
+        result = {}
+        for code, data in results:
+            if data is not None:
+                result[code] = data
+        
+        return result
 
     async def get_futures_quotes(self, category: Optional[str] = None) -> list[dict]:
         """
@@ -244,6 +347,48 @@ class AkShareDataService:
             logger.error(f"Failed to fetch sector data: {e}")
             return []
 
+    async def get_sectors_from_concept(self) -> list[dict]:
+        """
+        Fetch sector performance from concept board data.
+        Alternative endpoint when primary industry board is unavailable.
+        
+        Returns:
+            List of sector performance data matching get_domestic_sectors() format.
+            Example: [{"name": "人工智能", "change_pct": 2.5}, ...]
+        """
+        # Try concept board first
+        try:
+            df = await self._run_sync(ak.stock_board_concept_name_em)
+            
+            sectors = []
+            for _, row in df.head(15).iterrows():
+                sectors.append({
+                    "name": row.get("板块名称", ""),
+                    "change_pct": float(row.get("涨跌幅", 0)),
+                })
+            
+            logger.info(f"Fetched {len(sectors)} sectors from concept board")
+            return sectors
+        except Exception as e:
+            logger.warning(f"Concept board endpoint failed: {e}, trying stock_sector_spot fallback")
+        
+        # Fallback to stock_sector_spot
+        try:
+            df = await self._run_sync(ak.stock_sector_spot)
+            
+            sectors = []
+            for _, row in df.head(15).iterrows():
+                sectors.append({
+                    "name": row.get("板块", "") or row.get("名称", ""),
+                    "change_pct": float(row.get("涨跌幅", 0) or row.get("涨跌", 0)),
+                })
+            
+            logger.info(f"Fetched {len(sectors)} sectors from stock_sector_spot")
+            return sectors
+        except Exception as e:
+            logger.error(f"Failed to fetch sector data from all alternative sources: {e}")
+            return []
+
     async def get_market_heatmap(self) -> dict:
         """
         Generate market heatmap data from real index performance.
@@ -252,20 +397,78 @@ class AkShareDataService:
             Dict with rows, cols, and cells for heatmap rendering.
         """
         try:
-            indices_df = await self._run_sync(ak.index_stock_info)
-            
-            rows = ["沪深300", "中证500", "创业板指", "科创50", "上证50", "中证1000"]
-            cols = ["近1周", "近1月", "近3月", "近6月", "YTD", "近1年", "近3年", "近5年", "近10年"]
-            
+            rows = list(INDEX_SYMBOLS.keys())
+            cols = list(PERIOD_DAYS.keys())
             cells = []
+            
             for row in rows:
-                for col in cols:
-                    cells.append({
-                        "row": row,
-                        "col": col,
-                        "value": 0.0,
-                        "color": "rgba(128,128,128,0.3)",
-                    })
+                symbol = INDEX_SYMBOLS[row]
+                try:
+                    hist_df = await self._run_sync(
+                        ak.index_zh_a_hist,
+                        symbol=symbol,
+                        period="daily",
+                        start_date="20100101",
+                        end_date=datetime.now().strftime("%Y%m%d")
+                    )
+                    
+                    if hist_df is None or hist_df.empty or "收盘" not in hist_df.columns:
+                        for col in cols:
+                            cells.append({
+                                "row": row,
+                                "col": col,
+                                "value": 0.0,
+                                "color": "rgba(128,128,128,0.3)",
+                            })
+                        continue
+                    
+                    hist_df = hist_df.sort_values("日期")
+                    latest_close = float(hist_df.iloc[-1]["收盘"])
+                    latest_date = hist_df.iloc[-1]["日期"]
+                    
+                    for col in cols:
+                        days = PERIOD_DAYS[col]
+                        
+                        if days is None:
+                            ytd_start = datetime(latest_date.year, 1, 1)
+                            ytd_df = hist_df[hist_df["日期"] >= ytd_start]
+                            if len(ytd_df) < 2:
+                                value = 0.0
+                            else:
+                                historical_close = float(ytd_df.iloc[0]["收盘"])
+                                value = (latest_close / historical_close - 1) * 100
+                        else:
+                            if len(hist_df) <= days:
+                                value = 0.0
+                            else:
+                                historical_close = float(hist_df.iloc[-(days + 1)]["收盘"])
+                                value = (latest_close / historical_close - 1) * 100
+                        
+                        if value > 0:
+                            alpha = min(abs(value) / 20, 0.8)
+                            color = f"rgba(0,204,0,{alpha:.2f})"
+                        elif value < 0:
+                            alpha = min(abs(value) / 20, 0.8)
+                            color = f"rgba(204,0,0,{alpha:.2f})"
+                        else:
+                            color = "rgba(128,128,128,0.3)"
+                        
+                        cells.append({
+                            "row": row,
+                            "col": col,
+                            "value": round(value, 2),
+                            "color": color,
+                        })
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to fetch data for {row} ({symbol}): {e}")
+                    for col in cols:
+                        cells.append({
+                            "row": row,
+                            "col": col,
+                            "value": 0.0,
+                            "color": "rgba(128,128,128,0.3)",
+                        })
             
             return {"rows": rows, "cols": cols, "cells": cells}
         except Exception as e:

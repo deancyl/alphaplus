@@ -3,6 +3,7 @@ Application configuration using Pydantic Settings.
 """
 import os
 from pathlib import Path
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,6 +40,7 @@ class Settings(BaseSettings):
     akshare_batch_size: int = 50
     akshare_retry_count: int = 3
     akshare_retry_delay: float = 1.0
+    akshare_proxy: Optional[str] = None
     
     # AData Direct Mode
     adata_enabled: bool = True

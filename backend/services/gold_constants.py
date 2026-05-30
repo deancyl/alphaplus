@@ -12,6 +12,8 @@ import logging
 from typing import Optional
 import asyncio
 
+from backend.utils.formatters import round2, round4
+
 logger = logging.getLogger(__name__)
 
 # ============================================================================
@@ -160,13 +162,13 @@ def convert_london_to_shanghai(
         shanghai_with_vat = shanghai_theoretical * (1 + VAT_FRICTION_FACTOR)
     
     return {
-        "london_usd_per_oz": round(london_price_usd_per_oz, 4),
-        "usd_per_gram": round(usd_per_gram, 6),
-        "cny_per_gram_unadjusted": round(cny_per_gram_unadjusted, 4),
+        "london_usd_per_oz": round4(london_price_usd_per_oz),
+        "usd_per_gram": round(london_price_usd_per_oz / TROY_OUNCE_TO_GRAMS, 6),
+        "cny_per_gram_unadjusted": round4(cny_per_gram_unadjusted),
         "purity_factor": round(purity_factor, 6),
-        "shanghai_theoretical": round(shanghai_theoretical, 4),
-        "shanghai_with_vat": round(shanghai_with_vat, 4),
-        "usdcny_rate": round(usdcny_rate, 4),
+        "shanghai_theoretical": round4(shanghai_theoretical),
+        "shanghai_with_vat": round4(shanghai_with_vat),
+        "usdcny_rate": round4(usdcny_rate),
         "vat_included": include_vat,
         "vat_factor": VAT_FRICTION_FACTOR if include_vat else 0.0,
     }
@@ -218,13 +220,13 @@ def convert_shanghai_to_london(
     london_usd_per_oz = usd_per_gram * TROY_OUNCE_TO_GRAMS
     
     return {
-        "shanghai_cny_per_g": round(shanghai_price_cny_per_g, 4),
-        "shanghai_no_vat": round(shanghai_no_vat, 4),
-        "cny_per_gram_adjusted": round(cny_per_gram_adjusted, 4),
+        "shanghai_cny_per_g": round4(shanghai_price_cny_per_g),
+        "shanghai_no_vat": round4(shanghai_no_vat),
+        "cny_per_gram_adjusted": round4(cny_per_gram_adjusted),
         "usd_per_gram": round(usd_per_gram, 6),
-        "london_usd_per_oz": round(london_usd_per_oz, 4),
+        "london_usd_per_oz": round4(london_usd_per_oz),
         "purity_factor": round(purity_factor, 6),
-        "usdcny_rate": round(usdcny_rate, 4),
+        "usdcny_rate": round4(usdcny_rate),
         "vat_included": include_vat,
         "vat_factor": VAT_FRICTION_FACTOR if include_vat else 0.0,
     }
@@ -274,8 +276,8 @@ def verify_round_trip(
     percent_error = (absolute_error / london_price_usd_per_oz * 100) if london_price_usd_per_oz > 0 else 0
     
     return {
-        "original_london": round(london_price_usd_per_oz, 4),
-        "round_trip_london": round(round_trip_london, 4),
+        "original_london": round4(london_price_usd_per_oz),
+        "round_trip_london": round4(round_trip_london),
         "absolute_error": round(absolute_error, 6),
         "percent_error": round(percent_error, 6),
         "passes_threshold": percent_error < 0.01,
@@ -301,8 +303,8 @@ def calculate_premium(
     percent_premium = (absolute_premium / shanghai_theoretical * 100) if shanghai_theoretical > 0 else 0
     
     return {
-        "shanghai_actual": round(shanghai_actual, 4),
-        "shanghai_theoretical": round(shanghai_theoretical, 4),
-        "absolute_premium": round(absolute_premium, 4),
-        "percent_premium": round(percent_premium, 4),
+        "shanghai_actual": round4(shanghai_actual),
+        "shanghai_theoretical": round4(shanghai_theoretical),
+        "absolute_premium": round4(absolute_premium),
+        "percent_premium": round4(percent_premium),
     }

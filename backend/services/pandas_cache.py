@@ -25,6 +25,7 @@ from sqlalchemy import create_engine, text
 from backend.core.database import DB_PATH, SYNC_DATABASE_URL
 from backend.core.config import settings
 from backend.core.cache_metadata import cache_metadata_manager
+from backend.utils.formatters import round2, round4
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +80,12 @@ class LatencyTracker:
                 return samples[idx]
             
             return {
-                "avg_ms": round(sum(samples) / count, 4),
-                "p50_ms": round(percentile(50), 4),
-                "p95_ms": round(percentile(95), 4),
-                "p99_ms": round(percentile(99), 4),
-                "min_ms": round(samples[0], 4),
-                "max_ms": round(samples[-1], 4),
+                "avg_ms": round4(sum(samples) / count),
+                "p50_ms": round4(percentile(50)),
+                "p95_ms": round4(percentile(95)),
+                "p99_ms": round4(percentile(99)),
+                "min_ms": round4(samples[0]),
+                "max_ms": round4(samples[-1]),
                 "sample_count": count,
             }
     
@@ -312,11 +313,11 @@ class DataFrameLRUCache:
             
             return {
                 "entry_count": len(self._cache),
-                "memory_usage_mb": round(self._memory_usage_bytes / 1024 / 1024, 2),
+                "memory_usage_mb": round2(self._memory_usage_bytes / 1024 / 1024),
                 "memory_limit_mb": self.memory_limit_mb,
                 "evictions": self._stats["evictions"],
                 "memory_limit_hits": self._stats["memory_limit_hits"],
-                "hit_rate_pct": round(hit_rate, 2),
+                "hit_rate_pct": round2(hit_rate),
                 "total_requests": self._stats["total_requests"],
                 "cache_hits": self._stats["cache_hits"],
                 "latency": latency_stats,
@@ -472,7 +473,7 @@ class FundCache:
         return {
             "status": "loaded",
             "row_count": len(self._df),
-            "memory_mb": round(memory_bytes / 1024 / 1024, 2),
+            "memory_mb": round2(memory_bytes / 1024 / 1024),
             "last_refresh": self._last_refresh,
             "access_count": self._access_count,
             "latency": latency_stats,
@@ -493,10 +494,10 @@ class FundCache:
             return samples[idx]
         
         return {
-            "avg_ms": round(sum(samples) / count, 4),
-            "p50_ms": round(percentile(50), 4),
-            "p95_ms": round(percentile(95), 4),
-            "p99_ms": round(percentile(99), 4),
+            "avg_ms": round4(sum(samples) / count),
+            "p50_ms": round4(percentile(50)),
+            "p95_ms": round4(percentile(95)),
+            "p99_ms": round4(percentile(99)),
         }
     
     def warm_from_metadata(self, top_n: int = 10) -> int:
