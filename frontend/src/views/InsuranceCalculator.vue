@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { DataAnalysis, Loading, CircleCheckFilled, WarningFilled, Hide } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { calculateInsurance, type InsurancePolicyRequest, type InsuranceCalculateResponse } from '@/api/insurance'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -438,7 +439,7 @@ onUnmounted(() => {
         <!-- Empty State -->
         <div v-if="!result && !loading" class="empty-state">
           <el-icon :size="64" color="var(--text-muted)">
-            <i-ep-calculator />
+            <DataAnalysis />
           </el-icon>
           <p>设置投保参数并点击计算</p>
         </div>
@@ -446,7 +447,7 @@ onUnmounted(() => {
         <!-- Loading State -->
         <div v-else-if="loading" class="loading-state">
           <el-icon class="is-loading" :size="48" color="var(--brand-navy-active)">
-            <i-ep-loading />
+            <Loading />
           </el-icon>
           <p>正在计算中...</p>
         </div>
@@ -456,7 +457,7 @@ onUnmounted(() => {
           <!-- Break-even Highlight -->
           <div v-if="result.break_even_year" class="break-even-banner">
             <el-icon :size="24" color="#52c41a">
-              <i-ep-circle-check-filled />
+              <CircleCheckFilled />
             </el-icon>
             <span class="banner-text">
               回本年份: <strong>第{{ result.break_even_year }}年</strong>
@@ -465,7 +466,7 @@ onUnmounted(() => {
           </div>
           <div v-else class="break-even-banner warning">
             <el-icon :size="24" color="#fa8c16">
-              <i-ep-warning-filled />
+              <WarningFilled />
             </el-icon>
             <span class="banner-text">
               在{{ formData.projection_years }}年内未能回本
@@ -502,7 +503,7 @@ onUnmounted(() => {
             <div v-if="chartVisible" ref="chartRef" class="chart-container" />
             <div v-else class="chart-placeholder">
               <el-icon :size="32" color="var(--text-muted)">
-                <i-ep-hide />
+                <Hide />
               </el-icon>
               <p>图表已隐藏以适应键盘</p>
             </div>

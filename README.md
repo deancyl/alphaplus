@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.26-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.26)
+[![Version](https://img.shields.io/badge/version-0.1.27-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.27)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -296,6 +296,46 @@ async def _warmup_cache():
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.27 (2026-05-31)
+
+**深度审计全面修复与代码质量提升:**
+
+**后端修复:**
+- 修复AkShare API函数名错误（`fund_portfolio_industry_allocation` → `fund_portfolio_industry_allocation_em`）
+- 修复AkShare API函数名错误（`bond_corporate_yields` → `bond_china_yield`）
+- 修复AkShare API函数名错误（`fund_company_change_em` → `fund_aum_em`）
+- 修复`rate_interbank`参数格式错误
+- 修复Python字典/列表索引访问的防御性验证（correlation.py, duckdb_ingestion.py）
+
+**前端API响应处理修复:**
+- 修复25个API函数直接返回axios调用未解构`response.data`的问题
+- 涉及文件: portfolio.ts, wmp.ts, insurance.ts, pool.ts, favorites.ts, fund.ts
+- 添加正确的响应解构模式: `const response = await api.*; return response.data ?? defaultValue`
+
+**前端TypeScript类型修复:**
+- 修复21处TS6133未使用变量警告（删除或添加下划线前缀）
+- 修复11处TS18048可选链缺失问题（FOFBacktest.vue的Brinson归因显示）
+- 修复ECharts类型兼容问题（FearGreed.vue添加@ts-expect-error）
+- 修复StockInfo.vue的API响应处理
+
+**前端图标修复:**
+- 修复Vue图标语法错误（`<i-ep-*>` → 正确的Element Plus图标导入）
+- DepositMarket.vue: `i-ep-info-filled` → `InfoFilled`
+- InsuranceCalculator.vue: `Calculator` → `DataAnalysis`（Element Plus无Calculator图标）
+
+**前端代码质量提升:**
+- 添加DEV环境保护到4处console.error调用（main.ts, apiHelpers.ts）
+- 生产环境不再输出console错误
+
+**QA验证:**
+- TypeScript编译: 0错误
+- Python测试: correlation等模块测试通过
+- LSP诊断: 无新增错误
+
+**修改文件统计:**
+- 后端: 5个文件（akshare_data.py, ingestion.py, correlation.py, duckdb_ingestion.py, akshare_source.py）
+- 前端: 30+个文件（API层、视图层、组件层）
 
 ### v0.1.26 (2026-05-31)
 

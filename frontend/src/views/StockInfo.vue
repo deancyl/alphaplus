@@ -78,7 +78,7 @@ const getValueClass = (val: number | null | undefined): string => {
 }
 
 // Fetch suggestions callback for autocomplete
-const fetchSuggestions = (query: string, cb: (results: StockSearchResult[]) => void) => {
+const fetchSuggestions = (_query: string, cb: (results: StockSearchResult[]) => void) => {
   cb(searchResults.value)
 }
 
@@ -97,7 +97,7 @@ const handleSearch = (query: string) => {
       const response = await api.get<{ results: StockSearchResult[] }>('/stock/search', {
         params: { keyword: query }
       })
-      searchResults.value = response.results || []
+      searchResults.value = response.data?.results || []
     } catch (error) {
       searchResults.value = []
     } finally {
@@ -133,9 +133,9 @@ const fetchStockData = async () => {
       })
     ])
     
-    stockQuote.value = quoteRes
-    stockInfo.value = infoRes
-    klineData.value = klineRes.data || []
+    stockQuote.value = quoteRes.data ?? null
+    stockInfo.value = infoRes.data ?? null
+    klineData.value = klineRes.data?.data || []
     
     // Render chart after data loaded
     await nextTick()

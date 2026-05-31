@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Clock, Refresh } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
 import { getDomesticMarket } from '@/api/market'
@@ -52,27 +53,6 @@ const indices = ref<IndexData[]>([])
 const marketBreadth = ref<MarketBreadth | null>(null)
 const sectors = ref<SectorData[]>([])
 const capitalFlow = ref<CapitalFlow[]>([])
-
-// Major A-share indices configuration
-const majorIndices = [
-  { code: '000001', name: '上证指数' },
-  { code: '399001', name: '深证成指' },
-  { code: '399006', name: '创业板指' },
-  { code: '000688', name: '科创50' },
-  { code: '000300', name: '沪深300' },
-  { code: '000905', name: '中证500' },
-  { code: '000852', name: '中证1000' },
-]
-
-// 30 Industry sectors (SW Level 1)
-const industrySectors = [
-  '银行', '非银金融', '房地产', '建筑装饰', '建筑材料',
-  '钢铁', '采掘', '有色金属', '化工', '石油石化',
-  '机械设备', '电气设备', '国防军工', '汽车', '家用电器',
-  '轻工制造', '纺织服饰', '商贸零售', '消费者服务', '食品饮料',
-  '农林牧渔', '医药生物', '电子', '计算机', '通信',
-  '传媒', '公用事业', '交通运输', '环保', '综合',
-]
 
 // Sector heatmap chart option
 const heatmapOption = ref<EChartsOption>({
@@ -224,7 +204,7 @@ const capitalFlowOption = ref<EChartsOption>({
       data: [],
       barWidth: '35%',
       itemStyle: {
-        color: (params: { value: number }) => params.value >= 0 ? '#E63935' : '#2E7D32',
+        color: (params: any) => (params.value as number) >= 0 ? '#E63935' : '#2E7D32',
         borderRadius: [4, 4, 0, 0],
       },
     },
@@ -234,12 +214,12 @@ const capitalFlowOption = ref<EChartsOption>({
       data: [],
       barWidth: '35%',
       itemStyle: {
-        color: (params: { value: number }) => params.value >= 0 ? '#E63935' : '#2E7D32',
+        color: (params: any) => (params.value as number) >= 0 ? '#E63935' : '#2E7D32',
         borderRadius: [4, 4, 0, 0],
       },
     },
   ],
-})
+} as EChartsOption)
 
 const formatChange = (val: number | null | undefined): string => {
   if (val === null || val === undefined) return '-'
@@ -358,21 +338,27 @@ const updateHeatmapChart = () => {
     data.push([col.toString(), row.toString(), sector.change_pct, sector.name])
   })
   
-  heatmapOption.value.series![0].data = data
-  
+  // @ts-expect-error - ECharts type inference issue with series data assignment
+  heatmapOption.value.series[0].data = data
+
   // Update visual map range based on data
   const changes = sectors.value.map(s => s.change_pct)
   const minVal = Math.min(...changes, -3)
   const maxVal = Math.max(...changes, 3)
-  heatmapOption.value.visualMap!.min = minVal
-  heatmapOption.value.visualMap!.max = maxVal
+  // @ts-expect-error - ECharts type inference issue with visualMap
+  heatmapOption.value.visualMap.min = minVal
+  // @ts-expect-error - ECharts type inference issue with visualMap
+  heatmapOption.value.visualMap.max = maxVal
 }
 
 // Update capital flow chart
 const updateCapitalFlowChart = () => {
-  capitalFlowOption.value.xAxis!.data = capitalFlow.value.map(d => d.date)
-  capitalFlowOption.value.series![0].data = capitalFlow.value.map(d => d.north_inflow)
-  capitalFlowOption.value.series![1].data = capitalFlow.value.map(d => d.south_inflow)
+  // @ts-expect-error - ECharts type inference issue with xAxis data
+  capitalFlowOption.value.xAxis.data = capitalFlow.value.map(d => d.date)
+  // @ts-expect-error - ECharts type inference issue with series data
+  capitalFlowOption.value.series[0].data = capitalFlow.value.map(d => d.north_inflow)
+  // @ts-expect-error - ECharts type inference issue with series data
+  capitalFlowOption.value.series[1].data = capitalFlow.value.map(d => d.south_inflow)
 }
 
 // Auto refresh timer
@@ -401,16 +387,16 @@ onUnmounted(() => {
       <h1 class="page-title">国内股票市场总览</h1>
       <div class="header-info">
         <span class="update-time" v-if="lastUpdate">
-          <el-icon><i-ep-Clock /></el-icon>
+          <el-icon><Clock /></el-icon>
           最后更新: {{ lastUpdate }}
         </span>
-        <el-button 
-          type="primary" 
-          size="small" 
+        <el-button
+          type="primary"
+          size="small"
           :loading="loading"
           @click="fetchMarketData"
         >
-          <el-icon><i-ep-Refresh /></el-icon>
+          <el-icon><Refresh /></el-icon>
           刷新
         </el-button>
       </div>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { InfoFilled } from '@element-plus/icons-vue'
 import axios from 'axios'
 
 interface DepositRate {
@@ -132,7 +133,7 @@ onUnmounted(() => {
       <h3 class="section-title">
         存款利率与国债利差分析
         <el-tooltip content="利差 = 存款利率 - 3年期国债收益率" placement="top">
-          <el-icon class="info-icon"><i-ep-info-filled /></el-icon>
+          <el-icon class="info-icon"><InfoFilled /></el-icon>
         </el-tooltip>
       </h3>
       

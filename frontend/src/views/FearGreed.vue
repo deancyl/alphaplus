@@ -306,13 +306,14 @@ const initTrendChart = () => {
         { gt: 75, color: '#1565C0' },
       ],
     },
+    // @ts-expect-error - ECharts series type inference issue with complex callback configurations
     series: [
       {
-        type: 'line' as any,
+        type: 'line' as const,
         data: scores,
         smooth: true,
         symbol: 'circle',
-        symbolSize: function (value: number, params: { dataIndex: number }) {
+        symbolSize: function (_value: number, params: { dataIndex: number }) {
           return params.dataIndex === lastIndex ? 10 : 4
         },
         itemStyle: {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getFuturesQuotes } from '@/api/market'
@@ -37,13 +37,6 @@ const contractMonths = [
   { label: '次季月', value: 6 },
 ]
 
-// 各分类下的合约代码
-const categoryContracts: Record<string, string[]> = {
-  commodity: ['CU', 'AL', 'ZN', 'NI', 'SN', 'PB', 'AU', 'AG', 'C', 'S', 'M', 'Y', 'P', 'SR', 'CF', 'TA', 'MA', 'FG'],
-  financial: ['IF', 'IC', 'IM', 'IH', 'T', 'TF', 'TS', 'TL'],
-  energy: ['SC', 'FU', 'PG', 'EB', 'PP', 'L', 'V', 'RU', 'NR'],
-}
-
 // 状态
 const activeCategory = ref('commodity')
 const selectedMonth = ref(0)
@@ -51,43 +44,6 @@ const contracts = ref<FuturesContract[]>([])
 const selectedContract = ref<FuturesContract | null>(null)
 const loading = ref(false)
 const chartInstance = ref<echarts.ECharts | null>(null)
-
-// 计算基差
-const calculateBasis = (spotPrice: number, futuresPrice: number): { basis: number; basis_pct: number } => {
-  const basis = spotPrice - futuresPrice
-  const basis_pct = futuresPrice !== 0 ? (basis / futuresPrice) * 100 : 0
-  return { basis, basis_pct }
-}
-
-// 获取合约名称
-const getContractName = (code: string): string => {
-  const nameMap: Record<string, string> = {
-    // 有色金属
-    CU: '沪铜', AL: '沪铝', ZN: '沪锌', NI: '沪镍', SN: '沪锡', PB: '沪铅',
-    // 贵金属
-    AU: '沪金', AG: '沪银',
-    // 农产品
-    C: '玉米', S: '豆一', M: '豆粕', Y: '豆油', P: '棕榈油', SR: '白糖', CF: '棉花',
-    // 化工
-    TA: 'PTA', MA: '甲醇', FG: '玻璃',
-    // 金融期货
-    IF: '沪深300', IC: '中证500', IM: '中证1000', IH: '上证50',
-    T: '十年国债', TF: '五年国债', TS: '两年国债', TL: '三十年国债',
-    // 能源
-    SC: '原油', FU: '燃油', PG: 'LPG', EB: '苯乙烯', PP: 'PP', L: 'LLDPE', V: 'PVC', RU: '橡胶', NR: '20号胶',
-  }
-  return nameMap[code] || code
-}
-
-// 获取交易所
-const getExchange = (code: string): string => {
-  if (['IF', 'IC', 'IM', 'IH', 'T', 'TF', 'TS', 'TL'].includes(code)) return '中金所'
-  if (['SC', 'NR'].includes(code)) return '能源中心'
-  if (['CU', 'AL', 'ZN', 'NI', 'SN', 'PB', 'AU', 'AG', 'RB', 'HC', 'SS'].includes(code)) return '上期所'
-  if (['C', 'S', 'M', 'Y', 'P', 'SR', 'CF', 'JD', 'LH'].includes(code)) return '大商所'
-  if (['TA', 'MA', 'FG', 'RM', 'OI', 'ZC', 'SF', 'SM', 'AP', 'CJ'].includes(code)) return '郑商所'
-  return '广期所'
-}
 
 // 加载数据
 const loadData = async () => {

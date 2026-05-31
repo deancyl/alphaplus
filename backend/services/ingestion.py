@@ -127,21 +127,26 @@ class FundIngestion:
         """同步基金公司数据."""
         try:
             await self.rate_limiter.acquire()
-            df = ak.fund_company_change_em()
+            # NOTE: ak.fund_company_change_em() 函数在当前AkShare版本不存在
+            # 替代方案：使用 fund_aum_em 获取基金公司规模数据
+            # df = ak.fund_company_change_em()
+            
+            # 使用替代函数获取基金公司数据
+            df = ak.fund_aum_em()
             
             async with AsyncSessionLocal() as session:
                 for _, row in df.iterrows():
-                    company_id = str(row.get("基金公司", ""))
+                    company_id = str(row.get("基金公司", row.get("公司", "")))
                     if not company_id:
                         continue
                     
                     company = FundCompanyMetadata(
                         company_id=company_id,
-                        company_name=str(row.get("基金公司", "")),
-                        total_scale=float(row.get("总规模", 0)) if row.get("总规模") else 0,
-                        non_money_scale=float(row.get("非货规模", 0)) if row.get("非货规模") else 0,
-                        fund_count=int(row.get("基金数量", 0)) if row.get("基金数量") else 0,
-                        manager_count=int(row.get("经理数量", 0)) if row.get("经理数量") else 0,
+                        company_name=str(row.get("基金公司", row.get("公司", ""))),
+                        total_scale=float(row.get("总规模", 0) if row.get("总规模") else 0),
+                        non_money_scale=float(row.get("非货规模", 0) if row.get("非货规模") else 0),
+                        fund_count=int(row.get("基金数量", 0) if row.get("基金数量") else 0),
+                        manager_count=int(row.get("经理数量", 0) if row.get("经理数量") else 0),
                     )
                     session.merge(company)
                 
@@ -203,9 +208,16 @@ class BondIngestion:
         try:
             await self.rate_limiter.acquire()
             
-            df = ak.bond_corporate_yields()
+            # bond_corporate_yields() 不存在，使用 bond_china_yield 获取债券收益率曲线
+            # 该函数返回包含多种期限的国债/国开债收益率数据
+            from datetime import datetime, timedelta
+            today = datetime.now().strftime("%Y%m%d")
+            one_year_ago = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
             
-            print(f"Synced corporate yields ({len(df) if df is not None and not df.empty else 0} records)")
+            df = ak.bond_china_yield(start_date=one_year_ago, end_date=today)
+            
+            # bond_china_yield 返回国债/国开债收益率曲线，可用于计算信用利差
+            print(f"Synced bond yields ({len(df) if df is not None and not df.empty else 0} records)")
             
         except Exception as e:
             print(f"Corporate yield sync error: {e}")
@@ -215,8 +227,9 @@ class BondIngestion:
         try:
             await self.rate_limiter.acquire()
             
-            # SHIBOR rates
-            df = ak.rate_interbank(market=" Shibor")
+            # SHIBOR rates - 使用正确的参数格式
+            # market: "上海银行同业拆借市场", symbol: "Shibor人民币", indicator: "隔夜"/"1周"/"3月"等
+            df = ak.rate_interbank(market="上海银行同业拆借市场", symbol="Shibor人民币", indicator="隔夜")
             
             # Process and save
             # Placeholder: Real impl would parse and save
@@ -253,7 +266,7 @@ class IndustryAllocationIngestion:
 
             for attempt in range(settings.akshare_retry_count):
                 try:
-                    df = ak.fund_portfolio_industry_allocation(symbol=fund_code)
+                    df = ak.fund_portfolio_industry_allocation_em(symbol=fund_code, date=str(datetime.now().year))
 
                     if df is None or df.empty:
                         logger.warning(f"No industry allocation data for fund {fund_code}")

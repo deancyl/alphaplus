@@ -35,9 +35,12 @@ async def insert_holdings_batch(holdings: List[Dict]) -> int:
     if not holdings:
         return 0
     
-    # Delete existing records for same fund+quarter (serialized write)
-    fund_code = holdings[0]['fund_code']
-    quarter_date = holdings[0]['quarter_date']
+    fund_code = holdings[0].get('fund_code', '')
+    quarter_date = holdings[0].get('quarter_date')
+    
+    if not fund_code or not quarter_date:
+        logger.warning("Missing required fields in holdings data")
+        return 0
     
     await duckdb_pool_manager.execute_write(
         "DELETE FROM fund_portfolio_holdings WHERE fund_code = ? AND quarter_date = ?",
@@ -103,10 +106,6 @@ async def search_funds_by_stock(stock_code: str, limit: int = 100) -> Dict:
             'funds': []
         }
     
-    # Get aggregate stats from first row
-    total_funds = result[0][5] if result else 0
-    aggregate_exposure = result[0][6] if result else 0.0
-    
     funds = [{
         'fund_code': row[0],
         'stock_name': row[1],
@@ -114,6 +113,9 @@ async def search_funds_by_stock(stock_code: str, limit: int = 100) -> Dict:
         'holding_ratio': row[3],
         'holding_value': row[4],
     } for row in result]
+    
+    total_funds = result[0][5] if result else 0
+    aggregate_exposure = result[0][6] if result else 0.0
     
     return {
         'stock_code': stock_code,

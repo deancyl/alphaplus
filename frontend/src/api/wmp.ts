@@ -74,7 +74,8 @@ export interface WMPStatistics {
  * Filter WMP products with criteria
  */
 export async function filterWMP(params: WMPFilterParams): Promise<WMPFilterResponse> {
-  return api.post('/wmp/filter', params)
+  const response = await api.post('/wmp/filter', params)
+  return response.data!
 }
 
 /**
@@ -84,16 +85,18 @@ export async function getWMPList(
   page: number = 1,
   pageSize: number = 50
 ): Promise<WMPFilterResponse> {
-  return api.get('/wmp/list', {
+  const response = await api.get('/wmp/list', {
     params: { page, page_size: pageSize }
   })
+  return response.data!
 }
 
 /**
  * Get WMP statistics
  */
 export async function getWMPStatistics(): Promise<WMPStatistics> {
-  return api.get('/wmp/statistics')
+  const response = await api.get('/wmp/statistics')
+  return response.data!
 }
 
 /**

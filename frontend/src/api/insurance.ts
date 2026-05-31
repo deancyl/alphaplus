@@ -31,5 +31,6 @@ export interface InsuranceCalculateResponse {
 export const calculateInsurance = async (
   data: InsurancePolicyRequest
 ): Promise<InsuranceCalculateResponse> => {
-  return api.post('/insurance/calculate', data)
+  const response = await api.post('/insurance/calculate', data)
+  return response.data!
 }

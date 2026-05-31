@@ -23,7 +23,8 @@ const emit = defineEmits<{
   (e: 'snapPointChange', point: string): void
 }>()
 
-const { isMobile } = useBreakpoint()
+// Use breakpoint for responsive behavior
+useBreakpoint()
 
 // Sheet state
 const sheetHeight = ref(0) // 0 = closed, 50 = half, 100 = full

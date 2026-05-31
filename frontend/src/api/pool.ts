@@ -55,32 +55,38 @@ export const listPoolFunds = async (
   const params: Record<string, string> = {}
   if (poolType) params.pool_type = poolType
   if (status) params.status = status
-  return api.get('/pool', { params })
+  const response = await api.get('/pool', { params })
+  return response.data!
 }
 
 // Add a fund to pool
 export const addFundToPool = async (data: PoolAddRequest): Promise<PoolFund> => {
-  return api.post('/pool/add', data)
+  const response = await api.post('/pool/add', data)
+  return response.data!
 }
 
 // Bulk add funds to pool
 export const bulkAddFundsToPool = async (data: PoolBulkAddRequest): Promise<PoolListResponse> => {
-  return api.post('/pool/bulk-add', data)
+  const response = await api.post('/pool/bulk-add', data)
+  return response.data!
 }
 
 // Remove a fund from pool
 export const removeFundFromPool = async (id: number): Promise<void> => {
-  return api.delete(`/pool/${id}`)
+  const response = await api.delete(`/pool/${id}`)
+  return response.data!
 }
 
 // Transfer fund between pools
 export const transferFundBetweenPools = async (data: PoolTransferRequest): Promise<PoolFund> => {
-  return api.post('/pool/transfer', data)
+  const response = await api.post('/pool/transfer', data)
+  return response.data!
 }
 
 // Update fund status in pool
 export const updatePoolFundStatus = async (data: PoolStatusUpdateRequest): Promise<PoolFund> => {
-  return api.put('/pool/status', data)
+  const response = await api.put('/pool/status', data)
+  return response.data!
 }
 
 export const poolApi = {

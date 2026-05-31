@@ -156,9 +156,10 @@ export const searchFunds = async (
   query: string,
   limit: number = 10
 ): Promise<FundSearchResult[]> => {
-  return api.get('/fund/search', {
+  const response = await api.get('/fund/search', {
     params: { q: query, limit }
   })
+  return response.data ?? []
 }
 
 /**
@@ -167,14 +168,16 @@ export const searchFunds = async (
 export const createPortfolio = async (
   data: PortfolioCreateRequest
 ): Promise<PortfolioItem> => {
-  return api.post('/portfolio', data)
+  const response = await api.post('/portfolio', data)
+  return response.data!
 }
 
 /**
  * Get list of portfolios
  */
 export const getPortfolios = async (): Promise<PortfolioItem[]> => {
-  return api.get('/portfolio')
+  const response = await api.get('/portfolio')
+  return response.data ?? []
 }
 
 /**
@@ -183,7 +186,8 @@ export const getPortfolios = async (): Promise<PortfolioItem[]> => {
 export const getPortfolio = async (
   id: string
 ): Promise<PortfolioItem> => {
-  return api.get(`/portfolio/${id}`)
+  const response = await api.get(`/portfolio/${id}`)
+  return response.data!
 }
 
 /**
@@ -192,7 +196,8 @@ export const getPortfolio = async (
 export const deletePortfolio = async (
   id: string
 ): Promise<void> => {
-  return api.delete(`/portfolio/${id}`)
+  const response = await api.delete(`/portfolio/${id}`)
+  return response.data!
 }
 
 /**
@@ -202,7 +207,8 @@ export const runBacktest = async (
   portfolioId: string,
   config: BacktestConfig
 ): Promise<BacktestResult> => {
-  return api.post(`/portfolio/${portfolioId}/backtest`, config)
+  const response = await api.post(`/portfolio/${portfolioId}/backtest`, config)
+  return response.data!
 }
 
 // ==================== Constants ====================

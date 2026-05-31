@@ -112,13 +112,6 @@ const formatPct = (val: number | null, decimals = 2): string => {
   return `${val.toFixed(decimals)}%`
 }
 
-// Format BP (used in tooltip)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const formatBP = (val: number | null): string => {
-  if (val === null || val === undefined) return '-'
-  return `${val.toFixed(2)}BP`
-}
-
 // Format issuance amount
 const formatAmount = (val: number): string => {
   if (val >= 10000) {
@@ -253,10 +246,6 @@ const initYieldChart = () => {
     treasuryCurve.push([point.tenor, point.yield_ytm])
   })
   
-  tenorOrder.forEach(tenor => {
-    // Just use the actual data we have
-  })
-
   const option: echarts.EChartsOption = {
     tooltip: {
       trigger: 'axis',

@@ -49,7 +49,8 @@ export interface FundFilterResponse {
 
 // Filter funds
 export const filterFunds = async (params: FundFilterParams): Promise<FundFilterResponse> => {
-  return api.post('/fund/filter', params)
+  const response = await api.post('/fund/filter', params)
+  return response.data ?? { total: 0, page: 1, page_size: 50, funds: [] }
 }
 
 // Get top gainers and losers
@@ -188,7 +189,8 @@ export interface AIPCalculateResponse {
 export const calculateAIP = async (
   data: AIPCalculateRequest
 ): Promise<AIPCalculateResponse> => {
-  return api.post('/fund/aip-calculate', data)
+  const response = await api.post('/fund/aip-calculate', data)
+  return response.data!
 }
 
 // ==================== Holdings & Industry Types ====================
@@ -313,7 +315,8 @@ export interface CrowdingAnalysisResponse {
 export const getCrowdingAnalysis = async (
   stockCode: string
 ): Promise<CrowdingAnalysisResponse> => {
-  return api.get(`/fund/stock-reverse/${stockCode}/crowding`)
+  const response = await api.get(`/fund/stock-reverse/${stockCode}/crowding`)
+  return response.data!
 }
 
 export interface AggregationResponse {
@@ -331,7 +334,8 @@ export interface AggregationResponse {
 export const getStockAggregation = async (
   stockCode: string
 ): Promise<AggregationResponse> => {
-  return api.get(`/fund/stock-reverse/${stockCode}/aggregation`)
+  const response = await api.get(`/fund/stock-reverse/${stockCode}/aggregation`)
+  return response.data!
 }
 
 export const exportStockReverseHolding = async (
@@ -343,5 +347,5 @@ export const exportStockReverseHolding = async (
     params: { format, limit },
     responseType: 'blob'
   })
-  return response
+  return response.data!
 }

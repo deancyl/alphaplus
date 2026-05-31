@@ -269,27 +269,27 @@ const erpOption = computed<EChartsOption>(() => {
 // Crowding chart option (scatter plot)
 const crowdingOption = computed<EChartsOption>(() => {
   if (crowdingData.value.length === 0) return {}
-  
+
   const data = crowdingData.value.map(d => [d.pe_percentile, d.crowding_score, d.asset_code])
-  
+
   return {
     tooltip: {
-      formatter: (params: { data: number[] }) => {
+      formatter: (params: any) => {
         return `${params.data[2]}<br/>PE分位: ${params.data[0].toFixed(2)}%<br/>拥挤度: ${params.data[1].toFixed(2)}`
       }
     },
     grid: { top: 20, left: 50, right: 20, bottom: 40 },
-    xAxis: { 
-      type: 'value', 
+    xAxis: {
+      type: 'value',
       name: 'PE分位',
       nameLocation: 'middle',
       nameGap: 25,
-      min: 0, 
+      min: 0,
       max: 100,
       splitLine: { lineStyle: { color: '#E5E8ED', type: 'dashed' } }
     },
-    yAxis: { 
-      type: 'value', 
+    yAxis: {
+      type: 'value',
       name: '拥挤度',
       nameLocation: 'middle',
       nameGap: 35,
@@ -310,14 +310,13 @@ const crowdingOption = computed<EChartsOption>(() => {
       data,
       itemStyle: { opacity: 0.8 }
     }]
-  }
+  } as EChartsOption
 })
 
 // Style strength chart
 const styleStrengthOption = computed<EChartsOption>(() => {
   if (styleStrengthData.value.length === 0) return {}
   
-  const latest = styleStrengthData.value[0]
   const history = styleStrengthData.value.slice(0, 30).reverse()
   
   return {
@@ -360,13 +359,13 @@ const styleStrengthOption = computed<EChartsOption>(() => {
 
 // Heatmap chart option
 const heatmapOption = ref<EChartsOption>({
-  tooltip: { 
+  tooltip: {
     position: 'top',
     formatter: (params: any) => {
       if (params.data) {
         const [colIdx, rowIdx, value] = params.data
-        const cols = heatmapOption.value.xAxis!.data as string[]
-        const rows = heatmapOption.value.yAxis!.data as string[]
+        const cols = (heatmapOption.value.xAxis as any)?.data as string[]
+        const rows = (heatmapOption.value.yAxis as any)?.data as string[]
         return `${rows[rowIdx]} - ${cols[colIdx]}<br/>收益率: ${value.toFixed(2)}%`
       }
       return ''
@@ -394,7 +393,7 @@ const heatmapOption = ref<EChartsOption>({
       itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' },
     },
   }],
-})
+} as EChartsOption)
 
 // Fetch all data (indices handled by store)
 // Progressive widget loaders - each widget loads independently
@@ -491,13 +490,13 @@ const fetchHeatmapWidget = async () => {
   try {
     const heatmap = await getMarketHeatmap()
     if (heatmap && heatmap.rows && heatmap.cols && heatmap.cells) {
-      heatmapOption.value.xAxis!.data = heatmap.cols
-      heatmapOption.value.yAxis!.data = heatmap.rows
-      
+      ;(heatmapOption.value.xAxis as any).data = heatmap.cols
+      ;(heatmapOption.value.yAxis as any).data = heatmap.rows
+
       const rowIndexMap = new Map(heatmap.rows.map((r, i) => [r, i]))
       const colIndexMap = new Map(heatmap.cols.map((c, i) => [c, i]))
-      
-      heatmapOption.value.series![0].data = heatmap.cells.map(c => [
+
+      ;(heatmapOption.value.series as any)[0].data = heatmap.cells.map(c => [
         colIndexMap.get(c.col) ?? 0,
         rowIndexMap.get(c.row) ?? 0,
         c.value

@@ -347,12 +347,12 @@ onMounted(() => {
                   class="metric-value"
                   :class="getReturnClass(fund.return_1y)"
                 >
-                  {{ formatNumber(fund.return_1y, '%') }}
+                  {{ formatNumber(fund.return_1y, 2, '%') }}
                 </span>
               </div>
               <div class="metric-item">
                 <span class="metric-label">规模</span>
-                <span class="metric-value">{{ formatNumber(fund.scale, '亿') }}</span>
+                <span class="metric-value">{{ formatNumber(fund.scale, 2, '亿') }}</span>
               </div>
               <div class="metric-item">
                 <span class="metric-label">经理</span>

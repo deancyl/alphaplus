@@ -298,15 +298,15 @@ onMounted(() => {
             </div>
             <div class="detail-item highlight">
               <label>到期收益率</label>
-              <span class="value text-up">{{ formatNumber(selectedBond.yield_ytm, '%') }}</span>
+              <span class="value text-up">{{ formatNumber(selectedBond.yield_ytm, 2, '%') }}</span>
             </div>
             <div class="detail-item highlight">
               <label>久期</label>
-              <span class="value">{{ formatNumber(selectedBond.duration, '年') }}</span>
+              <span class="value">{{ formatNumber(selectedBond.duration, 2, '年') }}</span>
             </div>
             <div class="detail-item">
               <label>票面利率</label>
-              <span class="value">{{ formatNumber(selectedBond.coupon_rate, '%') }}</span>
+              <span class="value">{{ formatNumber(selectedBond.coupon_rate, 2, '%') }}</span>
             </div>
             <div class="detail-item">
               <label>发行规模</label>

@@ -155,7 +155,9 @@ const handleOpenFavorites = () => {
   emit('open-favorites')
 }
 
-const getGroupedChildren = (children: any[]) => {
+const getGroupedChildren = (children: any[] | undefined) => {
+  if (!children) return {}
+  // ...rest of the function
   const grouped: Record<string, any[]> = {}
   children.forEach(child => {
     if (child.group) {

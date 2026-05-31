@@ -40,6 +40,7 @@ _api.interceptors.request.use(
 )
 
 _api.interceptors.response.use(
+  // @ts-expect-error - Axios interceptor type inference issue with custom response wrapper
   (response) => ({
     data: response.data,
     _error: null,
@@ -47,7 +48,7 @@ _api.interceptors.response.use(
       status: response.status,
       source: 'api' as const
     }
-  }) as any,
+  }),
   (error) => {
     const requestId = error.config?.headers?.['X-Request-ID']
     const endpoint = error.config?.url

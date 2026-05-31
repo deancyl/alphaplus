@@ -9,7 +9,9 @@ export function ensureArray<T>(response: unknown): T[] {
       return response.data
     }
     if ('_error' in response && response._error) {
-      console.warn('[API] Error response:', response._error)
+      if (import.meta.env.DEV) {
+        console.warn('[API] Error response:', response._error)
+      }
       return []
     }
   }
@@ -20,7 +22,9 @@ export function ensureArray<T>(response: unknown): T[] {
   }
   
   // Fallback - unexpected shape
-  console.warn('[API] Unexpected response shape:', response)
+  if (import.meta.env.DEV) {
+    console.warn('[API] Unexpected response shape:', response)
+  }
   return []
 }
 

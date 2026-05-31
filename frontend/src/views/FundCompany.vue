@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
@@ -67,14 +66,14 @@ const pieChartOption = ref<EChartsOption>({
   tooltip: { trigger: 'item' },
   legend: { orient: 'vertical', right: 10 },
   series: [{ type: 'pie', data: [] }],
-})
+} as EChartsOption)
 
 const barChartOption = ref<EChartsOption>({
   tooltip: { trigger: 'axis' },
   xAxis: { type: 'value' },
   yAxis: { type: 'category', data: [] },
   series: [{ type: 'bar', data: [] }],
-})
+} as EChartsOption)
 
 // Treemap chart option for asset distribution
 const treemapChartOption = ref<EChartsOption>({
@@ -122,7 +121,7 @@ const treemapChartOption = ref<EChartsOption>({
       },
     ],
   }],
-})
+} as EChartsOption)
 
 // Bubble scatter chart option for manager performance
 const bubbleChartOption = ref<EChartsOption>({
@@ -160,11 +159,7 @@ const bubbleChartOption = ref<EChartsOption>({
       },
     },
   }],
-})
-
-// Drill-down state
-const drillDownLevel = ref<'company' | 'fund'>('company')
-const drillDownCompany = ref<string | null>(null)
+} as EChartsOption)
 
 // Sort options
 const sortOptions = [
@@ -315,7 +310,7 @@ const updateCharts = async () => {
       labelLine: { show: false },
       data: pieData,
     }],
-  }
+  } as EChartsOption
 
   // Bar chart - top 10 by AUM (horizontal)
   const top10ForBar = [...data]
@@ -353,7 +348,7 @@ const updateCharts = async () => {
       },
       data: top10ForBar.map(c => c.total_scale || 0),
     }],
-  }
+  } as EChartsOption
 
   // Treemap - fetch real asset distribution from API
   chartLoading.value = true
@@ -362,10 +357,10 @@ const updateCharts = async () => {
     treemapChartOption.value = {
       ...treemapChartOption.value,
       series: [{
-        ...treemapChartOption.value.series![0],
+        type: 'treemap',
         data: treemapData,
       }],
-    }
+    } as EChartsOption
   } catch (error) {
   } finally {
     chartLoading.value = false
@@ -374,11 +369,10 @@ const updateCharts = async () => {
   // Bubble scatter - manager performance analysis
   const bubbleData = generateBubbleData(data)
   const { medianFunds, medianReturn } = calculateMedians(bubbleData)
-  
+
   bubbleChartOption.value = {
     ...bubbleChartOption.value,
     xAxis: {
-      ...bubbleChartOption.value.xAxis,
       name: '基金数量',
       nameLocation: 'middle',
       nameGap: 30,
@@ -386,7 +380,6 @@ const updateCharts = async () => {
       axisLabel: { fontSize: 11 },
     },
     yAxis: {
-      ...bubbleChartOption.value.yAxis,
       name: '平均收益率(%)',
       nameLocation: 'middle',
       nameGap: 40,
@@ -400,7 +393,7 @@ const updateCharts = async () => {
         return Math.max(10, Math.min(60, Math.sqrt(scale) * 4))
       },
       data: bubbleData,
-      itemStyle: { 
+      itemStyle: {
         opacity: 0.7,
         color: (params: any) => {
           const funds = params.data[0]
@@ -429,7 +422,7 @@ const updateCharts = async () => {
         ],
       },
     }],
-  }
+  } as EChartsOption
 }
 
 // Generate treemap data - fetch from API or use simulated fallback
@@ -509,16 +502,16 @@ const generateBubbleData = (companies: CompanyItem[]) => {
 }
 
 // Calculate medians for quadrant lines
-const calculateMedians = (data: number[][]) => {
+const calculateMedians = (data: (string | number | null)[][]) => {
   if (data.length === 0) return { medianFunds: 0, medianReturn: 0 }
-  
-  const sortedFunds = [...data].sort((a, b) => a[0] - b[0])
-  const sortedReturn = [...data].sort((a, b) => a[1] - b[1])
+
+  const sortedFunds = [...data].sort((a, b) => (a[0] as number) - (b[0] as number))
+  const sortedReturn = [...data].sort((a, b) => (a[1] as number) - (b[1] as number))
   const mid = Math.floor(data.length / 2)
-  
+
   return {
-    medianFunds: sortedFunds[mid]?.[0] || 0,
-    medianReturn: sortedReturn[mid]?.[1] || 0,
+    medianFunds: sortedFunds[mid]?.[0] as number || 0,
+    medianReturn: sortedReturn[mid]?.[1] as number || 0,
   }
 }
 
@@ -615,7 +608,7 @@ onMounted(() => {
     <!-- Header Stats -->
     <div class="stats-row">
       <div class="stat-card">
-        <div class="stat-value">{{ formatNumber(totalStats.totalScale, '亿') }}</div>
+        <div class="stat-value">{{ formatNumber(totalStats.totalScale, 2, '亿') }}</div>
         <div class="stat-label">总管理规模</div>
       </div>
       <div class="stat-card">
@@ -627,7 +620,7 @@ onMounted(() => {
         <div class="stat-label">基金经理</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ formatNumber(totalStats.avgScale, '亿') }}</div>
+        <div class="stat-value">{{ formatNumber(totalStats.avgScale, 2, '亿') }}</div>
         <div class="stat-label">平均规模</div>
       </div>
     </div>
@@ -959,25 +952,25 @@ onMounted(() => {
         </div>
         <div class="detail-row">
           <span class="detail-label">总管理规模:</span>
-          <span class="detail-value highlight">{{ formatNumber(selectedCompany.total_scale, '亿') }}</span>
+          <span class="detail-value highlight">{{ formatNumber(selectedCompany.total_scale, 2, '亿') }}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">非货规模:</span>
-          <span class="detail-value">{{ formatNumber(selectedCompany.non_money_scale, '亿') }}</span>
+          <span class="detail-value">{{ formatNumber(selectedCompany.non_money_scale, 2, '亿') }}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">基金数量:</span>
-          <span class="detail-value">{{ formatInteger(selectedCompany.fund_count) }} 只</span>
+          <span class="detail-value">{{ formatInteger(selectedCompany.fund_count as number | null) }} 只</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">基金经理:</span>
-          <span class="detail-value">{{ formatInteger(selectedCompany.manager_count) }} 人</span>
+          <span class="detail-value">{{ formatInteger(selectedCompany.manager_count as number | null) }} 人</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">平均单只规模:</span>
           <span class="detail-value">
             {{ selectedCompany.fund_count && selectedCompany.fund_count > 0
-              ? formatNumber((selectedCompany.total_scale || 0) / selectedCompany.fund_count, '亿')
+              ? formatNumber((selectedCompany.total_scale || 0) / (selectedCompany.fund_count as number), 2, '亿')
               : '-' }}
           </span>
         </div>
@@ -985,7 +978,7 @@ onMounted(() => {
           <span class="detail-label">人均管理规模:</span>
           <span class="detail-value">
             {{ selectedCompany.manager_count && selectedCompany.manager_count > 0
-              ? formatNumber((selectedCompany.total_scale || 0) / selectedCompany.manager_count, '亿')
+              ? formatNumber((selectedCompany.total_scale || 0) / (selectedCompany.manager_count as number), 2, '亿')
               : '-' }}
           </span>
         </div>

@@ -177,7 +177,20 @@ def generate_ou_correlation_fallback(
         n_paths=1,
     )
     
-    simulated_values = ou.simulate(seed=seed)[0]
+    simulated_result = ou.simulate(seed=seed)
+    if simulated_result is None or len(simulated_result) == 0:
+        logger.warning("O-U simulation returned empty result, using fallback correlation")
+        result = {}
+        for i, fund_i in enumerate(fund_codes):
+            result[fund_i] = {}
+            for j, fund_j in enumerate(fund_codes):
+                if i == j:
+                    result[fund_i][fund_j] = 1.0
+                else:
+                    result[fund_i][fund_j] = 0.5
+        return result
+    
+    simulated_values = simulated_result[0]
     
     # Build symmetric correlation matrix
     result = {}

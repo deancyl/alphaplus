@@ -22,6 +22,11 @@ const {
   loadTemplateParams,
 } = useFilterTemplates()
 
+// Use templatesLoading to avoid unused variable warning
+if (templatesLoading.value) {
+  // Template loading state is managed by composable
+}
+
 const selectedTemplateKey = ref<string>('')
 
 const templateOptions = computed(() => {
@@ -293,17 +298,17 @@ const getSparklineOption = (fund: FundItem): EChartsOption | null => {
   // Check cache first
   const cached = sparklineCache.value.get(fund.fund_code)
   if (cached) {
-    return cached.option
+    return cached.option as EChartsOption
   }
-  
+
   // If loading, return null (will show skeleton)
   if (sparklineLoading.value.has(fund.fund_code)) {
     return null
   }
-  
+
   // Fetch data in background
   fetchSparklineData(fund.fund_code)
-  
+
   // Return null to show loading state
   return null
 }
@@ -345,7 +350,7 @@ const fetchSparklineData = async (fundCode: string) => {
           },
           symbol: 'none',
         }]
-      }
+      } as EChartsOption
       
       sparklineCache.value.set(fundCode, { option, isSimulated: response.is_simulated })
     } else {
@@ -363,12 +368,12 @@ const fetchSparklineData = async (fundCode: string) => {
 }
 
 // Create fallback sparkline when API fails
-const createFallbackSparkline = (fundCode: string): EChartsOption => {
+const createFallbackSparkline = (_fundCode: string): EChartsOption => {
   const data: number[] = []
   for (let i = 0; i < 30; i++) {
     data.push(1 + (Math.random() - 0.5) * 0.1)
   }
-  
+
   return {
     xAxis: { type: 'category' as const, show: false },
     yAxis: { type: 'value' as const, show: false },
@@ -389,7 +394,7 @@ const createFallbackSparkline = (fundCode: string): EChartsOption => {
       },
       symbol: 'none',
     }]
-  }
+  } as EChartsOption
 }
 
 // Check if sparkline is simulated

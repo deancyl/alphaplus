@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Search, DataAnalysis, Loading } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import {
   filterFunds,
@@ -9,7 +10,7 @@ import {
   type AIPCalculateRequest,
   type AIPCalculateResponse
 } from '@/api/fund'
-import { formatNumber, formatPercent, formatSign } from '@/utils/formatters'
+import { formatNumber, formatPercent } from '@/utils/formatters'
 
 // Form state
 const formData = ref<AIPCalculateRequest>({
@@ -385,7 +386,7 @@ onUnmounted(() => {
                 @focus="handleInputFocus"
               >
                 <template #prefix>
-                  <el-icon><i-ep-search /></el-icon>
+                  <el-icon><Search /></el-icon>
                 </template>
               </el-input>
 
@@ -474,7 +475,7 @@ onUnmounted(() => {
         <!-- Empty State -->
         <div v-if="!result && !loading" class="empty-state">
           <el-icon :size="64" color="var(--text-muted)">
-            <i-ep-data-analysis />
+            <DataAnalysis />
           </el-icon>
           <p>设置投资参数并点击计算</p>
         </div>
@@ -482,7 +483,7 @@ onUnmounted(() => {
         <!-- Loading State -->
         <div v-else-if="loading" class="loading-state">
           <el-icon class="is-loading" :size="48" color="var(--brand-navy-active)">
-            <i-ep-loading />
+            <Loading />
           </el-icon>
           <p>正在计算中...</p>
         </div>

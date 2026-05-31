@@ -546,7 +546,7 @@ onMounted(() => {
       <div class="metric-card">
         <div class="metric-label">当前ERP</div>
         <div class="metric-value" :style="{ color: currentSignal?.color ?? '#1A1A1A' }">
-          {{ formatNumber(currentERP?.erp_spread, '%') }}
+          {{ formatNumber(currentERP?.erp_spread, 2, '%') }}
         </div>
         <div class="metric-zone" :style="{ backgroundColor: currentSignal?.color }">
           {{ currentSignal?.label ?? '-' }}
@@ -555,7 +555,7 @@ onMounted(() => {
 
       <div class="metric-card">
         <div class="metric-label">历史百分位 (10年)</div>
-        <div class="metric-value">{{ formatNumber(currentERP?.percentile_rank_10y, '%') }}</div>
+        <div class="metric-value">{{ formatNumber(currentERP?.percentile_rank_10y, 2, '%') }}</div>
         <div class="metric-desc">相对历史水平</div>
       </div>
 
@@ -643,7 +643,7 @@ onMounted(() => {
           height="280px"
         />
         <div class="gauge-desc">
-          当前ERP处于过去10年 {{ formatNumber(currentERP?.percentile_rank_10y, '%') }} 分位
+          当前ERP处于过去10年 {{ formatNumber(currentERP?.percentile_rank_10y, 2, '%') }} 分位
         </div>
       </div>
 

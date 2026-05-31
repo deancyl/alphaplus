@@ -21,27 +21,32 @@ export interface FavoritesResponse {
 export const listFavorites = async (productType?: string): Promise<FavoritesResponse> => {
   const params: Record<string, string> = {}
   if (productType) params.product_type = productType
-  return api.get('/favorites', { params })
+  const response = await api.get('/favorites', { params })
+  return response.data ?? { favorites: [], total: 0 }
 }
 
 // Add a favorite
 export const addFavorite = async (data: Favorite): Promise<Favorite> => {
-  return api.post('/favorites', data)
+  const response = await api.post('/favorites', data)
+  return response.data!
 }
 
 // Remove a favorite
 export const removeFavorite = async (id: number): Promise<void> => {
-  return api.delete(`/favorites/${id}`)
+  const response = await api.delete(`/favorites/${id}`)
+  return response.data!
 }
 
 // Reorder a favorite
 export const reorderFavorite = async (id: number, newSortOrder: number): Promise<void> => {
-  return api.put('/favorites/reorder', { id, new_sort_order: newSortOrder })
+  const response = await api.put('/favorites/reorder', { id, new_sort_order: newSortOrder })
+  return response.data!
 }
 
 // Sync local favorites to cloud
 export const syncFavoritesToCloud = async (favorites: Favorite[]): Promise<FavoritesResponse> => {
-  return api.post('/favorites/sync', { favorites })
+  const response = await api.post('/favorites/sync', { favorites })
+  return response.data ?? { favorites: [], total: 0 }
 }
 
 export const favoritesApi = {

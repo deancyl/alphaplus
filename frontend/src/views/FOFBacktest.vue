@@ -182,8 +182,7 @@ const brinsonChartOption = computed<EChartsOption | null>(() => {
   
   // Calculate cumulative for waterfall effect
   let cumulative = 0
-  const waterfallData = data.map((item, index) => {
-    const start = cumulative
+  const waterfallData = data.map((item) => {
     const end = cumulative + item.value
     cumulative = end
     
@@ -260,7 +259,7 @@ const brinsonChartOption = computed<EChartsOption | null>(() => {
 const periodChartOption = computed<EChartsOption | null>(() => {
   if (!backtestResult.value?.multi_period_brinson_attribution?.periods) return null
   
-  const periods = backtestResult.value.multi_period_brinson_attribution.periods
+  const periods = backtestResult.value.multi_period_brinson_attribution!.periods
   
   return {
     title: { 
@@ -691,7 +690,7 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
                 <!-- Fund Code Autocomplete -->
                 <el-autocomplete
                   v-model="row.fund_code"
-                  :fetch-suggestions="(q: string, cb: any) => handleFundSearch(q, index)"
+                  :fetch-suggestions="(q: string, _cb: any) => handleFundSearch(q, index)"
                   placeholder="搜索基金代码/名称"
                   clearable
                   class="fund-autocomplete"
@@ -1099,7 +1098,7 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
               <h3 class="chart-title">
                 多期归因分析
                 <el-tag size="small" type="info" style="margin-left: 8px">
-                  {{ backtestResult.multi_period_brinson_attribution.linking_method }}
+                  {{ backtestResult.multi_period_brinson_attribution?.linking_method ?? '-' }}
                 </el-tag>
               </h3>
               
@@ -1107,27 +1106,27 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
               <div class="attribution-summary">
                 <div class="attribution-item">
                   <span class="label">配置效应:</span>
-                  <span class="value" :class="getValueClass(backtestResult.multi_period_brinson_attribution.allocation_effect)">
-                    {{ formatPercent(backtestResult.multi_period_brinson_attribution.allocation_effect) }}
+                  <span class="value" :class="getValueClass(backtestResult.multi_period_brinson_attribution?.allocation_effect)">
+                    {{ formatPercent(backtestResult.multi_period_brinson_attribution?.allocation_effect) }}
                   </span>
                 </div>
                 <div class="attribution-item">
                   <span class="label">选择效应:</span>
-                  <span class="value" :class="getValueClass(backtestResult.multi_period_brinson_attribution.selection_effect)">
-                    {{ formatPercent(backtestResult.multi_period_brinson_attribution.selection_effect) }}
+                  <span class="value" :class="getValueClass(backtestResult.multi_period_brinson_attribution?.selection_effect)">
+                    {{ formatPercent(backtestResult.multi_period_brinson_attribution?.selection_effect) }}
                   </span>
                 </div>
                 <div class="attribution-item">
                   <span class="label">交互效应:</span>
-                  <span class="value" :class="getValueClass(backtestResult.multi_period_brinson_attribution.interaction_effect)">
-                    {{ formatPercent(backtestResult.multi_period_brinson_attribution.interaction_effect) }}
+                  <span class="value" :class="getValueClass(backtestResult.multi_period_brinson_attribution?.interaction_effect)">
+                    {{ formatPercent(backtestResult.multi_period_brinson_attribution?.interaction_effect) }}
                   </span>
                 </div>
                 <div class="attribution-item residual">
                   <span class="label">残差:</span>
-                  <span class="value">{{ backtestResult.multi_period_brinson_attribution.residual.toExponential(2) }}</span>
+                  <span class="value">{{ backtestResult.multi_period_brinson_attribution?.residual?.toExponential(2) ?? '-' }}</span>
                   <el-tag 
-                    v-if="Math.abs(backtestResult.multi_period_brinson_attribution.residual) < 1e-12" 
+                    v-if="backtestResult.multi_period_brinson_attribution && Math.abs(backtestResult.multi_period_brinson_attribution.residual) < 1e-12" 
                     type="success" 
                     size="small"
                   >

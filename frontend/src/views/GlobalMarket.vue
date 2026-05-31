@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Clock, Refresh } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
 import { getGlobalMarket } from '@/api/market'
@@ -38,18 +39,6 @@ const lastUpdate = ref<string>('')
 const indices = ref<IndexData[]>([])
 const currencies = ref<CurrencyData[]>([])
 const commodities = ref<CommodityData[]>([])
-
-// Major indices configuration
-const majorIndices = [
-  { code: 'DJI', name: '道琼斯', region: '美国' },
-  { code: 'IXIC', name: '纳斯达克', region: '美国' },
-  { code: 'SPX', name: '标普500', region: '美国' },
-  { code: 'HSI', name: '恒生指数', region: '香港' },
-  { code: 'N225', name: '日经225', region: '日本' },
-  { code: 'FTSE', name: '富时100', region: '英国' },
-  { code: 'DAX', name: '德国DAX', region: '德国' },
-  { code: 'CAC', name: '法国CAC', region: '法国' },
-]
 
 // Chart option for indices comparison
 const indicesChartOption = ref<EChartsOption>({
@@ -104,23 +93,24 @@ const indicesChartOption = ref<EChartsOption>({
     data: [],
     barWidth: '50%',
     itemStyle: {
-      color: (params: { value: number }) => {
-        return params.value >= 0 ? '#E63935' : '#2E7D32'
+      color: (params: any) => {
+        return (params.value as number) >= 0 ? '#E63935' : '#2E7D32'
       },
       borderRadius: [4, 4, 0, 0],
     },
     label: {
       show: true,
       position: 'top',
-      formatter: (params: { value: number }) => {
-        const sign = params.value >= 0 ? '+' : ''
-        return `${sign}${params.value.toFixed(2)}%`
+      formatter: (params: any) => {
+        const val = params.value as number
+        const sign = val >= 0 ? '+' : ''
+        return `${sign}${val.toFixed(2)}%`
       },
       fontSize: 11,
       color: '#4A4A4A',
     },
   }],
-})
+} as EChartsOption)
 
 // Format number with sign
 const formatChange = (val: number | null): string => {
@@ -216,22 +206,12 @@ const updateIndicesChart = () => {
     name: idx.name,
     value: idx.change_pct,
   }))
-  
-  indicesChartOption.value.xAxis!.data = chartData.map(d => d.name)
-  indicesChartOption.value.series![0].data = chartData.map(d => d.value)
-}
 
-// Group indices by region
-const groupedIndices = computed(() => {
-  const groups: Record<string, IndexData[]> = {}
-  indices.value.forEach(idx => {
-    if (!groups[idx.region]) {
-      groups[idx.region] = []
-    }
-    groups[idx.region].push(idx)
-  })
-  return groups
-})
+  // @ts-expect-error - ECharts type inference issue with dynamic data assignment
+  indicesChartOption.value.xAxis.data = chartData.map(d => d.name)
+  // @ts-expect-error - ECharts type inference issue with series data assignment
+  indicesChartOption.value.series[0].data = chartData.map(d => d.value)
+}
 
 // Auto refresh timer
 let refreshTimer: ReturnType<typeof setInterval> | null = null
@@ -260,7 +240,7 @@ onUnmounted(() => {
       <h1 class="page-title">全球市场总览</h1>
       <div class="header-info">
         <span class="update-time" v-if="lastUpdate">
-          <el-icon><i-ep-Clock /></el-icon>
+          <el-icon><Clock /></el-icon>
           最后更新: {{ lastUpdate }}
         </span>
         <el-button 
@@ -269,7 +249,7 @@ onUnmounted(() => {
           :loading="loading"
           @click="fetchGlobalMarketData"
         >
-          <el-icon><i-ep-Refresh /></el-icon>
+          <el-icon><Refresh /></el-icon>
           刷新
         </el-button>
       </div>

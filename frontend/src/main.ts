@@ -18,11 +18,9 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 // Global error handler
 app.config.errorHandler = (err, instance, info) => {
   // Log error for debugging
-  console.error('[Global Error]', err)
-  console.error('[Error Info]', info)
-  
-  // In development: show full error
   if (import.meta.env.DEV) {
+    console.error('[Global Error]', err)
+    console.error('[Error Info]', info)
     console.error('[Component]', instance?.$options?.name || 'Unknown')
   }
   
@@ -38,7 +36,9 @@ app.config.errorHandler = (err, instance, info) => {
 
 // Handle unhandled promise rejections
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('[Unhandled Promise Rejection]', event.reason)
+  if (import.meta.env.DEV) {
+    console.error('[Unhandled Promise Rejection]', event.reason)
+  }
   // Prevent default behavior (logging to console)
   event.preventDefault()
 })

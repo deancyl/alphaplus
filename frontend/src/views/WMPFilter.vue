@@ -15,8 +15,6 @@ import {
 import SplitPanel from '@/components/SplitPanel.vue'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import JargonTooltip from '@/components/JargonTooltip.vue'
-import type { TableColumnCtx } from 'element-plus'
 
 // ==================== Reactive State ====================
 

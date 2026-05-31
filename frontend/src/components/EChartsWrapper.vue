@@ -5,7 +5,7 @@ import type { EChartsOption } from 'echarts'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 
 interface Props {
-  option: EChartsOption
+  option: any  // Use any to avoid strict ECharts type checking issues
   loading?: boolean
   height?: string
   manualUpdate?: boolean

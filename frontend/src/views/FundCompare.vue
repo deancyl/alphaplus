@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Search, WarningFilled, Close } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { filterFunds, compareFunds, type FundFilterParams, type FundItem } from '@/api/fund'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
@@ -540,15 +541,15 @@ onUnmounted(() => {
             clearable
             @clear="searchResults = []"
           >
-            <template #prefix>
-              <el-icon><i-ep-search /></el-icon>
+<template #prefix>
+              <el-icon><Search /></el-icon>
             </template>
           </el-input>
         </div>
         
         <!-- Limit warning -->
         <div v-if="isAtLimit" class="limit-warning-box">
-          <el-icon><i-ep-warning-filled /></el-icon>
+          <el-icon><WarningFilled /></el-icon>
           <span>已达上限 {{ MAX_COMPARE }} 只，请移除后继续添加</span>
         </div>
         
@@ -634,7 +635,7 @@ onUnmounted(() => {
                   class="remove-btn"
                   @click="removeFromComparison(fund.fund_code)"
                 >
-                  <el-icon><i-ep-close /></el-icon>
+                  <el-icon><Close /></el-icon>
                 </el-button>
               </div>
               <div class="card-body">
