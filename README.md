@@ -1,6 +1,6 @@
 # 财富 Alpha+ 个人开源版投研工作台
 
-[![Version](https://img.shields.io/badge/version-0.1.27-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.27)
+[![Version](https://img.shields.io/badge/version-0.1.28-blue.svg)](https://github.com/deancyl/alphaplus/releases/tag/v0.1.28)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/vue-3.x-4fc08d.svg)](https://vuejs.org/)
@@ -296,6 +296,36 @@ async def _warmup_cache():
 - 基金数据: 每日 18:00 同步
 
 ## 版本历史
+
+### v0.1.28 (2026-06-08)
+
+**后端API缓存优化与前端响应式增强:**
+
+**后端缓存优化:**
+- analytics.py: 所有分析端点添加60s缓存、错误处理、空数据防护
+- market.py: 全球市场API实现3层降级架构 (缓存→并行获取→过期缓存)
+- 优化错误日志输出，避免控制台污染
+- 移除重复的circuit_breaker定义
+
+**前端响应式增强:**
+- Dashboard.vue: 响应式网格布局 (mobile/tablet/desktop/wide)、日期标题栏、移除冗余快捷操作
+- GlobalMarket.vue: 全球市场优化布局、加载状态、错误提示
+- FearGreed.vue/StyleStrength.vue: 图表容器响应式高度优化
+- DomesticStockMarket.vue: 表格与行情条布局优化
+- MarketCrowding.vue: 添加缺失的formatNumber导入
+- market.ts: API响应fallback默认值处理
+
+**前端配置优化:**
+- vite.config.ts: 开发服务器优化、预构建依赖配置
+
+**QA验证:**
+- 后端启动成功，缓存机制工作正常
+- 前端编译成功，响应式布局适配多种屏幕尺寸
+- 全球市场、恐惧贪婪、风格强度等视图正常渲染
+
+**修改文件统计:**
+- 后端: 2个文件 (analytics.py, market.py)
+- 前端: 8个文件 (Dashboard, GlobalMarket, FearGreed等)
 
 ### v0.1.27 (2026-05-31)
 
