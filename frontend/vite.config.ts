@@ -2,6 +2,11 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
+delete process.env.http_proxy
+delete process.env.HTTP_PROXY
+delete process.env.https_proxy
+delete process.env.HTTPS_PROXY
+
 export default defineConfig({
   plugins: [vue()],
   css: {
@@ -29,7 +34,7 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:60200',
         changeOrigin: true,
-        timeout: 30000,  // Proxy timeout
+        timeout: 30000,
       },
     },
   },

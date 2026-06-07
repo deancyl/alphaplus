@@ -55,15 +55,6 @@ sectors_circuit_breaker = AsyncCircuitBreaker(
     success_threshold=settings.circuit_breaker_success_threshold,
 )
 
-# Circuit breaker for domestic sectors endpoint
-# Protects get_domestic_sectors() calls with same resilience pattern
-sectors_circuit_breaker = AsyncCircuitBreaker(
-    name="sectors",
-    failure_threshold=settings.circuit_breaker_failure_threshold,
-    recovery_timeout=settings.circuit_breaker_recovery_timeout,
-    success_threshold=settings.circuit_breaker_success_threshold,
-)
-
 # Initialize gateway on module load
 _gateway_initialized = False
 
@@ -526,17 +517,107 @@ async def get_futures_quotes(
 
 @router.get("/global")
 async def get_global_market():
-    """全球市场总览 - 主要指数、汇率、大宗商品."""
-    indices = await akshare_data_service.get_global_indices()
-    currencies = await akshare_data_service.get_currency_rates()
-    commodities = await akshare_data_service.get_commodities()
+    """全球市场总览 - 主要指数、汇率、大宗商品.
     
-    return {
-        "indices": indices,
-        "currencies": currencies,
-        "commodities": commodities,
-        "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    }
+    Optimized with 3-layer cascade fallback:
+    - Layer 1: Fresh cache (instant response)
+    - Layer 2: Parallel fetch with timeouts (2s each)
+    - Layer 3: Stale cache (last-known-good)
+    
+    Target: <1s response time (most requests hit cache).
+    """
+    cache_key = "market:global"
+    
+    # Layer 1: Fresh cache (instant response)
+    cached = await realtime_cache.get(cache_key)
+    if cached:
+        if isinstance(cached, dict) and "_stale" in cached:
+            return cached.get("data", cached)
+        return cached
+    
+    # Layer 2: Parallel fetch with timeouts
+    try:
+        indices_task = asyncio.wait_for(
+            akshare_data_service.get_global_indices(),
+            timeout=2.0
+        )
+        currencies_task = asyncio.wait_for(
+            akshare_data_service.get_currency_rates(),
+            timeout=2.0
+        )
+        commodities_task = asyncio.wait_for(
+            akshare_data_service.get_commodities(),
+            timeout=2.0
+        )
+        
+        indices, currencies, commodities = await asyncio.gather(
+            indices_task, currencies_task, commodities_task,
+            return_exceptions=True
+        )
+        
+        # Handle exceptions from gather
+        if isinstance(indices, Exception):
+            logger.warning(f"Global indices fetch failed: {indices}")
+            indices = []
+        if isinstance(currencies, Exception):
+            logger.warning(f"Currency rates fetch failed: {currencies}")
+            currencies = []
+        if isinstance(commodities, Exception):
+            logger.warning(f"Commodities fetch failed: {commodities}")
+            commodities = []
+        
+        result = {
+            "indices": indices,
+            "currencies": currencies,
+            "commodities": commodities,
+            "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        
+        # Cache for 60s (same as analytics endpoints)
+        await realtime_cache.set(cache_key, result, ttl_seconds=60)
+        return result
+        
+    except asyncio.TimeoutError as e:
+        logger.warning(f"Global market fetch timed out: {e}")
+        
+        # Layer 3: Stale cache (last-known-good)
+        stale = await realtime_cache.get_stale(cache_key)
+        if stale:
+            return {
+                **stale.get("data", stale),
+                "source": "cache_stale",
+                "age_seconds": stale.get("age_seconds", 0),
+            }
+        
+        # Layer 4: Empty fallback
+        return {
+            "indices": [],
+            "currencies": [],
+            "commodities": [],
+            "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "source": "fallback",
+            "error": "Data fetch timed out",
+        }
+    except Exception as e:
+        logger.error(f"Global market fetch failed: {e}")
+        
+        # Try stale cache
+        stale = await realtime_cache.get_stale(cache_key)
+        if stale:
+            return {
+                **stale.get("data", stale),
+                "source": "cache_stale",
+                "age_seconds": stale.get("age_seconds", 0),
+            }
+        
+        return {
+            "indices": [],
+            "currencies": [],
+            "commodities": [],
+            "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "source": "fallback",
+            "error": str(e),
+        }
 
 
 @router.get("/domestic")

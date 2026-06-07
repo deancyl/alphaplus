@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Clock, Refresh } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import type { EChartsOption } from 'echarts'
 import { getGlobalMarket } from '@/api/market'
 import { formatPercent } from '@/utils/formatters'
@@ -33,8 +35,11 @@ interface CommodityData {
   unit: string
 }
 
+// Loading states - per-section for progressive loading
+const indicesLoading = ref(true)
+const currenciesLoading = ref(true)
+const commoditiesLoading = ref(true)
 // State
-const loading = ref(true)
 const lastUpdate = ref<string>('')
 const indices = ref<IndexData[]>([])
 const currencies = ref<CurrencyData[]>([])
@@ -148,40 +153,58 @@ const regionMap: Record<string, string> = {
   'CAC': '法国',
 }
 
-// Fetch global market data
+// Fetch global market data - progressive loading for each section
 const fetchGlobalMarketData = async () => {
-  loading.value = true
+  // Fetch indices independently
+  indicesLoading.value = true
   try {
     const response = await getGlobalMarket()
     
-    // Map API response to component data structure
     indices.value = response.indices.map(idx => ({
       code: idx.code,
       name: idx.name,
       price: idx.price,
-      change: idx.price * idx.change_pct / 100, // Calculate change from price and change_pct
+      change: idx.price * idx.change_pct / 100,
       change_pct: idx.change_pct,
       region: regionMap[idx.code] || '其他',
     }))
     
+    // Update chart
+    updateIndicesChart()
+  } catch {
+    ElMessage.error('获取全球指数数据失败')
+  } finally {
+    indicesLoading.value = false
+  }
+  
+  // Fetch currencies independently
+  currenciesLoading.value = true
+  try {
+    const response = await getGlobalMarket()
     currencies.value = response.currencies.map(curr => ({
       pair: curr.name,
       rate: curr.price,
       change: curr.price * curr.change_pct / 100,
       change_pct: curr.change_pct,
     }))
-    
+  } catch {
+    ElMessage.error('获取汇率数据失败')
+  } finally {
+    currenciesLoading.value = false
+  }
+  
+  // Fetch commodities independently
+  commoditiesLoading.value = true
+  try {
+    const response = await getGlobalMarket()
     commodities.value = response.commodities.map(comm => ({
       name: comm.name,
       code: comm.code,
       price: comm.price,
       change: comm.price * comm.change_pct / 100,
       change_pct: comm.change_pct,
-      unit: '', // API doesn't provide unit
+      unit: '',
     }))
-    
-    // Update chart
-    updateIndicesChart()
     
     // Set last update time
     lastUpdate.value = response.update_time || new Date().toLocaleString('zh-CN', {
@@ -192,11 +215,10 @@ const fetchGlobalMarketData = async () => {
       minute: '2-digit',
       second: '2-digit',
     })
-    
-  } catch (error) {
-    ElMessage.error('获取全球市场数据失败')
+  } catch {
+    ElMessage.error('获取大宗商品数据失败')
   } finally {
-    loading.value = false
+    commoditiesLoading.value = false
   }
 }
 
@@ -234,161 +256,213 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="global-market">
-    <!-- Header -->
-    <div class="page-header">
-      <h1 class="page-title">全球市场总览</h1>
-      <div class="header-info">
-        <span class="update-time" v-if="lastUpdate">
-          <el-icon><Clock /></el-icon>
-          最后更新: {{ lastUpdate }}
-        </span>
-        <el-button 
-          type="primary" 
-          size="small" 
-          :loading="loading"
-          @click="fetchGlobalMarketData"
-        >
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
-      </div>
-    </div>
-    
-    <!-- Major Indices Section -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">全球主要指数</h2>
-        <span class="section-subtitle">实时行情</span>
+  <ErrorBoundary>
+    <div class="global-market">
+      <!-- Header -->
+      <div class="page-header">
+        <h1 class="page-title">全球市场总览</h1>
+        <div class="header-info">
+          <span class="update-time" v-if="lastUpdate">
+            <el-icon><Clock /></el-icon>
+            最后更新: {{ lastUpdate }}
+          </span>
+          <el-button 
+            type="primary" 
+            size="small" 
+            :loading="indicesLoading || currenciesLoading || commoditiesLoading"
+            @click="fetchGlobalMarketData"
+          >
+            <el-icon><Refresh /></el-icon>
+            刷新
+          </el-button>
+        </div>
       </div>
       
-      <!-- Indices Grid -->
-      <div class="indices-grid">
-        <el-card 
-          v-for="idx in indices" 
-          :key="idx.code"
-          class="index-card"
-          :class="getValueClass(idx.change_pct)"
-          shadow="hover"
-        >
-          <div class="index-header">
-            <span class="index-name">{{ idx.name }}</span>
-            <span class="index-region">{{ idx.region }}</span>
-          </div>
-          <div class="index-price">{{ formatPrice(idx.price) }}</div>
-          <div class="index-change" :class="getValueClass(idx.change_pct)">
-            <span class="change-value">{{ formatChange(idx.change) }}</span>
-            <span class="change-percent">{{ formatPercent(idx.change_pct) }}</span>
-          </div>
-        </el-card>
-      </div>
-      
-      <!-- Indices Comparison Chart -->
-      <el-card class="chart-card" shadow="never">
-        <template #header>
-          <div class="card-header">
-            <span>指数涨跌幅对比</span>
-          </div>
-        </template>
-        <EChartsWrapper
-          :option="indicesChartOption"
-          :loading="loading"
-          height="320px"
-        />
-      </el-card>
-    </div>
-    
-    <!-- Currency & Commodity Section -->
-    <div class="section dual-section">
-      <!-- Currency Exchange Rates -->
-      <div class="sub-section">
+      <!-- Major Indices Section -->
+      <div class="section">
         <div class="section-header">
-          <h2 class="section-title">外汇汇率</h2>
+          <h2 class="section-title">全球主要指数</h2>
+          <span class="section-subtitle">实时行情</span>
         </div>
-        <el-card shadow="never" class="data-card">
-          <el-table :data="currencies" stripe size="small">
-            <el-table-column prop="pair" label="货币对" width="100" />
-            <el-table-column prop="rate" label="汇率" width="100">
-              <template #default="{ row }">
-                <span class="rate-value">{{ row.rate.toFixed(4) }}</span>
+        
+        <ErrorBoundary>
+          <!-- Skeleton when loading -->
+          <template v-if="indicesLoading">
+            <div class="indices-grid">
+              <SkeletonLoader
+                v-for="i in 8"
+                :key="`index-skeleton-${i}`"
+                variant="card"
+                height="160px"
+              />
+            </div>
+          </template>
+          
+          <!-- Indices Grid -->
+          <template v-else>
+            <div class="indices-grid">
+              <el-card 
+                v-for="idx in indices" 
+                :key="idx.code"
+                class="index-card"
+                :class="getValueClass(idx.change_pct)"
+                shadow="hover"
+              >
+                <div class="index-header">
+                  <span class="index-name">{{ idx.name }}</span>
+                  <span class="index-region">{{ idx.region }}</span>
+                </div>
+                <div class="index-price">{{ formatPrice(idx.price) }}</div>
+                <div class="index-change" :class="getValueClass(idx.change_pct)">
+                  <span class="change-value">{{ formatChange(idx.change) }}</span>
+                  <span class="change-percent">{{ formatPercent(idx.change_pct) }}</span>
+                </div>
+              </el-card>
+            </div>
+            
+            <!-- Indices Comparison Chart -->
+            <el-card class="chart-card" shadow="never">
+              <template #header>
+                <div class="card-header">
+                  <span>指数涨跌幅对比</span>
+                </div>
               </template>
-            </el-table-column>
-            <el-table-column prop="change_pct" label="涨跌幅">
-              <template #default="{ row }">
-                <span :class="getValueClass(row.change_pct)" class="change-cell">
-                  {{ formatPercent(row.change_pct) }}
-                </span>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
+              <EChartsWrapper
+                :option="indicesChartOption"
+                height="320px"
+              />
+            </el-card>
+          </template>
+        </ErrorBoundary>
       </div>
       
-      <!-- Commodity Prices -->
-      <div class="sub-section">
-        <div class="section-header">
-          <h2 class="section-title">大宗商品</h2>
+      <!-- Currency & Commodity Section -->
+      <div class="section dual-section">
+        <!-- Currency Exchange Rates -->
+        <div class="sub-section">
+          <div class="section-header">
+            <h2 class="section-title">外汇汇率</h2>
+          </div>
+          
+          <ErrorBoundary>
+            <!-- Skeleton when loading -->
+            <SkeletonLoader
+              v-if="currenciesLoading"
+              variant="table"
+              :rows="5"
+              :columns="3"
+            />
+            
+            <!-- Actual content when loaded -->
+            <el-card v-else shadow="never" class="data-card">
+              <el-table :data="currencies" stripe size="small">
+                <el-table-column prop="pair" label="货币对" width="100" />
+                <el-table-column prop="rate" label="汇率" width="100">
+                  <template #default="{ row }">
+                    <span class="rate-value">{{ row.rate.toFixed(4) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="change_pct" label="涨跌幅">
+                  <template #default="{ row }">
+                    <span :class="getValueClass(row.change_pct)" class="change-cell">
+                      {{ formatPercent(row.change_pct) }}
+                    </span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-card>
+          </ErrorBoundary>
         </div>
-        <el-card shadow="never" class="data-card">
-          <el-table :data="commodities" stripe size="small">
-            <el-table-column prop="name" label="品种" width="90" />
-            <el-table-column prop="price" label="价格" width="100">
-              <template #default="{ row }">
-                <span class="price-value">{{ row.price.toFixed(2) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="change_pct" label="涨跌幅">
-              <template #default="{ row }">
-                <span :class="getValueClass(row.change_pct)" class="change-cell">
-                  {{ formatPercent(row.change_pct) }}
-                </span>
-              </template>
-            </el-table-column>
-          </el-table>
+        
+        <!-- Commodity Prices -->
+        <div class="sub-section">
+          <div class="section-header">
+            <h2 class="section-title">大宗商品</h2>
+          </div>
+          
+          <ErrorBoundary>
+            <!-- Skeleton when loading -->
+            <SkeletonLoader
+              v-if="commoditiesLoading"
+              variant="table"
+              :rows="5"
+              :columns="3"
+            />
+            
+            <!-- Actual content when loaded -->
+            <el-card v-else shadow="never" class="data-card">
+              <el-table :data="commodities" stripe size="small">
+                <el-table-column prop="name" label="品种" width="90" />
+                <el-table-column prop="price" label="价格" width="100">
+                  <template #default="{ row }">
+                    <span class="price-value">{{ row.price.toFixed(2) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="change_pct" label="涨跌幅">
+                  <template #default="{ row }">
+                    <span :class="getValueClass(row.change_pct)" class="change-cell">
+                      {{ formatPercent(row.change_pct) }}
+                    </span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-card>
+          </ErrorBoundary>
+        </div>
+      </div>
+      
+      <!-- Market Summary -->
+      <div class="section summary-section">
+        <el-card shadow="never" class="summary-card">
+          <template #header>
+            <div class="card-header">
+              <span>市场概况</span>
+            </div>
+          </template>
+          
+          <ErrorBoundary>
+            <!-- Skeleton when loading -->
+            <SkeletonLoader
+              v-if="indicesLoading"
+              variant="card"
+              height="80px"
+            />
+            
+            <!-- Actual content when loaded -->
+            <div v-else class="summary-grid">
+              <div class="summary-item">
+                <div class="summary-label">上涨指数</div>
+                <div class="summary-value text-up">
+                  {{ indices.filter(i => i.change_pct > 0).length }}
+                </div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-label">下跌指数</div>
+                <div class="summary-value text-down">
+                  {{ indices.filter(i => i.change_pct < 0).length }}
+                </div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-label">平盘指数</div>
+                <div class="summary-value text-flat">
+                  {{ indices.filter(i => i.change_pct === 0).length }}
+                </div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-label">平均涨跌</div>
+                <div 
+                  class="summary-value" 
+                  :class="getValueClass(indices.reduce((sum, i) => sum + i.change_pct, 0) / indices.length)"
+                >
+                  {{ formatPercent(indices.reduce((sum, i) => sum + i.change_pct, 0) / indices.length) }}
+                </div>
+              </div>
+            </div>
+          </ErrorBoundary>
         </el-card>
       </div>
     </div>
-    
-    <!-- Market Summary -->
-    <div class="section summary-section">
-      <el-card shadow="never" class="summary-card">
-        <template #header>
-          <div class="card-header">
-            <span>市场概况</span>
-          </div>
-        </template>
-        <div class="summary-grid">
-          <div class="summary-item">
-            <div class="summary-label">上涨指数</div>
-            <div class="summary-value text-up">
-              {{ indices.filter(i => i.change_pct > 0).length }}
-            </div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-label">下跌指数</div>
-            <div class="summary-value text-down">
-              {{ indices.filter(i => i.change_pct < 0).length }}
-            </div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-label">平盘指数</div>
-            <div class="summary-value text-flat">
-              {{ indices.filter(i => i.change_pct === 0).length }}
-            </div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-label">平均涨跌</div>
-            <div 
-              class="summary-value" 
-              :class="getValueClass(indices.reduce((sum, i) => sum + i.change_pct, 0) / indices.length)"
-            >
-              {{ formatPercent(indices.reduce((sum, i) => sum + i.change_pct, 0) / indices.length) }}
-            </div>
-          </div>
-        </div>
-      </el-card>
-    </div>
-  </div>
+  </ErrorBoundary>
 </template>
 
 <style scoped>

@@ -18,7 +18,24 @@ import { formatNumber, formatSign } from '@/utils/formatters'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 
 // Breakpoint detection for responsive tables
-const { isMobile, isXs } = useBreakpoint()
+const { isMobile, isXs, isTablet, isDesktop, isWide } = useBreakpoint()
+
+// Current date for title bar
+const currentDate = computed(() => {
+  const now = new Date()
+  const month = now.getMonth() + 1
+  const day = now.getDate()
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+  return `${month}月${day}日 周${weekdays[now.getDay()]}`
+})
+
+// Responsive grid layout class
+const gridLayoutClass = computed(() => {
+  if (isWide.value) return 'grid-wide'
+  if (isDesktop.value) return 'grid-desktop'
+  if (isTablet.value) return 'grid-tablet'
+  return 'grid-mobile'
+})
 
 // Loading states - per-widget for progressive loading
 const fearGreedLoading = ref(true)
@@ -579,11 +596,6 @@ const indexSlides = computed(() => {
   return slides
 })
 
-// Quick actions
-const handleQuickAction = (action: string) => {
-  ElMessage.info(`执行快捷操作: ${action}`)
-}
-
 // Lifecycle
 onMounted(() => {
   // Fire all widget loaders simultaneously - they'll render independently
@@ -689,24 +701,14 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Page Title -->
-    <h1 class="page-title">首页宏观复盘看板</h1>
-
-    <!-- Quick Actions -->
-    <div class="quick-actions">
-      <el-button size="small" @click="handleQuickAction('refresh')">
-        刷新数据
-      </el-button>
-      <el-button size="small" @click="handleQuickAction('export')">
-        导出报告
-      </el-button>
-      <el-button size="small" @click="handleQuickAction('settings')">
-        看板设置
-      </el-button>
+    <!-- Compact Title Bar -->
+    <div class="title-bar">
+      <span class="title-bar-text">宏观复盘看板</span>
+      <span class="title-bar-date">{{ currentDate }}</span>
     </div>
 
     <!-- Main Grid -->
-    <div class="dashboard-grid">
+    <div class="dashboard-grid" :class="gridLayoutClass">
       <!-- Fear/Greed Index Widget -->
       <div class="card widget-fear-greed" role="region" aria-label="恐惧贪婪指数仪表盘" aria-live="polite">
         <div class="card-header">
@@ -995,14 +997,14 @@ onUnmounted(() => {
         <SkeletonLoader
           v-if="heatmapLoading"
           variant="heatmap"
-          height="400px"
+          :height="isMobile ? '250px' : '300px'"
         />
         
         <!-- Actual chart when loaded -->
         <EChartsWrapper
           v-else
           :option="heatmapOption"
-          height="400px"
+          :height="isMobile ? '250px' : '300px'"
         />
       </ErrorBoundary>
     </div>
@@ -1066,7 +1068,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Market Sentiment Word Cloud -->
-    <div class="card word-cloud-card">
+    <div class="card word-cloud-card" :class="{ 'mobile-hidden': isMobile }">
       <div class="card-header">
         <div class="card-title">市场热点词云</div>
         <DataConfidenceBadge :source="sectorsDataSource" />
@@ -1085,10 +1087,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.dashboard {
-  padding: 0;
-}
-
 /* Index Bar */
 .index-bar {
   background: var(--bg-card);
@@ -1242,39 +1240,134 @@ onUnmounted(() => {
   }
 }
 
-/* Page Title */
-.page-title {
-  font-size: 24px;
+/* Dashboard Container - Max-width constraint */
+.dashboard {
+  padding: 0;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* Compact Title Bar */
+.title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border-radius: 4px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.title-bar-text {
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 16px;
 }
 
-/* Quick Actions */
-.quick-actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
+.title-bar-date {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
-/* Dashboard Grid */
+@media (max-width: 768px) {
+  .title-bar {
+    padding: 10px 12px;
+  }
+  
+  .title-bar-text {
+    font-size: 15px;
+  }
+  
+  .title-bar-date {
+    font-size: 12px;
+  }
+}
+
+/* Dashboard Grid - 12-column responsive system */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 16px;
 }
 
-@media (max-width: 1400px) {
-  .dashboard-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+/* Mobile (<768px): Single column, all widgets full-width */
+.dashboard-grid.grid-mobile {
+  grid-template-columns: 1fr;
 }
 
-@media (max-width: 768px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-  }
+.dashboard-grid.grid-mobile .widget-fear-greed,
+.dashboard-grid.grid-mobile .widget-erp,
+.dashboard-grid.grid-mobile .widget-crowding,
+.dashboard-grid.grid-mobile .widget-style,
+.dashboard-grid.grid-mobile .widget-gainers,
+.dashboard-grid.grid-mobile .widget-losers {
+  grid-column: span 1;
+}
+
+/* Tablet (768-1024px): 2-column layout */
+.dashboard-grid.grid-tablet {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.dashboard-grid.grid-tablet .widget-fear-greed,
+.dashboard-grid.grid-tablet .widget-erp {
+  grid-column: span 2;
+}
+
+.dashboard-grid.grid-tablet .widget-crowding,
+.dashboard-grid.grid-tablet .widget-style,
+.dashboard-grid.grid-tablet .widget-gainers,
+.dashboard-grid.grid-tablet .widget-losers {
+  grid-column: span 1;
+}
+
+/* Desktop (1024-1400px): 2-column layout with proper spans */
+.dashboard-grid.grid-desktop {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.dashboard-grid.grid-desktop .widget-fear-greed,
+.dashboard-grid.grid-desktop .widget-erp {
+  grid-column: span 2;
+}
+
+.dashboard-grid.grid-desktop .widget-crowding,
+.dashboard-grid.grid-desktop .widget-style,
+.dashboard-grid.grid-desktop .widget-gainers,
+.dashboard-grid.grid-desktop .widget-losers {
+  grid-column: span 1;
+}
+
+/* Wide (>1400px): 12-column grid with custom spans */
+.dashboard-grid.grid-wide {
+  grid-template-columns: repeat(12, 1fr);
+}
+
+/* Row 1: Fear/Greed (5 cols) + ERP (3 cols) + Crowding (4 cols) */
+.dashboard-grid.grid-wide .widget-fear-greed {
+  grid-column: span 5;
+}
+
+.dashboard-grid.grid-wide .widget-erp {
+  grid-column: span 3;
+}
+
+.dashboard-grid.grid-wide .widget-crowding {
+  grid-column: span 4;
+}
+
+/* Row 2: Style Strength (6 cols) + Gainers (3 cols) + Losers (3 cols) */
+.dashboard-grid.grid-wide .widget-style {
+  grid-column: span 6;
+}
+
+.dashboard-grid.grid-wide .widget-gainers {
+  grid-column: span 3;
+}
+
+.dashboard-grid.grid-wide .widget-losers {
+  grid-column: span 3;
 }
 
 /* Card Styles */
@@ -1316,13 +1409,11 @@ onUnmounted(() => {
 
 /* Widget Specific Styles */
 .widget-fear-greed {
-  grid-column: span 2;
   border: 2px solid var(--brand-navy-dark);
   transition: all 0.25s ease;
 }
 
 .widget-erp {
-  grid-column: span 2;
   border: 2px solid var(--brand-navy-dark);
   transition: all 0.25s ease;
 }
@@ -1447,7 +1538,7 @@ onUnmounted(() => {
 /* Gainers/Losers Tables */
 .widget-gainers,
 .widget-losers {
-  grid-column: span 1;
+  /* Grid span handled by responsive grid classes */
 }
 
 /* Heatmap Card */
@@ -1463,6 +1554,11 @@ onUnmounted(() => {
 /* Word Cloud Card */
 .word-cloud-card {
   margin-bottom: 16px;
+}
+
+/* Mobile: Hide word cloud to save vertical space */
+.mobile-hidden {
+  display: none;
 }
 
 .sector-grid {

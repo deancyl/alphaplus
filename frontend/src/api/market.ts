@@ -93,7 +93,14 @@ export interface DashboardMetrics {
 
 export const getDashboardMetrics = async (): Promise<DashboardMetrics> => {
   const response = await api.get('/market/dashboard')
-  return response.data!
+  return response.data ?? {
+    fear_greed: [],
+    erp: [],
+    style_strength: [],
+    crowding: [],
+    timestamp: '',
+    data_quality: { partial: true, errors: {} }
+  }
 }
 
 // Get index valuation

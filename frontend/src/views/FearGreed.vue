@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getFearGreedIndex } from '@/api/analytics'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
+import DataConfidenceBadge from '@/components/DataConfidenceBadge.vue'
 
 // Fear/Greed data type
 interface FearGreedData {
@@ -27,7 +30,12 @@ interface FactorConfig {
   angle: number
 }
 
+// Data source type tracking
+type DataSource = 'real' | 'delayed' | 'simulated'
+
 // Reactive state
+const fearGreedLoading = ref(true)
+const fearGreedDataSource = ref<DataSource>('simulated')
 const loading = ref(false)
 const fearGreedData = ref<FearGreedData[]>([])
 const gaugeChart = ref<echarts.ECharts | null>(null)
@@ -396,37 +404,45 @@ const initTrendChart = () => {
 
 // Fetch data from API
 const fetchData = async () => {
+  fearGreedLoading.value = true
   loading.value = true
   try {
     const response = await getFearGreedIndex()
-    fearGreedData.value = response.sort((a, b) => 
-      a.trade_date.localeCompare(b.trade_date)
-    )
+    if (response && Array.isArray(response) && response.length > 0) {
+      fearGreedData.value = response.sort((a, b) => 
+        a.trade_date.localeCompare(b.trade_date)
+      )
+      fearGreedDataSource.value = 'real'
+    }
     
-    // Initialize charts after data is loaded
-    setTimeout(() => {
-      initGaugeChart()
-      initTrendChart()
-    }, 100)
+    // Initialize charts after DOM update
+    await nextTick()
+    initGaugeChart()
+    initTrendChart()
   } catch (error) {
     ElMessage.error('获取恐惧贪婪指数数据失败')
+    fearGreedDataSource.value = 'simulated'
   } finally {
+    fearGreedLoading.value = false
     loading.value = false
   }
 }
 
-// Handle window resize
+// Debounced resize handler
+let resizeTimer: ReturnType<typeof setTimeout> | null = null
 const handleResize = () => {
-  gaugeChart.value?.resize()
-  trendChart.value?.resize()
+  if (resizeTimer) clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(() => {
+    gaugeChart.value?.resize()
+    trendChart.value?.resize()
+  }, 200)
 }
 
 // Watch for data changes
-watch(currentData, () => {
+watch(currentData, async () => {
   if (currentData.value) {
-    setTimeout(() => {
-      initGaugeChart()
-    }, 50)
+    await nextTick()
+    initGaugeChart()
   }
 })
 
@@ -443,11 +459,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="fear-greed" v-loading="loading">
+  <div class="fear-greed">
     <!-- Header -->
     <div class="page-header">
       <h2>恐惧贪婪指数</h2>
       <div class="header-info">
+        <DataConfidenceBadge 
+          :source="fearGreedDataSource" 
+          :timestamp="currentData?.trade_date"
+        />
         <span class="update-time" v-if="currentData">
           更新时间: {{ formatDate(currentData.trade_date) }}
         </span>
@@ -461,8 +481,22 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Main content -->
-    <div class="content-wrapper" v-if="currentData">
+    <ErrorBoundary>
+      <!-- Loading Skeletons -->
+      <template v-if="fearGreedLoading">
+        <div class="skeleton-wrapper">
+          <SkeletonLoader variant="gauge" height="500px" />
+        </div>
+        <div class="skeleton-wrapper" style="margin-top: 16px;">
+          <SkeletonLoader variant="image" height="300px" />
+        </div>
+        <div class="skeleton-wrapper" style="margin-top: 16px;">
+          <SkeletonLoader variant="table" :rows="3" :columns="3" />
+        </div>
+      </template>
+
+      <!-- Main content -->
+      <div class="content-wrapper" v-else-if="currentData">
       <!-- Topology Tree Section -->
       <div class="topology-section">
         <!-- SVG Connection Lines -->
@@ -612,10 +646,11 @@ onUnmounted(() => {
     </div>
 
     <!-- Empty state -->
-    <div class="empty-state" v-else-if="!loading">
+    <div class="empty-state" v-else>
       <p>暂无数据</p>
     </div>
-  </div>
+  </ErrorBoundary>
+</div>
 </template>
 
 <style scoped>
@@ -624,6 +659,13 @@ onUnmounted(() => {
   min-height: calc(100dvh - 100px);
   padding: var(--spacing-md);
   background: var(--bg-system);
+}
+
+.skeleton-wrapper {
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .page-header {

@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Clock, Refresh } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import type { EChartsOption } from 'echarts'
 import { getDomesticMarket } from '@/api/market'
 import { formatNumber, formatPercent } from '@/utils/formatters'
@@ -46,8 +48,10 @@ interface CapitalFlow {
   south_accumulated: number
 }
 
-// State
-const loading = ref(true)
+// State - Separated loading states for progressive loading
+const indicesLoading = ref(true)
+const sectorsLoading = ref(true)
+const capitalFlowLoading = ref(true)
 const lastUpdate = ref<string>('')
 const indices = ref<IndexData[]>([])
 const marketBreadth = ref<MarketBreadth | null>(null)
@@ -271,14 +275,18 @@ const marketSentiment = computed(() => {
   return { text: '均衡', class: 'text-flat' }
 })
 
-// Fetch market data
+// Fetch market data with separate loading states
 const fetchMarketData = async () => {
-  loading.value = true
+  // Set all loading states to true at start
+  indicesLoading.value = true
+  sectorsLoading.value = true
+  capitalFlowLoading.value = true
+  
   try {
     const response = await getDomesticMarket()
     
     // Map indices data - API returns limited fields, add defaults for pe/pb/volume/amount
-    indices.value = response.indices.map(idx => ({
+    indices.value = (response.indices ?? []).map(idx => ({
       code: idx.code,
       name: idx.name,
       price: idx.price,
@@ -289,20 +297,21 @@ const fetchMarketData = async () => {
       pe: 0, // Not provided by API
       pb: 0, // Not provided by API
     }))
+    indicesLoading.value = false
     
     // Map market breadth data
     marketBreadth.value = {
-      advancing: response.market_breadth.advancing,
-      declining: response.market_breadth.declining,
-      unchanged: response.market_breadth.unchanged,
-      limit_up: response.market_breadth.limit_up,
-      limit_down: response.market_breadth.limit_down,
-      total_amount: response.volume.total_turnover,
-      turnover_rate: response.volume.turnover_rate,
+      advancing: response.market_breadth?.advancing ?? 0,
+      declining: response.market_breadth?.declining ?? 0,
+      unchanged: response.market_breadth?.unchanged ?? 0,
+      limit_up: response.market_breadth?.limit_up ?? 0,
+      limit_down: response.market_breadth?.limit_down ?? 0,
+      total_amount: response.volume?.total_turnover ?? 0,
+      turnover_rate: response.volume?.turnover_rate ?? 0,
     }
     
     // Map sector data - API returns limited fields, add defaults for code/leading_stock/leading_change
-    sectors.value = response.sectors.map((sector, idx) => ({
+    sectors.value = (response.sectors ?? []).map((sector, idx) => ({
       name: sector.name,
       code: `SW${idx.toString().padStart(2, '0')}`,
       change_pct: sector.change_pct,
@@ -310,31 +319,50 @@ const fetchMarketData = async () => {
       leading_change: 0, // Not provided by API
     }))
     
-    // Map capital flow data - API returns single day, use empty array for chart
-    capitalFlow.value = []
-    
-    // Update charts
+    // Update heatmap chart after sectors loaded
     updateHeatmapChart()
+    sectorsLoading.value = false
+    
+    // Map capital flow data - use north_bound data
+    const dateStr = response.update_time?.split(' ')[0] || new Date().toISOString().split('T')[0]
+    capitalFlow.value = [{
+      date: dateStr,
+      north_inflow: response.north_bound?.net_inflow ?? 0,
+      south_inflow: 0, // Not provided by API
+      north_accumulated: 0, // Not provided by API
+      south_accumulated: 0, // Not provided by API
+    }]
+    
+    // Update capital flow chart after data loaded
     updateCapitalFlowChart()
+    capitalFlowLoading.value = false
     
     // Set last update time from API
     lastUpdate.value = response.update_time
     
   } catch (error) {
     ElMessage.error('获取市场数据失败')
-  } finally {
-    loading.value = false
+    // Reset loading states on error
+    indicesLoading.value = false
+    sectorsLoading.value = false
+    capitalFlowLoading.value = false
   }
 }
 
 // Update heatmap chart
 const updateHeatmapChart = () => {
+  // Empty array protection
+  if (sectors.value.length === 0) return
+  
   const data: [string, string, number, string][] = []
   const sortedSectors = [...sectors.value].sort((a, b) => b.change_pct - a.change_pct)
   
+  // Dynamic grid layout - calculate cols based on sector count
+  const cols = Math.ceil(Math.sqrt(sortedSectors.length))
+  
   sortedSectors.forEach((sector, idx) => {
-    const col = idx % 6
-    const row = Math.floor(idx / 6)
+    const col = idx % cols
+    const row = Math.floor(idx / cols)
     data.push([col.toString(), row.toString(), sector.change_pct, sector.name])
   })
   
@@ -381,26 +409,27 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="domestic-stock-market">
-    <!-- Header -->
-    <div class="page-header">
-      <h1 class="page-title">国内股票市场总览</h1>
-      <div class="header-info">
-        <span class="update-time" v-if="lastUpdate">
-          <el-icon><Clock /></el-icon>
-          最后更新: {{ lastUpdate }}
-        </span>
-        <el-button
-          type="primary"
-          size="small"
-          :loading="loading"
-          @click="fetchMarketData"
-        >
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
+  <ErrorBoundary>
+    <div class="domestic-stock-market">
+      <!-- Header -->
+      <div class="page-header">
+        <h1 class="page-title">国内股票市场总览</h1>
+        <div class="header-info">
+          <span class="update-time" v-if="lastUpdate">
+            <el-icon><Clock /></el-icon>
+            最后更新: {{ lastUpdate }}
+          </span>
+          <el-button
+            type="primary"
+            size="small"
+            :loading="indicesLoading || sectorsLoading || capitalFlowLoading"
+            @click="fetchMarketData"
+          >
+            <el-icon><Refresh /></el-icon>
+            刷新
+          </el-button>
+        </div>
       </div>
-    </div>
     
     <!-- Major Indices Section -->
     <div class="section">
@@ -409,7 +438,15 @@ onUnmounted(() => {
         <span class="section-subtitle">实时行情</span>
       </div>
       
-      <div class="indices-grid">
+      <!-- Skeleton for indices loading -->
+      <div v-if="indicesLoading" class="indices-grid skeleton-indices-grid">
+        <el-card v-for="i in 7" :key="`skeleton-${i}`" class="index-card skeleton-card" shadow="never">
+          <SkeletonLoader variant="index-item" />
+        </el-card>
+      </div>
+      
+      <!-- Indices data -->
+      <div v-else class="indices-grid">
         <el-card 
           v-for="idx in indices" 
           :key="idx.code"
@@ -532,9 +569,12 @@ onUnmounted(() => {
       </div>
       
       <el-card class="heatmap-card" shadow="never">
+        <!-- Skeleton for heatmap loading -->
+        <SkeletonLoader v-if="sectorsLoading" variant="heatmap" height="380px" />
+        <!-- Heatmap chart -->
         <EChartsWrapper
+          v-else
           :option="heatmapOption"
-          :loading="loading"
           height="380px"
         />
       </el-card>
@@ -548,9 +588,12 @@ onUnmounted(() => {
       </div>
       
       <el-card class="capital-flow-card" shadow="never">
+        <!-- Skeleton for capital flow loading -->
+        <SkeletonLoader v-if="capitalFlowLoading" variant="widget" height="320px" />
+        <!-- Capital flow chart -->
         <EChartsWrapper
+          v-else
           :option="capitalFlowOption"
-          :loading="loading"
           height="320px"
         />
       </el-card>
@@ -564,7 +607,13 @@ onUnmounted(() => {
       </div>
       
       <el-card class="table-card" shadow="never">
+        <!-- Skeleton for table loading -->
+        <div v-if="sectorsLoading" class="table-skeleton">
+          <SkeletonLoader variant="table" :rows="10" :columns="4" />
+        </div>
+        <!-- Sector table -->
         <el-table 
+          v-else
           :data="sectors" 
           stripe 
           size="small"
@@ -590,6 +639,7 @@ onUnmounted(() => {
       </el-card>
     </div>
   </div>
+  </ErrorBoundary>
 </template>
 
 <style scoped>
@@ -874,5 +924,18 @@ onUnmounted(() => {
 
 .text-flat {
   color: var(--market-flat);
+}
+
+/* Skeleton Styles */
+.skeleton-indices-grid {
+  min-height: 200px;
+}
+
+.skeleton-card {
+  min-height: 140px;
+}
+
+.table-skeleton {
+  padding: 16px;
 }
 </style>

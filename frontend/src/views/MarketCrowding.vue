@@ -1261,6 +1261,7 @@ onUnmounted(() => {
     <div class="empty-state" v-else-if="!loading">
       <p>暂无数据</p>
     </div>
+    </div>
   </ErrorBoundary>
 </template>
 

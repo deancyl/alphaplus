@@ -4,6 +4,9 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { getStyleStrength } from '@/api/analytics'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
+import DataConfidenceBadge from '@/components/DataConfidenceBadge.vue'
 
 // Style strength data type
 interface StyleStrengthItem {
@@ -33,7 +36,8 @@ const styleDimensions: StyleDimension[] = [
 ]
 
 // Reactive state
-const loading = ref(false)
+const loading = ref(true)
+const dataSource = ref<'real' | 'delayed' | 'simulated'>('simulated')
 const styleData = ref<StyleStrengthItem[]>([])
 const radarChart = ref<echarts.ECharts | null>(null)
 const timelineChart = ref<echarts.ECharts | null>(null)
@@ -372,6 +376,13 @@ const fetchData = async () => {
     const response = await getStyleStrength()
     styleData.value = response
     
+    // Set data source based on response
+    if (response && response.length > 0) {
+      dataSource.value = 'real'
+    } else {
+      dataSource.value = 'simulated'
+    }
+    
     // Initialize charts after data is loaded
     setTimeout(() => {
       initRadarChart()
@@ -379,6 +390,7 @@ const fetchData = async () => {
     }, 100)
   } catch (error) {
     ElMessage.error('获取市场风格强度数据失败')
+    dataSource.value = 'simulated'
   } finally {
     loading.value = false
   }
@@ -418,53 +430,93 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="style-strength" v-loading="loading">
-    <!-- Header -->
-    <div class="page-header">
-      <h2>市场风格强度</h2>
-      <div class="header-info">
-        <span class="update-time" v-if="currentDimensionData.length > 0">
-          更新时间: {{ formatDate(currentDimensionData[currentDimensionData.length - 1].trade_date) }}
-        </span>
-        <el-tag 
-          v-if="styleRecommendation"
-          :class="['recommendation-tag', `tag-${styleRecommendation.strength}`, `z-score-tag-${styleRecommendation.zScoreLevel}`]"
-          size="large"
-        >
-          <span v-if="styleRecommendation.zScoreLevel !== 'normal'" class="tag-warning-icon">⚠️</span>
-          {{ styleRecommendation.recommendation }}
-          <el-tooltip 
-            v-if="styleRecommendation.zScoreLevel !== 'normal'"
-            :content="`Z-Score: ${styleRecommendation.zScore.toFixed(2)} (${styleRecommendation.zScoreLevel === 'alert' ? '极度拥挤' : styleRecommendation.zScoreLevel === 'warning' ? '拥挤警告' : '极度冷清'})`"
-            placement="bottom"
-          >
-            <el-icon class="info-icon"><QuestionFilled /></el-icon>
-          </el-tooltip>
-        </el-tag>
-      </div>
-    </div>
-
-    <!-- Main content -->
-    <div class="content-grid" v-if="currentDimensionData.length > 0">
-      <!-- Left: Radar chart -->
-      <div class="radar-section card">
-        <div class="card-title">风格强度雷达</div>
-        <div class="radar-container" ref="radarChartRef"></div>
-        <div class="dominant-style">
-          <span class="label">当前主导风格:</span>
-          <span class="value">{{ dominantStyle.label }}</span>
+  <div class="style-strength">
+    <ErrorBoundary>
+      <!-- Skeleton when loading -->
+      <template v-if="loading">
+        <div class="page-header">
+          <h2>市场风格强度</h2>
+          <SkeletonLoader variant="text" width="200px" height="20px" />
         </div>
-      </div>
+        
+        <div class="content-grid">
+          <!-- Left: Radar skeleton -->
+          <div class="radar-section card">
+            <SkeletonLoader variant="text" width="120px" height="16px" />
+            <SkeletonLoader variant="gauge" height="260px" />
+          </div>
+          
+          <!-- Right: Dimensions skeleton -->
+          <div class="dimensions-section card">
+            <SkeletonLoader variant="text" width="120px" height="16px" />
+            <div class="dimension-skeleton-list">
+              <SkeletonLoader v-for="i in 6" :key="i" variant="card" height="60px" />
+            </div>
+          </div>
+          
+          <!-- Rotation matrix skeleton -->
+          <div class="rotation-section card">
+            <SkeletonLoader variant="text" width="120px" height="16px" />
+            <SkeletonLoader variant="heatmap" :rows="2" :columns="4" />
+          </div>
+          
+          <!-- Timeline skeleton -->
+          <div class="timeline-section card">
+            <SkeletonLoader variant="text" width="180px" height="16px" />
+            <SkeletonLoader variant="image" height="320px" />
+          </div>
+        </div>
+      </template>
+      
+      <!-- Actual content when loaded -->
+      <template v-else>
+        <!-- Header -->
+        <div class="page-header">
+          <h2>市场风格强度</h2>
+          <div class="header-info">
+            <DataConfidenceBadge :source="dataSource" :timestamp="currentDimensionData.length > 0 ? currentDimensionData[currentDimensionData.length - 1].trade_date : undefined" />
+            <span class="update-time" v-if="currentDimensionData.length > 0">
+              更新时间: {{ formatDate(currentDimensionData[currentDimensionData.length - 1].trade_date) }}
+            </span>
+            <el-tag 
+              v-if="styleRecommendation"
+              :class="['recommendation-tag', `tag-${styleRecommendation.strength}`, `z-score-tag-${styleRecommendation.zScoreLevel}`]"
+              size="large"
+            >
+              <span v-if="styleRecommendation.zScoreLevel !== 'normal'" class="tag-warning-icon">⚠️</span>
+              {{ styleRecommendation.recommendation }}
+              <el-tooltip 
+                v-if="styleRecommendation.zScoreLevel !== 'normal'"
+                :content="`Z-Score: ${styleRecommendation.zScore.toFixed(2)} (${styleRecommendation.zScoreLevel === 'alert' ? '极度拥挤' : styleRecommendation.zScoreLevel === 'warning' ? '拥挤警告' : '极度冷清'})`"
+                placement="bottom"
+              >
+                <el-icon class="info-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </el-tag>
+          </div>
+        </div>
 
-      <!-- Right: Style dimensions -->
-      <div class="dimensions-section card">
-        <div class="card-title">风格维度选择</div>
-        <div class="dimension-list">
-          <div 
-            v-for="(dim, index) in styleDimensions" 
-            :key="dim.key"
-            :class="['dimension-item', { active: selectedDimension === dim.key, [`z-score-${dimensionZScores[index].level}`]: dimensionZScores[index].level !== 'normal' }]"
-            @click="handleDimensionChange(dim.key)"
+        <!-- Main content -->
+        <div class="content-grid" v-if="currentDimensionData.length > 0">
+          <!-- Left: Radar chart -->
+          <div class="radar-section card">
+            <div class="card-title">风格强度雷达</div>
+            <div class="radar-container" ref="radarChartRef"></div>
+            <div class="dominant-style">
+              <span class="label">当前主导风格:</span>
+              <span class="value">{{ dominantStyle.label }}</span>
+            </div>
+          </div>
+
+          <!-- Right: Style dimensions -->
+          <div class="dimensions-section card">
+            <div class="card-title">风格维度选择</div>
+            <div class="dimension-list">
+              <div 
+                v-for="(dim, index) in styleDimensions" 
+                :key="dim.key"
+                :class="['dimension-item', { active: selectedDimension === dim.key, [`z-score-${dimensionZScores[index].level}`]: dimensionZScores[index].level !== 'normal' }]"
+                @click="handleDimensionChange(dim.key)"
           >
             <div class="dimension-header">
               <span class="dimension-label">{{ dim.label }}</span>
@@ -526,9 +578,11 @@ onUnmounted(() => {
     </div>
 
     <!-- Empty state -->
-    <div class="empty-state" v-else-if="!loading">
+    <div class="empty-state" v-else>
       <p>暂无数据</p>
     </div>
+      </template>
+    </ErrorBoundary>
   </div>
 </template>
 
@@ -884,6 +938,15 @@ onUnmounted(() => {
   justify-content: center;
   padding: 60px;
   color: var(--text-muted);
+}
+
+/* Skeleton styles */
+.dimension-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 /* Responsive */

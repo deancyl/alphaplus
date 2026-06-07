@@ -1,6 +1,7 @@
 """
 Analytics API router - Fear/Greed, ERP, Crowding, Style Strength.
 """
+import logging
 import numpy as np
 from scipy.optimize import minimize
 from fastapi import APIRouter, Depends, Query
@@ -9,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Literal
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
+
 from backend.core import get_db
+from backend.services.cache import realtime_cache
 from backend.models.fund import (
     MarketFearGreedSentimentHistory,
     BondEquityYieldSpreadHistory,
@@ -42,28 +46,47 @@ async def get_fear_greed_index(
     """
     恐惧贪婪指数 - 6维因子树拓扑.
     Returns composite score and factor breakdown.
+    With error handling, caching (60s TTL), and fallback mechanism.
     """
-    result = await db.execute(
-        select(MarketFearGreedSentimentHistory)
-        .order_by(MarketFearGreedSentimentHistory.trade_date.desc())
-        .limit(30)
-    )
-    history = result.scalars().all()
+    # Check cache first
+    cache_key = "analytics:fear-greed"
+    cached = await realtime_cache.get(cache_key)
+    if cached:
+        return cached
     
-    return [
-        FearGreedResponse(
-            trade_date=h.trade_date,
-            composite_score=h.composite_score,
-            sentiment_status=h.sentiment_status,
-            factor_volatility=h.factor_volatility,
-            factor_safe_haven=h.factor_safe_haven,
-            factor_margin_ratio=h.factor_margin_ratio,
-            factor_volume_deviation=h.factor_volume_deviation,
-            factor_futures_basis=h.factor_futures_basis,
-            factor_stock_strength=h.factor_stock_strength,
+    try:
+        result = await db.execute(
+            select(MarketFearGreedSentimentHistory)
+            .order_by(MarketFearGreedSentimentHistory.trade_date.desc())
+            .limit(30)
         )
-        for h in history
-    ]
+        history = result.scalars().all()
+        
+        if not history:
+            logger.warning("No fear-greed data found in database")
+            return []
+        
+        response = [
+            FearGreedResponse(
+                trade_date=h.trade_date,
+                composite_score=h.composite_score,
+                sentiment_status=h.sentiment_status,
+                factor_volatility=h.factor_volatility,
+                factor_safe_haven=h.factor_safe_haven,
+                factor_margin_ratio=h.factor_margin_ratio,
+                factor_volume_deviation=h.factor_volume_deviation,
+                factor_futures_basis=h.factor_futures_basis,
+                factor_stock_strength=h.factor_stock_strength,
+            )
+            for h in history
+        ]
+        
+        # Cache for 60 seconds
+        await realtime_cache.set(cache_key, response, ttl_seconds=60)
+        return response
+    except Exception as e:
+        logger.error(f"Failed to fetch fear-greed data: {e}")
+        return []
 
 
 @router.get("/erp")
@@ -78,7 +101,14 @@ async def get_erp_spread(
     """
     股债ERP收益差 - 标准差视角与百分位视角.
     Returns ERP history with ±1SD, ±2SD channels.
+    With caching (60s TTL).
     """
+    # Check cache first
+    cache_key = f"analytics:erp:{index_code}:{risk_free_type}"
+    cached = await realtime_cache.get(cache_key)
+    if cached:
+        return cached
+    
     risk_free_rate = await get_risk_free_rate_async(risk_free_type)
     
     result = await db.execute(
@@ -89,7 +119,7 @@ async def get_erp_spread(
     )
     history = result.scalars().all()
     
-    return [
+    response = [
         ERPSpreadResponse(
             index_code=h.index_code,
             index_name="沪深300" if h.index_code == "000300" else "中证500",
@@ -104,6 +134,10 @@ async def get_erp_spread(
         )
         for h in history
     ]
+    
+    # Cache for 60 seconds
+    await realtime_cache.set(cache_key, response, ttl_seconds=60)
+    return response
 
 
 @router.get("/style-strength")
@@ -113,7 +147,14 @@ async def get_style_strength(
     """
     市场风格强度 - 大小盘/价值成长相对强弱.
     Returns ratio history with percentile bands.
+    With caching (60s TTL).
     """
+    # Check cache first
+    cache_key = "analytics:style-strength"
+    cached = await realtime_cache.get(cache_key)
+    if cached:
+        return cached
+    
     result = await db.execute(
         select(MarketStyleStrengthHistory)
         .order_by(MarketStyleStrengthHistory.trade_date.desc())
@@ -121,7 +162,7 @@ async def get_style_strength(
     )
     history = result.scalars().all()
     
-    return [
+    response = [
         {
             "trade_date": h.trade_date,
             "index_code_num": h.index_code_num,
@@ -131,6 +172,10 @@ async def get_style_strength(
         }
         for h in history
     ]
+    
+    # Cache for 60 seconds
+    await realtime_cache.set(cache_key, response, ttl_seconds=60)
+    return response
 
 
 @router.get("/crowding")
@@ -141,7 +186,14 @@ async def get_crowding_analysis(
     """
     市场拥挤度分析 - 换手率/资金流入合成拥挤度指标.
     Returns crowding score and PE percentile matrix.
+    With 60s cache.
     """
+    # Check cache first
+    cache_key = f"analytics:crowding:{category or 'all'}"
+    cached = await realtime_cache.get(cache_key)
+    if cached:
+        return cached
+    
     conditions = []
     if category:
         conditions.append(MarketCrowdingValuationHistory.category == category)
@@ -154,7 +206,7 @@ async def get_crowding_analysis(
     )
     history = result.scalars().all()
     
-    return [
+    response = [
         {
             "asset_code": h.asset_code,
             "trade_date": h.trade_date,
@@ -165,6 +217,10 @@ async def get_crowding_analysis(
         }
         for h in history
     ]
+    
+    # Cache for 60 seconds
+    await realtime_cache.set(cache_key, response, ttl_seconds=60)
+    return response
 
 
 @router.get("/rotation-vector")
