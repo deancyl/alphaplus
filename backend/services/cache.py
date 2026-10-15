@@ -22,6 +22,10 @@ class RealtimeCache:
         self._ttl = ttl_seconds
         self._stale_ttl = stale_ttl  # Stale data TTL (default 5 minutes)
         self._stale_data: Dict[str, Any] = {}  # Preserve expired data for stale-while-revalidate
+        # Per-key TTL overrides. Previously set() wrote these into _cache under
+        # "{key}_ttl" but get() never read them, so every ttl_seconds= argument
+        # was silently ignored (global TTL applied instead).
+        self._per_key_ttl: Dict[str, int] = {}
         self._lock = asyncio.Lock()
         self._initialized = False
     
@@ -62,7 +66,7 @@ class RealtimeCache:
             
             elapsed = (datetime.now() - timestamp).total_seconds()
             
-            if elapsed <= self._ttl:
+            if elapsed <= self._per_key_ttl.get(key, self._ttl):
                 return self._cache[key]
             
             if elapsed <= self._stale_ttl:
@@ -117,7 +121,7 @@ class RealtimeCache:
             self._cache[key] = value
             self._timestamps[key] = datetime.now()
             if ttl_seconds is not None:
-                self._cache[f"{key}_ttl"] = ttl_seconds
+                self._per_key_ttl[key] = ttl_seconds
     
     async def get_or_refresh(self, key: str, refresh_func, ttl_seconds: Optional[int] = None) -> Any:
         """
@@ -138,6 +142,7 @@ class RealtimeCache:
             self._cache.clear()
             self._timestamps.clear()
             self._stale_data.clear()
+            self._per_key_ttl.clear()
             self._initialized = False
     
     @property

@@ -18,16 +18,34 @@ Routes tested:
 - /fof/fofBacktest - FOFBacktest
 - /product/wmpFilter - WMPFilter
 """
+import os
 import time
 import pytest
 from playwright.sync_api import sync_playwright, Page, Browser
 
 
 # Configuration
-BASE_URL = "http://localhost:60201"
+BASE_URL = os.environ.get("PERF_BASE_URL", "http://localhost:60201")
 FCP_TARGET_MS = 500  # Target: 500ms
 FCP_TOLERANCE_PCT = 0.05  # 5% tolerance
 FCP_MAX_MS = FCP_TARGET_MS * (1 + FCP_TOLERANCE_PCT)  # 525ms with tolerance
+
+
+def _frontend_reachable() -> bool:
+    """A Playwright FCP benchmark needs a served frontend; without one these
+    tests measure nothing. Skip (offline) rather than fail (wrong)."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(BASE_URL, timeout=3) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _frontend_reachable(),
+    reason=f"no frontend served at {BASE_URL} (npm run dev / dev_60100.sh)",
+)
 
 # Routes to test with their primary selectors (fallback to body)
 ROUTES = [

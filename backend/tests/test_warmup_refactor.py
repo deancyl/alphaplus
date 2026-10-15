@@ -26,17 +26,21 @@ class TestWarmupHotFunds:
     
     @pytest.mark.asyncio
     async def test_warmup_hot_funds_function_exists(self):
-        """Test warmup_hot_funds function exists in main module."""
+        """Test warmup_hot_funds exists and is wired into the warmup task list.
+
+        Since the v0.1.22 refactor the per-source tasks live in
+        ``_run_warmup_tasks`` (``_warmup_cache`` only schedules it), so the
+        wiring is asserted there.
+        """
         from backend import main
-        
-        # Check function exists
-        assert hasattr(main, '_warmup_cache')
-        
-        # The warmup_hot_funds should be called inside _warmup_cache
         import inspect
-        source = inspect.getsource(main._warmup_cache)
-        assert 'warmup_hot_funds' in source or 'hot_funds' in source, \
-            "warmup_hot_funds not found in _warmup_cache"
+
+        assert hasattr(main, '_warmup_cache')
+        assert hasattr(main, '_warmup_hot_funds')
+
+        source = inspect.getsource(main._run_warmup_tasks)
+        assert '_warmup_hot_funds' in source, \
+            "warmup_hot_funds not found in _run_warmup_tasks task list"
 
 
 class TestWarmupFearGreed:
@@ -44,16 +48,16 @@ class TestWarmupFearGreed:
     
     @pytest.mark.asyncio
     async def test_warmup_fear_greed_calls_real_api(self):
-        """Test that warmup_fear_greed calls get_fear_greed_index."""
+        """Test that the fear-greed warmup task is wired in and placeholder-free."""
         from backend import main
-        
         import inspect
-        source = inspect.getsource(main._warmup_cache)
-        
-        # Should contain call to get_fear_greed_index
-        assert 'get_fear_greed_index' in source, \
-            "get_fear_greed_index call not found in _warmup_cache"
-        
-        # Should NOT contain placeholder
-        assert 'warmup_placeholder' not in source, \
+
+        assert hasattr(main, '_warmup_fear_greed_endpoint')
+
+        source = inspect.getsource(main._run_warmup_tasks)
+        assert '_warmup_fear_greed_endpoint' in source, \
+            "fear-greed warmup task not found in _run_warmup_tasks task list"
+
+        warmup_source = inspect.getsource(main._warmup_cache)
+        assert 'warmup_placeholder' not in warmup_source, \
             "warmup_placeholder still in _warmup_cache"

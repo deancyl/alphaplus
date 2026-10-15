@@ -30,7 +30,7 @@ from backend.schemas.market import (
     IndexPEHistoryItem,
     IndexPEHistoryResponse,
 )
-from backend.services.warmup_fallback import get_fallback_sectors
+from backend.services.warmup_fallback import get_fallback_sectors, mark_simulated
 from backend.services.bond_data import bond_data_service, get_fallback_credit_spread, get_fallback_bond_issuance
 
 router = APIRouter()
@@ -654,7 +654,23 @@ async def get_domestic_market(
     # === 4-Layer Cascade for sectors ===
     sectors = None
     sectors_meta = {"is_fallback": True, "source": "unknown"}
-    
+
+    # Negative cache: under the honest policy a failed upstream yields no
+    # sectors, and re-walking the ~3s cascade on every request is pure waste.
+    # Remember the verdict briefly (30s) so recovery is still picked up soon.
+    # Setting sectors=[] (not None) short-circuits the cascade below, since
+    # every layer guards on `sectors is None`.
+    if not settings.allow_simulated_fallback:
+        negative = await realtime_cache.get("domestic_sectors_unavailable")
+        if negative is not None and not (isinstance(negative, dict) and "_stale" in negative):
+            sectors = []
+            sectors_meta = {
+                "is_fallback": True,
+                "source": "unavailable",
+                "is_simulated": False,
+                "reason": "sector upstream unavailable and simulated fallback disabled",
+            }
+
     # Layer 1: Fresh cache (instant response)
     cached_sectors = await realtime_cache.get("domestic_sectors")
     if cached_sectors:
@@ -668,8 +684,20 @@ async def get_domestic_market(
     # Layer 2: Check circuit breaker FIRST - if open, skip all API calls
     if sectors is None and sectors_circuit_breaker.is_open():
         logger.warning("Sectors: Circuit breaker OPEN - skipping all API calls, using fallback")
-        sectors = get_fallback_sectors()
-        sectors_meta = {"is_fallback": True, "source": "static"}
+        if settings.allow_simulated_fallback:
+            sectors = mark_simulated(get_fallback_sectors())
+            sectors_meta = {"is_fallback": True, "source": "static", "is_simulated": True}
+            # Cache the fallback so we don't re-walk the whole cascade per request.
+            await realtime_cache.set("domestic_sectors", sectors, ttl_seconds=300)
+        else:
+            # Honest policy: no fabricated sectors; declare the gap.
+            sectors = []
+            sectors_meta = {
+                "is_fallback": True,
+                "source": "unavailable",
+                "is_simulated": False,
+                "reason": "sector upstream unavailable and simulated fallback disabled",
+            }
     
     # Layer 3: Primary source (only if circuit breaker closed)
     if sectors is None:
@@ -708,8 +736,24 @@ async def get_domestic_market(
     
     # Layer 5: Static fallback (already available)
     if sectors is None:
-        sectors = get_fallback_sectors()
-        sectors_meta = {"is_fallback": True, "source": "static"}
+        if settings.allow_simulated_fallback:
+            sectors = mark_simulated(get_fallback_sectors())
+            sectors_meta = {"is_fallback": True, "source": "static", "is_simulated": True}
+            # Cache so the next request doesn't repeat the full ~3s cascade.
+            await realtime_cache.set("domestic_sectors", sectors, ttl_seconds=300)
+        else:
+            sectors = []
+            sectors_meta = {
+                "is_fallback": True,
+                "source": "unavailable",
+                "is_simulated": False,
+                "reason": "sector upstream unavailable and simulated fallback disabled",
+            }
+
+    # Under the honest policy, remember "no sectors available" briefly so the
+    # next requests short-circuit instead of re-walking the ~3s cascade.
+    if not settings.allow_simulated_fallback and not sectors:
+        await realtime_cache.set("domestic_sectors_unavailable", True, ttl_seconds=30)
 
     # === Build indices list (unchanged) ===
     indices = []

@@ -1,0 +1,101 @@
+{
+ "source": "eastmoney",
+ "captured_at": "2026-10-15",
+ "description": "Frozen external anchor: raw unit-NAV inputs (East Money fund_open_fund_info_em) and published stage returns (fund_open_fund_rank_em), captured while both feeds agreed on as-of date. The test recomputes nav(end)/nav(base)-1 and asserts it reproduces the published value — so the caliber rule itself is under test, deterministically, offline.",
+ "funds": [
+  {
+   "code": "006533",
+   "source": "eastmoney",
+   "as_of": "2026-10-14",
+   "windows": [
+    {
+     "window": "近1月",
+     "published_pct": -14.51,
+     "end_date": "2026-10-14",
+     "end_nav": 7.0567,
+     "base_date": "2026-09-14",
+     "base_nav": 8.254
+    },
+    {
+     "window": "近3月",
+     "published_pct": -23.59,
+     "end_date": "2026-10-14",
+     "end_nav": 7.0567,
+     "base_date": "2026-07-14",
+     "base_nav": 9.2359
+    },
+    {
+     "window": "近6月",
+     "published_pct": -2.16,
+     "end_date": "2026-10-14",
+     "end_nav": 7.0567,
+     "base_date": "2026-04-14",
+     "base_nav": 7.2123
+    },
+    {
+     "window": "近1年",
+     "published_pct": 28.18,
+     "end_date": "2026-10-14",
+     "end_nav": 7.0567,
+     "base_date": "2025-10-14",
+     "base_nav": 5.5053
+    },
+    {
+     "window": "近3年",
+     "published_pct": 197.91,
+     "end_date": "2026-10-14",
+     "end_nav": 7.0567,
+     "base_date": "2023-10-13",
+     "base_nav": 2.3687
+    }
+   ]
+  },
+  {
+   "code": "519005",
+   "source": "eastmoney",
+   "as_of": "2026-10-15",
+   "windows": [
+    {
+     "window": "近1月",
+     "published_pct": -18.68,
+     "end_date": "2026-10-15",
+     "end_nav": 1.5556,
+     "base_date": "2026-09-15",
+     "base_nav": 1.913
+    },
+    {
+     "window": "近3月",
+     "published_pct": -30.67,
+     "end_date": "2026-10-15",
+     "end_nav": 1.5556,
+     "base_date": "2026-07-15",
+     "base_nav": 2.2439
+    },
+    {
+     "window": "近6月",
+     "published_pct": -9.54,
+     "end_date": "2026-10-15",
+     "end_nav": 1.5556,
+     "base_date": "2026-04-15",
+     "base_nav": 1.7196
+    },
+    {
+     "window": "近1年",
+     "published_pct": 20.02,
+     "end_date": "2026-10-15",
+     "end_nav": 1.5556,
+     "base_date": "2025-10-15",
+     "base_nav": 1.2961
+    },
+    {
+     "window": "近3年",
+     "published_pct": 41.37,
+     "end_date": "2026-10-15",
+     "end_nav": 1.5556,
+     "base_date": "2023-10-13",
+     "base_nav": 1.1004
+    }
+   ]
+  }
+ ]
+}

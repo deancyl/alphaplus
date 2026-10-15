@@ -62,6 +62,19 @@ def check_fund(ak, code: str) -> dict:
 
     end_date = nav["date"].iloc[-1]
     end_tri = nav["tri"].iloc[-1]
+
+    # Two different upstream feeds roll over to a new trading day at different
+    # times. If they disagree on the as-of date, comparing them would
+    # manufacture a false caliber breach -- report the mismatch honestly
+    # instead of counting it as a failure.
+    rank_date = pd.to_datetime(row.get("日期"), errors="coerce")
+    if pd.notna(rank_date) and end_date.normalize() != rank_date.normalize():
+        return {
+            "code": code,
+            "error": "as_of_mismatch",
+            "rank_as_of": str(rank_date.date()),
+            "nav_series_as_of": str(end_date.date()),
+        }
     results = []
     worst = 0.0
     for label in WINDOWS:
@@ -119,7 +132,13 @@ def main() -> int:
             print(f"SKIP {code}: {type(exc).__name__}: {exc}")
             continue
         if "error" in report:
-            print(f"SKIP {code}: {report['error']}")
+            if report["error"] == "as_of_mismatch":
+                print(
+                    f"SKIP {code}: as_of_mismatch (rank={report['rank_as_of']} "
+                    f"nav_series={report['nav_series_as_of']}; upstream rollover lag)"
+                )
+            else:
+                print(f"SKIP {code}: {report['error']}")
             continue
         checked += 1
         status = "ok  " if report["worst"] <= args.max_error else "FAIL"
@@ -133,7 +152,10 @@ def main() -> int:
             )
 
     print(f"\nchecked={checked} failures={failures} tolerance={args.max_error}pp")
-    return 1 if failures else 0
+    if failures:
+        return 1
+    # No comparable fund at all => upstream isn't in a comparable state.
+    return 0 if checked else 2
 
 
 if __name__ == "__main__":

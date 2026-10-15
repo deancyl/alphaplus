@@ -17,6 +17,7 @@ from backend.services.gold_constants import (
     calculate_premium,
 )
 from backend.services.async_akshare import async_akshare
+from backend.services.cache import realtime_cache
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -37,6 +38,12 @@ async def get_gold_spot_price():
     
     Graceful degradation to simulated data if AkShare fails.
     """
+    # 60s cache: the upstream (SGE history + FX) takes ~9s per fetch, and the
+    # payload is a spot price — per-request freshness buys nothing.
+    cached = await realtime_cache.get("gold:spot")
+    if cached is not None and not (isinstance(cached, dict) and "_stale" in cached):
+        return cached
+
     try:
         shanghai_df = await async_akshare.get_spot_hist_sge(symbol="Au99.99")
         shanghai_price_cny_per_g = float(shanghai_df['close'].iloc[-1]) if len(shanghai_df) > 0 else 0.0
@@ -72,7 +79,7 @@ async def get_gold_spot_price():
             include_vat=True
         )
         
-        return {
+        result = {
             "shanghai_gold": {
                 "price": round(shanghai_price_cny_per_g, 2),
                 "unit": "CNY/g",
@@ -110,6 +117,8 @@ async def get_gold_spot_price():
             "timestamp": datetime.now().isoformat(),
             "is_simulated": False
         }
+        await realtime_cache.set("gold:spot", result, ttl_seconds=60)
+        return result
     except Exception as e:
         logger.warning(f"Failed to fetch gold prices from AkShare: {e}")
         # Fallback simulated data with proper conversion

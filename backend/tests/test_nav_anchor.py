@@ -63,6 +63,17 @@ def test_stage_returns_match_eastmoney(ak, code):
     end_date = nav["date"].iloc[-1]
     end_tri = nav["tri"].iloc[-1]
 
+    # The ranking page and the NAV series are two *different* upstream feeds
+    # that roll over to a new trading day at different times. Comparing them
+    # across an as-of gap would manufacture a false caliber breach, so we
+    # require both sides to speak about the same date.
+    rank_date = pd.to_datetime(row.get("日期"))
+    if pd.notna(rank_date) and end_date < rank_date:
+        pytest.skip(
+            f"{code} as-of mismatch: rank page as of {rank_date.date()} "
+            f"but NAV series ends {end_date.date()} (upstream lag)"
+        )
+
     checked = 0
     for label in WINDOWS:
         published = row.get(label)

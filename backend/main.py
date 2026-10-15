@@ -574,6 +574,7 @@ from backend.api.gold import router as gold_router
 from backend.api.portfolio import router as portfolio_router
 from backend.api.wmp import router as wmp_router
 from backend.api.preferences import router as preferences_router
+from backend.api.deposit import router as deposit_router
 
 app.include_router(fund_router, prefix="/api/v1/fund", tags=["Fund"])
 app.include_router(market_router, prefix="/api/v1/market", tags=["Market"])
@@ -586,6 +587,9 @@ app.include_router(gold_router, prefix="/api/v1/gold", tags=["Gold"])
 app.include_router(portfolio_router, prefix="/api/v1/portfolio", tags=["Portfolio"])
 app.include_router(wmp_router, prefix="/api/v1/wmp", tags=["WMP"])
 app.include_router(preferences_router, prefix="/api/v1/preferences", tags=["Preferences"])
+# Deposit was defined but never registered: /api/v1/deposit/rates (used by
+# DepositMarket.vue) 404'd in every deployment. Registered here.
+app.include_router(deposit_router, prefix="/api/v1/deposit", tags=["Deposit"])
 
 
 # Health check endpoint
