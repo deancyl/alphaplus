@@ -302,7 +302,12 @@ class DataFrameLRUCache:
         logger.info(f"Resized L2 DataFrame cache from {old_limit}MB to {new_limit_mb}MB")
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get cache statistics."""
+        """Get cache statistics.
+
+        Note: reads hot keys via an unlocked helper because ``self._lock`` is a
+        plain ``threading.Lock`` (not reentrant) already held here; calling the
+        public ``get_hot_keys()`` would self-deadlock.
+        """
         with self._lock:
             hit_rate = (
                 self._stats["cache_hits"] / self._stats["total_requests"] * 100
@@ -321,8 +326,24 @@ class DataFrameLRUCache:
                 "total_requests": self._stats["total_requests"],
                 "cache_hits": self._stats["cache_hits"],
                 "latency": latency_stats,
-                "hot_keys": self.get_hot_keys(5),
+                "hot_keys": self._hot_keys_locked(5),
             }
+
+    def _hot_keys_locked(self, top_n: int) -> List[Dict[str, Any]]:
+        """Top-N hot keys. Caller must already hold ``self._lock``."""
+        sorted_keys = sorted(
+            self._access_counts.items(),
+            key=lambda x: x[1],
+            reverse=True,
+        )[:top_n]
+        return [
+            {
+                "key": key,
+                "access_count": count,
+                "last_access": self._last_access.get(key, 0),
+            }
+            for key, count in sorted_keys
+        ]
 
 
 # ==================== Global Singleton DataFrame ====================

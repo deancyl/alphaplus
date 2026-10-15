@@ -10,11 +10,33 @@ from backend.models.fund import FundIndicators, MarketFearGreedSentimentHistory
 
 @pytest.fixture(autouse=True)
 async def setup_db():
-    """Setup test database."""
+    """Ensure the tables exist and clear the fixed rows these tests insert.
+
+    ``init_db_pragma(":memory:")`` only sets pragmas on a throwaway connection;
+    the engine itself still points at the app database, so these tests must
+    remove their own fixed-key rows to stay repeatable.
+    """
+    from sqlalchemy import delete
+
     init_db_pragma(":memory:")
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    async def purge():
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(FundIndicators).where(FundIndicators.fund_code == "000001")
+            )
+            await session.execute(
+                delete(MarketFearGreedSentimentHistory).where(
+                    MarketFearGreedSentimentHistory.trade_date == "2024-01-15"
+                )
+            )
+            await session.commit()
+
+    await purge()
     yield
+    await purge()
     await async_engine.dispose()
 
 

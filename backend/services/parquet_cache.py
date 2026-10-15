@@ -333,6 +333,15 @@ def _incremental_write(base_path: Path, new_table: pa.Table, partition_col: str)
             existing_files = list(partition_dir.glob("*.parquet"))
             if existing_files:
                 existing_table = pq.read_table(partition_dir)
+                # Reading a partition directory drops the hive partition column;
+                # restore it so both sides share one schema (and so the rewrite
+                # below still has the partition column to key on).
+                if partition_col not in existing_table.schema.names:
+                    existing_table = existing_table.append_column(
+                        partition_col,
+                        pa.array([partition_value] * existing_table.num_rows, type=pa.string()),
+                    )
+                new_partition_data = new_partition_data.select(existing_table.schema.names)
                 combined = pa.concat_tables([existing_table, new_partition_data])
                 pq.write_to_dataset(
                     combined,

@@ -120,8 +120,10 @@ class TestAsyncCircuitBreaker:
 
     @pytest.mark.asyncio
     async def test_half_open_allows_test_call(self):
-        """Test half-open state allows one test call."""
-        cb = AsyncCircuitBreaker(name="test", failure_threshold=1, recovery_timeout=0.1)
+        """Test half-open state allows a test call and closes once threshold met."""
+        cb = AsyncCircuitBreaker(
+            name="test", failure_threshold=1, recovery_timeout=0.1, success_threshold=1
+        )
 
         async def fail_func():
             raise ValueError("test error")
