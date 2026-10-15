@@ -52,6 +52,25 @@ class Settings(BaseSettings):
     # Server
     host: str = "0.0.0.0"
     port: int = 60200
+    # Internal development / integration test port (see docs/DEV_PLAN_AI_PREDICTION.md)
+    test_port: int = 60100
+
+    # --- Honest degradation policy (research-terminal principle) -------------
+    # When False, upstream failures are DECLARED as unavailable instead of being
+    # back-filled with simulated data. Any simulated payload that is still served
+    # is always flagged with is_simulated=true / source="simulated".
+    allow_simulated_fallback: bool = False
+
+    # --- Forecast / LLM configuration ---------------------------------------
+    # OpenAI-compatible endpoint. Leave api_key empty to disable the LLM layer;
+    # the API then returns enabled=false with a reason (never a fabricated read).
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_api_key: Optional[str] = None
+    llm_model: str = "gpt-4o-mini"
+    # "chat" -> /chat/completions, "responses" -> /responses
+    llm_api_style: str = "chat"
+    llm_timeout_seconds: float = 30.0
+    llm_max_output_tokens: int = 1200
     
     # Thread Pool
     thread_pool_workers: int = 4

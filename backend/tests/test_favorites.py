@@ -22,6 +22,36 @@ async def client():
         yield client
 
 
+@pytest.fixture(autouse=True)
+async def _clean_favorites():
+    """Remove rows this suite creates so runs are isolated and repeatable.
+
+    The endpoints persist to the real SQLite file; without this cleanup a second
+    run hits a duplicate-key error (and the "empty list" expectation fails).
+    """
+    from sqlalchemy import delete
+    from backend.core import AsyncSessionLocal
+    from backend.models.fund import UserFavoritesRegistry
+
+    test_users = ("test_user", "test_user_dup")
+
+    async def purge():
+        try:
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    delete(UserFavoritesRegistry).where(
+                        UserFavoritesRegistry.user_id.in_(test_users)
+                    )
+                )
+                await session.commit()
+        except Exception:  # noqa: BLE001 - best-effort isolation only
+            pass
+
+    await purge()
+    yield
+    await purge()
+
+
 @pytest.mark.asyncio
 async def test_list_favorites_empty(client: AsyncClient):
     """Test GET /favorites returns empty list initially."""

@@ -7,11 +7,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.core import settings, init_db_pragma, async_engine, Base
+from backend.core.envelope import classify_exception, ok, strip_status
 from backend.services.scheduler import scheduler_service
 from backend.services.cache import realtime_cache
 from backend.services.pandas_cache import GLOBAL_FUND_DF
@@ -101,10 +105,18 @@ async def _warmup_cache():
     if not settings.warmup_enabled:
         logger.info("Warmup disabled by config")
         return
-    
-    if settings.warmup_fallback_on_failure:
+
+    # Honest-degradation gate (research-terminal principle): only pre-seed
+    # simulated data when the operator explicitly opts in. Otherwise a real
+    # upstream failure stays visible as "unavailable" in the API responses.
+    if settings.warmup_fallback_on_failure and settings.allow_simulated_fallback:
         await inject_fallback_data()
-        logger.info("Fallback data injected for immediate service availability")
+        logger.info("Fallback (simulated) data injected for immediate availability")
+    elif settings.warmup_fallback_on_failure:
+        logger.info(
+            "Simulated fallback is disabled (allow_simulated_fallback=False); "
+            "unavailable sources will be reported as errors, not fabricated."
+        )
     
     _warmup_status["started"] = True
     _warmup_status["start_time"] = datetime.now().isoformat()
@@ -554,6 +566,7 @@ app.add_middleware(
 from backend.api.fund import router as fund_router
 from backend.api.market import router as market_router
 from backend.api.analytics import router as analytics_router
+from backend.api.forecast import router as forecast_router
 from backend.api.pool import pool_router
 from backend.api.favorites import favorites_router
 from backend.api.insurance import router as insurance_router
@@ -565,6 +578,7 @@ from backend.api.preferences import router as preferences_router
 app.include_router(fund_router, prefix="/api/v1/fund", tags=["Fund"])
 app.include_router(market_router, prefix="/api/v1/market", tags=["Market"])
 app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["Analytics"])
+app.include_router(forecast_router, prefix="/api/v1/analytics", tags=["Forecast"])
 app.include_router(pool_router, prefix="/api/v1", tags=["pool"])
 app.include_router(favorites_router, prefix="/api/v1", tags=["favorites"])
 app.include_router(insurance_router, prefix="/api/v1/insurance", tags=["Insurance"])
@@ -584,6 +598,73 @@ async def health_check():
         "version": settings.app_version,
         "warmup": _warmup_status,
     }
+
+
+# --- Unified envelope / error contract ---------------------------------------
+# Adapted from research-terminal: only whitelisted error codes reach clients,
+# unexpected exceptions are folded into runtime_<Name> and never leak stacks.
+
+_HTTP_ERROR_CODES = {
+    400: "invalid_params",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    405: "method_not_allowed",
+    409: "conflict",
+    429: "rate_limited",
+    502: "upstream_error",
+    503: "unavailable",
+    504: "upstream_timeout",
+}
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Wrap framework HTTP errors in the failure envelope.
+
+    Backward compatible: the legacy ``detail`` field is preserved so existing
+    clients keep working, alongside the new ``ok``/``error``/``action`` contract.
+    """
+    code = _HTTP_ERROR_CODES.get(exc.status_code, "internal_error")
+    payload = fail_request(request, code, exc.status_code, exc.detail if isinstance(exc.detail, str) else None)
+    body = strip_status(payload)
+    # Preserve the pre-envelope shape that existing endpoints/clients rely on.
+    body["detail"] = exc.detail
+    return JSONResponse(status_code=exc.status_code, content=body)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Return invalid_params while preserving FastAPI's legacy ``detail`` list."""
+    payload = strip_status(
+        fail_request(request, "invalid_params", 422, f"{len(exc.errors())} validation error(s)")
+    )
+    payload["detail"] = exc.errors()
+    return JSONResponse(status_code=422, content=payload)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Fold unexpected exceptions into runtime_<Name>; never leak the message."""
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content=strip_status(fail_request(request, classify_exception(exc), 500)),
+    )
+
+
+def _action_from_path(path: str) -> str:
+    """Derive a short action name from a request path (best effort)."""
+    parts = [p for p in path.split("/") if p]
+    if not parts:
+        return "root"
+    return parts[-1] if not parts[-1].startswith("{") else parts[-2] if len(parts) > 1 else "root"
+
+
+def fail_request(request: Request, code: str, status: int, message=None) -> dict:  # noqa: ANN001
+    from backend.core.envelope import fail as _fail
+
+    return _fail(_action_from_path(request.url.path), code, status, message)
 
 
 # Cache statistics endpoint (v0.1.14)

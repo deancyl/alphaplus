@@ -202,6 +202,51 @@ class AkShareDataService:
         
         return result
 
+    async def get_index_daily_history(
+        self, symbol: str, start_date: Optional[str] = None
+    ) -> list[dict]:
+        """Fetch a full daily OHLCV history for one index.
+
+        Kept honest on purpose: on failure this returns an **empty list** rather
+        than a simulated series, so callers can declare the source unavailable
+        instead of charting fabricated bars.
+
+        Args:
+            symbol: AkShare symbol, e.g. "sh000300".
+            start_date: Optional YYYYMMDD lower bound passed to AkShare.
+
+        Returns:
+            List of dicts with keys: date, open, high, low, close, volume.
+        """
+        try:
+            kwargs = {"symbol": symbol}
+            if start_date:
+                kwargs["start_date"] = start_date
+            df = await self._run_sync(ak.stock_zh_index_daily, **kwargs)
+        except Exception as e:  # noqa: BLE001 - degrade to empty, caller decides
+            logger.warning(f"Index daily history failed for {symbol}: {e}")
+            return []
+
+        if df is None or df.empty:
+            return []
+
+        rows: list[dict] = []
+        for _, row in df.iterrows():
+            try:
+                rows.append(
+                    {
+                        "date": str(row["date"]),
+                        "open": float(row["open"]),
+                        "high": float(row["high"]),
+                        "low": float(row["low"]),
+                        "close": float(row["close"]),
+                        "volume": float(row.get("volume", 0) or 0),
+                    }
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        return rows
+
     async def get_futures_quotes(self, category: Optional[str] = None) -> list[dict]:
         """
         Fetch real-time futures quotes.

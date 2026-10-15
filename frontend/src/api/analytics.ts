@@ -97,3 +97,88 @@ export const getRotationVectors = async (
   })
   return response.data ?? []
 }
+
+// --- Forecast (AI / economic-model trend analysis) -------------------------
+
+export interface ForecastLLM {
+  enabled: boolean
+  available: boolean
+  api_style: string
+  model: string | null
+  text: string | null
+  error: string | null
+  usage?: Record<string, unknown> | null
+  note?: string
+}
+
+export interface ForecastMetrics {
+  annualised_drift: number
+  annualised_volatility: number
+  max_drawdown: number
+  hurst: number | null
+  valuation_z: number | null
+  valuation_percentile: number | null
+  regime: string
+}
+
+export interface ForecastComponent {
+  name: string
+  weight: number
+  daily_drift: number
+  annualised_drift: number
+  rationale: string
+}
+
+export interface ForecastData {
+  index_code: string
+  index_name: string
+  as_of: string
+  last_close: number
+  observations: number
+  horizon_days: number
+  metrics: ForecastMetrics
+  model: {
+    kind: string
+    components: ForecastComponent[]
+    blended_daily_drift: number
+  }
+  projection: {
+    dates: string[]
+    quantiles: {
+      p10: number[]
+      p25: number[]
+      p50: number[]
+      p75: number[]
+      p90: number[]
+    }
+  }
+  expected_band: {
+    median_return: number
+    p10_return: number
+    p90_return: number
+    prob_up: number
+  }
+  basis: string[]
+  limits: string[]
+  available: Record<string, unknown>
+  is_simulated: boolean
+  llm: ForecastLLM
+}
+
+/**
+ * Get a trend forecast for an index.
+ * Note: the backend returns the unified envelope, so we read `response.data.data`.
+ */
+export const getForecast = async (
+  indexCode: string,
+  horizon = 20,
+  lookback = 500,
+  withLlm = false
+): Promise<ForecastData | null> => {
+  const response = await api.get(`/analytics/forecast/${indexCode}`, {
+    params: { horizon, lookback, with_llm: withLlm },
+  })
+  const body = response.data as { ok?: boolean; data?: ForecastData }
+  if (body && body.ok === false) return null
+  return body?.data ?? null
+}

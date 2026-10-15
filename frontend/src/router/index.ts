@@ -117,6 +117,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '指数估值' },
   },
   {
+    path: '/market/forecast',
+    name: 'Forecast',
+    component: () => import('@/views/Forecast.vue'),
+    meta: { title: '走势预测' },
+  },
+  {
     path: '/fof/fundCalcAIP',
     name: 'FundCalcAIP',
     component: () => import('@/views/FundCalcAIP.vue'),

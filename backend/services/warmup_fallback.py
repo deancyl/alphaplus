@@ -5,7 +5,7 @@ Provides default/synthetic data to ensure service availability.
 
 import logging
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -23,21 +23,21 @@ async def inject_fallback_data():
     
     for idx_data in get_fallback_index_valuations():
         key = f"index_valuation:{idx_data['index_code']}"
-        tiered_cache.set(key, idx_data, ttl=3600)
+        tiered_cache.set(key, mark_simulated(idx_data), ttl=3600)
     
-    tiered_cache.set("fear_greed:latest", get_fallback_fear_greed(), ttl=300)
+    tiered_cache.set("fear_greed:latest", mark_simulated(get_fallback_fear_greed()), ttl=300)
     
     fallback_quotes = get_fallback_index_quotes()
-    tiered_cache.set("index_quotes:all", fallback_quotes, ttl=300)
-    await realtime_cache.set("indices", fallback_quotes, ttl_seconds=300)
+    tiered_cache.set("index_quotes:all", mark_simulated(fallback_quotes), ttl=300)
+    await realtime_cache.set("indices", mark_simulated(fallback_quotes), ttl_seconds=300)
     
-    await realtime_cache.set("domestic_sectors", get_fallback_sectors(), ttl_seconds=300)
+    await realtime_cache.set("domestic_sectors", mark_simulated(get_fallback_sectors()), ttl_seconds=300)
     
-    await realtime_cache.set("top_funds:10", get_fallback_top_funds(), ttl_seconds=300)
+    await realtime_cache.set("top_funds:10", mark_simulated(get_fallback_top_funds()), ttl_seconds=300)
     
-    await realtime_cache.set("market:heatmap", get_fallback_heatmap(), ttl_seconds=3600)
+    await realtime_cache.set("market:heatmap", mark_simulated(get_fallback_heatmap()), ttl_seconds=3600)
     
-    logger.info("Fallback data injection complete - service available immediately")
+    logger.info("Fallback data injection complete - service available immediately (marked simulated)")
 
 # Core indices mapping (code -> name)
 CORE_INDICES = {
@@ -221,6 +221,29 @@ def get_fallback_sectors() -> List[Dict[str, Any]]:
         {"name": "建筑装饰", "change_pct": 0.23},
         {"name": "通信", "change_pct": 2.78},
     ]
+
+
+def mark_simulated(payload: Any) -> Any:
+    """Tag a payload as simulated so the UI can never mistake it for real data.
+
+    research-terminal's rule #4: never fill in a placeholder value and present it
+    as the real thing. When a caller opts into simulated fallback, the flag must
+    travel with the data all the way to the client.
+    """
+    marker = {
+        "is_simulated": True,
+        "is_fallback": True,
+        "source": "simulated",
+        "simulated_note": "非真实市场数据，仅用于服务可用性占位。",
+        "simulated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    if isinstance(payload, dict):
+        merged = dict(payload)
+        merged.update({k: v for k, v in marker.items() if k not in merged})
+        return merged
+    if isinstance(payload, list):
+        return [mark_simulated(item) if isinstance(item, dict) else item for item in payload]
+    return payload
 
 
 def get_fallback_top_funds() -> Dict[str, Any]:

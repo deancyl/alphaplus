@@ -147,3 +147,7 @@ data/
 *.db
 *.db-wal
 *.db-shm
+
+# Reference material and local goal state (not part of the app)
+.opencode/
+example/

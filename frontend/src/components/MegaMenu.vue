@@ -72,6 +72,7 @@ const menuItems = [
       { label: '风格强度', path: '/market/styleStrength' },
       { label: '股债ERP', path: '/market/erpSpread' },
       { label: '拥挤度分析', path: '/market/marketCrowding', isNew: true },
+      { label: 'AI走势预测', path: '/market/forecast', isNew: true },
     ],
   },
 ]
