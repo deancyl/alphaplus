@@ -81,7 +81,7 @@
 3. 声明式降级：默认不再用假数据冒充真实；`is_simulated` 全程可辨 ✅（`allow_simulated_fallback=False` 默认；`mark_simulated()` 打标）
 4. AI 走势预测功能：后端服务 + API + 前端页面，可在 60100 验证 ✅
 5. 口径外部锚点验收测试存在且有断言 ✅（`scripts/verify_nav_anchor.py` + `backend/tests/test_nav_anchor.py`）
-6. 提交并推送到 GitHub ⏳
+6. 提交并推送到 GitHub ✅（main @ 9809fda，含 3 个提交）
 
 ---
 
