@@ -27,8 +27,18 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from backend.schemas.wmp import WMPItem
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class UnavailableSource(RuntimeError):
+    """Raised by an adapter whose upstream is not wired.
+
+    Distinct from a transport failure: it means "this project has no live
+    integration for that source yet", so the gateway must not treat it as a
+    transient error worth retrying, and must never substitute generated rows.
+    """
 
 
 # ==================== Base Adapter ====================
@@ -60,16 +70,22 @@ class WMPSourceAdapter(ABC):
 class ChinaWealthSource(WMPSourceAdapter):
     """
     中国理财网数据源 - 银保监会官方数据.
-    
+
     API: http://www.chinawealth.com.cn/zzlc/jsp/lccp/lccp.jsp
-    Note: 官方网站数据，需要解析HTML或使用API
+
+    NOTE: the public site exposes no stable machine-readable endpoint that this
+    adapter can rely on (the listing is a POST-form HTML page behind a session
+    cookie).  Until that integration exists this source declares itself
+    unavailable rather than returning generated rows — the previous
+    implementation returned ``_generate_mock_data()``, i.e. random bank names,
+    random yields and random maturity dates, which is fabricated market data.
     """
-    
+
     def __init__(self, timeout: float = 10.0):
         self.timeout = timeout
         self.base_url = "http://www.chinawealth.com.cn"
         self._client: Optional[httpx.AsyncClient] = None
-    
+
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None or self._client.is_closed:
@@ -81,70 +97,11 @@ class ChinaWealthSource(WMPSourceAdapter):
                 }
             )
         return self._client
-    
+
     async def fetch(self, endpoint: str, params: Optional[dict] = None) -> List[dict]:
-        """
-        Fetch WMP data from ChinaWealth.
-        
-        Note: 实际实现需要解析HTML或调用真实API
-        此处返回模拟数据用于演示
-        """
-        logger.info(f"ChinaWealth: Fetching {endpoint}")
-        
-        try:
-            # 实际生产环境需要真实API调用
-            # 这里模拟返回数据，实际应该调用真实接口
-            # client = await self._get_client()
-            # response = await client.get(f"{self.base_url}/api/wmp/list")
-            
-            # 模拟延迟
-            await asyncio.sleep(0.1)
-            
-            # 返回模拟数据
-            return self._generate_mock_data(100)
-            
-        except Exception as e:
-            logger.warning(f"ChinaWealth fetch failed: {e}")
-            raise
-    
-    def _generate_mock_data(self, count: int) -> List[dict]:
-        """Generate mock WMP data for testing."""
-        banks = ["工商银行", "建设银行", "农业银行", "中国银行", "交通银行",
-                 "招商银行", "浦发银行", "民生银行", "兴业银行", "中信银行"]
-        risk_levels = ["PR1", "PR2", "PR3", "PR4", "PR5"]
-        product_types = ["固定收益类", "混合类", "权益类", "商品及金融衍生品类"]
-        
-        products = []
-        for i in range(count):
-            bank = random.choice(banks)
-            risk = random.choice(risk_levels)
-            
-            # 风险等级越高，收益率越高
-            base_yield = 2.0 + risk_levels.index(risk) * 0.8
-            yield_rate = round(base_yield + random.uniform(-0.5, 1.0), 2)
-            
-            # 期限通常在30天到365天
-            duration = random.choice([30, 60, 90, 120, 180, 270, 365, 540, 730])
-            
-            # 起购金额
-            min_amount = random.choice([1, 5, 10, 20, 50, 100]) * 10000
-            
-            products.append({
-                "product_code": f"LC{datetime.now().year}{str(i+1).zfill(6)}",
-                "product_name": f"{bank}理财{random.choice(['稳利', '尊享', '优选', '添利'])}{i+1}号",
-                "yield_rate": yield_rate,
-                "risk_level": risk,
-                "duration": duration,
-                "issuer": bank,
-                "min_amount": min_amount,
-                "product_type": random.choice(product_types),
-                "currency": "CNY",
-                "issue_date": (datetime.now() - timedelta(days=random.randint(1, 30))).strftime("%Y-%m-%d"),
-                "maturity_date": (datetime.now() + timedelta(days=duration)).strftime("%Y-%m-%d"),
-                "is_active": random.random() > 0.2,
-            })
-        
-        return products
+        """Raise ``UnavailableSource`` — no live WMP upstream is wired yet."""
+        logger.info("ChinaWealth: no live endpoint wired for %s", endpoint)
+        raise UnavailableSource("chinawealth_no_live_endpoint")
 
 
 # ==================== Eastmoney WMP Source (Fallback) ====================
@@ -152,15 +109,19 @@ class ChinaWealthSource(WMPSourceAdapter):
 class EastmoneyWMPSource(WMPSourceAdapter):
     """
     天天基金理财数据源 - 东财理财产品.
-    
+
     API: https://fund.eastmoney.com/lc/
+
+    Like ChinaWealth, the listing is an HTML page without a documented stable
+    JSON endpoint, so this source reports unavailable instead of generating
+    random products.
     """
-    
+
     def __init__(self, timeout: float = 10.0):
         self.timeout = timeout
         self.base_url = "https://fund.eastmoney.com"
         self._client: Optional[httpx.AsyncClient] = None
-    
+
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None or self._client.is_closed:
@@ -173,110 +134,64 @@ class EastmoneyWMPSource(WMPSourceAdapter):
                 }
             )
         return self._client
-    
+
     async def fetch(self, endpoint: str, params: Optional[dict] = None) -> List[dict]:
-        """
-        Fetch WMP data from Eastmoney.
-        
-        Note: 实际实现需要解析HTML或调用真实API
-        """
-        logger.info(f"EastmoneyWMP: Fetching {endpoint}")
-        
-        try:
-            # 模拟API调用
-            await asyncio.sleep(0.15)
-            
-            # 返回模拟数据
-            return self._generate_mock_data(80)
-            
-        except Exception as e:
-            logger.warning(f"EastmoneyWMP fetch failed: {e}")
-            raise
-    
-    def _generate_mock_data(self, count: int) -> List[dict]:
-        """Generate mock WMP data for testing."""
-        banks = ["工商银行", "建设银行", "农业银行", "中国银行", "交通银行",
-                 "招商银行", "浦发银行", "民生银行", "兴业银行", "中信银行",
-                 "光大银行", "平安银行", "华夏银行", "广发银行", "邮储银行"]
-        risk_levels = ["PR1", "PR2", "PR3", "PR4", "PR5"]
-        product_types = ["固定收益类", "混合类", "权益类"]
-        
-        products = []
-        for i in range(count):
-            bank = random.choice(banks)
-            risk = random.choice(risk_levels)
-            
-            base_yield = 2.5 + risk_levels.index(risk) * 0.7
-            yield_rate = round(base_yield + random.uniform(-0.3, 0.8), 2)
-            duration = random.choice([30, 60, 90, 120, 180, 270, 365])
-            min_amount = random.choice([1, 5, 10, 20, 50]) * 10000
-            
-            products.append({
-                "product_code": f"EM{datetime.now().year}{str(i+1).zfill(6)}",
-                "product_name": f"{bank}{random.choice(['天天', '周周', '月月', '季度'])}盈{i+1}",
-                "yield_rate": yield_rate,
-                "risk_level": risk,
-                "duration": duration,
-                "issuer": bank,
-                "min_amount": min_amount,
-                "product_type": random.choice(product_types),
-                "currency": "CNY",
-                "issue_date": (datetime.now() - timedelta(days=random.randint(1, 20))).strftime("%Y-%m-%d"),
-                "maturity_date": (datetime.now() + timedelta(days=duration)).strftime("%Y-%m-%d"),
-                "is_active": True,
-            })
-        
-        return products
+        """Raise ``UnavailableSource`` — no live WMP upstream is wired yet."""
+        logger.info("EastmoneyWMP: no live endpoint wired for %s", endpoint)
+        raise UnavailableSource("eastmoney_no_live_endpoint")
 
 
 # ==================== Mock WMP Source (Graceful Degradation) ====================
 
 class MockWMPSource(WMPSourceAdapter):
     """
-    Mock WMP data source for graceful degradation.
-    
-    Used when all real sources fail.
+    Reference-data source for explicit degradation only.
+
+    This adapter generates rows that are *not* real products.  It is therefore
+    registered but only consulted when ``settings.allow_simulated_fallback`` is
+    explicitly enabled, and every row is tagged ``is_simulated=True`` so a
+    caller can never mistake it for live data.
     """
-    
+
     async def fetch(self, endpoint: str, params: Optional[dict] = None) -> List[dict]:
-        """Generate mock WMP data."""
-        logger.info(f"MockWMP: Generating data for {endpoint}")
-        
+        """Generate clearly-tagged reference rows."""
+        logger.info(f"MockWMP: Generating tagged reference data for {endpoint}")
+
         # Simulate minimal delay
         await asyncio.sleep(0.05)
-        
+
         return self._generate_mock_data(50)
-    
+
     def _generate_mock_data(self, count: int) -> List[dict]:
-        """Generate realistic mock WMP data."""
+        """Generate reference WMP rows, tagged so they cannot be mistaken live."""
         banks = ["工商银行", "建设银行", "农业银行", "中国银行", "交通银行", "招商银行"]
         risk_levels = ["PR1", "PR2", "PR3"]
-        product_types = ["固定收益类", "混合类"]
-        
+
         products = []
         for i in range(count):
             bank = random.choice(banks)
             risk = random.choice(risk_levels)
-            
+
             yield_rate = round(2.0 + risk_levels.index(risk) * 0.6 + random.uniform(0, 0.5), 2)
             duration = random.choice([90, 180, 270, 365])
             min_amount = random.choice([1, 5, 10]) * 10000
-            
+
             products.append({
-                "product_code": f"MOCK{str(i+1).zfill(8)}",
-                "product_name": f"模拟理财产品{i+1}号",
+                "product_code": f"SIMULATED{str(i+1).zfill(8)}",
+                "product_name": f"模拟参考理财产品{i+1}号",
                 "yield_rate": yield_rate,
                 "risk_level": risk,
                 "duration": duration,
                 "issuer": bank,
                 "min_amount": min_amount,
-                "product_type": random.choice(product_types),
+                "product_type": "固定收益类",
                 "currency": "CNY",
                 "issue_date": datetime.now().strftime("%Y-%m-%d"),
                 "maturity_date": (datetime.now() + timedelta(days=duration)).strftime("%Y-%m-%d"),
                 "is_active": True,
+                "is_simulated": True,
             })
-        
+
         return products
 
 
@@ -344,6 +259,13 @@ class WMPDataGateway:
         
         # Try each source in order
         for source_name, adapter in sources:
+            # The reference adapter is only consulted when the operator has
+            # explicitly opted into simulated fallbacks.  With the default
+            # policy it is skipped entirely, so a "no live source" outcome stays
+            # an honest empty result instead of generated products.
+            if source_name == "mock" and not settings.allow_simulated_fallback:
+                continue
+
             fallback_chain.append(source_name)
             
             try:

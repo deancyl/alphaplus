@@ -32,6 +32,9 @@ const loading = ref(false)
 const filterTimeMs = ref<number | null>(null)
 const statistics = ref<WMPStatistics | null>(null)
 
+// Set when the backend reports no live WMP source is wired (HTTP 503).
+const unavailableMessage = ref<string | null>(null)
+
 // Yield rate range slider
 const yieldRange = ref<[number, number]>([0, 10])
 
@@ -53,13 +56,17 @@ let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null
 // ==================== Computed Properties ====================
 
 const averageYield = computed(() => {
-  if (!statistics.value) return '-'
-  return `${statistics.value.avg_yield_rate.toFixed(2)}%`
+  const rate = statistics.value?.avg_yield_rate
+  // Never assume the field exists: a shape mismatch used to throw inside this
+  // computed and the ErrorBoundary blanked the entire page.
+  if (typeof rate !== 'number' || Number.isNaN(rate)) return '-'
+  return `${rate.toFixed(2)}%`
 })
 
 const averageDuration = computed(() => {
-  if (!statistics.value) return '-'
-  return formatDuration(statistics.value.avg_duration)
+  const days = statistics.value?.avg_duration
+  if (typeof days !== 'number' || Number.isNaN(days) || days <= 0) return '-'
+  return formatDuration(days)
 })
 
 // ==================== Filter Functions ====================
@@ -87,8 +94,12 @@ const handleFilter = async () => {
     const response = await filterWMP(filterParams.value)
     tableData.value = response.products
     total.value = response.total
+    // 503 => the project has no live WMP source; say so instead of showing an
+    // empty table that looks like "no products matched your filters".
+    unavailableMessage.value = response.unavailable ? (response.message ?? '数据源暂未接入') : null
   } catch (error) {
     ElMessage.error('筛选失败，请重试')
+    unavailableMessage.value = null
   } finally {
     loading.value = false
     filterTimeMs.value = Math.round(performance.now() - startTime)
@@ -186,7 +197,7 @@ onMounted(() => {
             <div class="quick-stats" v-if="statistics">
               <div class="stat-item">
                 <div class="stat-label">产品总数</div>
-                <div class="stat-value">{{ statistics.total_products.toLocaleString() }}</div>
+                <div class="stat-value">{{ (statistics.total_products ?? 0).toLocaleString() }}</div>
               </div>
               <div class="stat-item">
                 <div class="stat-label">平均收益</div>
@@ -319,6 +330,12 @@ onMounted(() => {
           </div>
           
           <!-- Empty state when no results -->
+          <EmptyState
+            v-else-if="!loading && unavailableMessage"
+            icon="error"
+            title="数据源暂未接入"
+            :description="unavailableMessage"
+          />
           <EmptyState
             v-else-if="!loading && tableData.length === 0"
             icon="search"

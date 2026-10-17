@@ -16,10 +16,10 @@ interface IndexData {
   price: number
   change: number
   change_pct: number
-  volume: number
-  amount: number
-  pe: number
-  pb: number
+  volume: number | null
+  amount: number | null
+  pe: number | null
+  pb: number | null
 }
 
 interface MarketBreadth {
@@ -34,18 +34,18 @@ interface MarketBreadth {
 
 interface SectorData {
   name: string
-  code: string
+  code: string | null
   change_pct: number
-  leading_stock: string
-  leading_change: number
+  leading_stock: string | null
+  leading_change: number | null
 }
 
 interface CapitalFlow {
   date: string
-  north_inflow: number
-  south_inflow: number
-  north_accumulated: number
-  south_accumulated: number
+  north_inflow: number | null
+  south_inflow: number | null
+  north_accumulated: number | null
+  south_accumulated: number | null
 }
 
 // State - Separated loading states for progressive loading
@@ -82,7 +82,7 @@ const heatmapOption = ref<EChartsOption>({
   },
   xAxis: {
     type: 'category',
-    data: ['1', '2', '3', '4', '5', '6'],
+    data: [],
     splitArea: { show: true },
     axisLine: { show: false },
     axisTick: { show: false },
@@ -90,7 +90,7 @@ const heatmapOption = ref<EChartsOption>({
   },
   yAxis: {
     type: 'category',
-    data: ['1', '2', '3', '4', '5'],
+    data: [],
     splitArea: { show: true },
     axisLine: { show: false },
     axisTick: { show: false },
@@ -169,7 +169,7 @@ const capitalFlowOption = ref<EChartsOption>({
     },
   },
   legend: {
-    data: ['北向资金', '南向资金'],
+    data: ['北向资金'],
     top: 0,
     textStyle: { color: '#4A4A4A' },
   },
@@ -204,16 +204,6 @@ const capitalFlowOption = ref<EChartsOption>({
   series: [
     {
       name: '北向资金',
-      type: 'bar',
-      data: [],
-      barWidth: '35%',
-      itemStyle: {
-        color: (params: any) => (params.value as number) >= 0 ? '#E63935' : '#2E7D32',
-        borderRadius: [4, 4, 0, 0],
-      },
-    },
-    {
-      name: '南向资金',
       type: 'bar',
       data: [],
       barWidth: '35%',
@@ -257,6 +247,13 @@ const advanceDeclineRatio = computed(() => {
   return (advancing / declining).toFixed(2)
 })
 
+// 涨跌比样式：'-'/'∞' 等无法解析为数字时按平盘处理
+const advanceDeclineClass = computed(() => {
+  const v = parseFloat(advanceDeclineRatio.value)
+  if (Number.isNaN(v)) return 'text-flat'
+  return v >= 1 ? 'text-up' : 'text-down'
+})
+
 // Computed: market sentiment
 const marketSentiment = computed(() => {
   if (!marketBreadth.value) return { text: '-', class: 'text-flat' }
@@ -277,6 +274,9 @@ const marketSentiment = computed(() => {
 
 // Fetch market data with separate loading states
 const fetchMarketData = async () => {
+  // 防止自动刷新重入
+  if (inFlight) return
+  inFlight = true
   // Set all loading states to true at start
   indicesLoading.value = true
   sectorsLoading.value = true
@@ -285,17 +285,17 @@ const fetchMarketData = async () => {
   try {
     const response = await getDomesticMarket()
     
-    // Map indices data - API returns limited fields, add defaults for pe/pb/volume/amount
+    // Map indices data - API returns limited fields; absent fields rendered as "—"
     indices.value = (response.indices ?? []).map(idx => ({
       code: idx.code,
       name: idx.name,
       price: idx.price,
       change: idx.price * idx.change_pct / 100, // Calculate absolute change
       change_pct: idx.change_pct,
-      volume: 0, // Not provided by API
-      amount: 0, // Not provided by API
-      pe: 0, // Not provided by API
-      pb: 0, // Not provided by API
+      volume: null, // Not provided by API
+      amount: null, // Not provided by API
+      pe: null, // Not provided by API
+      pb: null, // Not provided by API
     }))
     indicesLoading.value = false
     
@@ -310,27 +310,27 @@ const fetchMarketData = async () => {
       turnover_rate: response.volume?.turnover_rate ?? 0,
     }
     
-    // Map sector data - API returns limited fields, add defaults for code/leading_stock/leading_change
-    sectors.value = (response.sectors ?? []).map((sector, idx) => ({
+    // Map sector data - API returns limited fields; absent fields rendered as "—"
+    sectors.value = (response.sectors ?? []).map((sector) => ({
       name: sector.name,
-      code: `SW${idx.toString().padStart(2, '0')}`,
+      code: null, // Not provided by API
       change_pct: sector.change_pct,
-      leading_stock: '-', // Not provided by API
-      leading_change: 0, // Not provided by API
+      leading_stock: null, // Not provided by API
+      leading_change: null, // Not provided by API
     }))
     
     // Update heatmap chart after sectors loaded
     updateHeatmapChart()
     sectorsLoading.value = false
     
-    // Map capital flow data - use north_bound data
-    const dateStr = response.update_time?.split(' ')[0] || new Date().toISOString().split('T')[0]
+    // Map capital flow data - only north_bound provided by API
+    const dateStr = response.update_time?.split(' ')[0] ?? null
     capitalFlow.value = [{
-      date: dateStr,
-      north_inflow: response.north_bound?.net_inflow ?? 0,
-      south_inflow: 0, // Not provided by API
-      north_accumulated: 0, // Not provided by API
-      south_accumulated: 0, // Not provided by API
+      date: dateStr ?? '—',
+      north_inflow: response.north_bound?.net_inflow ?? null,
+      south_inflow: null, // Not provided by API
+      north_accumulated: null, // Not provided by API
+      south_accumulated: null, // Not provided by API
     }]
     
     // Update capital flow chart after data loaded
@@ -346,6 +346,8 @@ const fetchMarketData = async () => {
     indicesLoading.value = false
     sectorsLoading.value = false
     capitalFlowLoading.value = false
+  } finally {
+    inFlight = false
   }
 }
 
@@ -359,6 +361,7 @@ const updateHeatmapChart = () => {
   
   // Dynamic grid layout - calculate cols based on sector count
   const cols = Math.ceil(Math.sqrt(sortedSectors.length))
+  const rows = Math.ceil(sortedSectors.length / cols)
   
   sortedSectors.forEach((sector, idx) => {
     const col = idx % cols
@@ -366,6 +369,9 @@ const updateHeatmapChart = () => {
     data.push([col.toString(), row.toString(), sector.change_pct, sector.name])
   })
   
+  // 坐标轴仅作为网格定位，标签隐藏；使用真实网格尺寸而非占位标签
+  ;(heatmapOption.value.xAxis as any).data = Array.from({ length: cols }, (_, i) => i.toString())
+  ;(heatmapOption.value.yAxis as any).data = Array.from({ length: rows }, (_, i) => i.toString())
   // @ts-expect-error - ECharts type inference issue with series data assignment
   heatmapOption.value.series[0].data = data
 
@@ -383,21 +389,23 @@ const updateHeatmapChart = () => {
 const updateCapitalFlowChart = () => {
   // @ts-expect-error - ECharts type inference issue with xAxis data
   capitalFlowOption.value.xAxis.data = capitalFlow.value.map(d => d.date)
+  // 仅北向资金由 API 提供；南向资金无数据，不绘制该序列
   // @ts-expect-error - ECharts type inference issue with series data
   capitalFlowOption.value.series[0].data = capitalFlow.value.map(d => d.north_inflow)
-  // @ts-expect-error - ECharts type inference issue with series data
-  capitalFlowOption.value.series[1].data = capitalFlow.value.map(d => d.south_inflow)
 }
 
 // Auto refresh timer
 let refreshTimer: ReturnType<typeof setInterval> | null = null
+let inFlight = false
 
 onMounted(() => {
   fetchMarketData()
   
-  // Auto refresh every 60 seconds
+  // Auto refresh every 60 seconds (skip when tab hidden; avoid re-entry)
   refreshTimer = setInterval(() => {
-    fetchMarketData()
+    if (document.visibilityState === 'visible') {
+      fetchMarketData()
+    }
   }, 60000)
 })
 
@@ -526,7 +534,7 @@ onUnmounted(() => {
             <div class="breadth-row single">
               <div class="breadth-item large">
                 <div class="breadth-label">涨跌比</div>
-                <div class="breadth-value" :class="parseFloat(advanceDeclineRatio) >= 1 ? 'text-up' : 'text-down'">
+                <div class="breadth-value" :class="advanceDeclineClass">
                   {{ advanceDeclineRatio }}
                 </div>
               </div>
@@ -583,8 +591,8 @@ onUnmounted(() => {
     <!-- Capital Flow Section -->
     <div class="section">
       <div class="section-header">
-        <h2 class="section-title">南北向资金流向</h2>
-        <span class="section-subtitle">近10个交易日</span>
+        <h2 class="section-title">北向资金流向</h2>
+        <span class="section-subtitle">北向资金（最新交易日）</span>
       </div>
       
       <el-card class="capital-flow-card" shadow="never">
@@ -627,11 +635,15 @@ onUnmounted(() => {
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="leading_stock" label="领涨股" min-width="120" />
+          <el-table-column prop="leading_stock" label="领涨股" min-width="120">
+            <template #default="{ row }">
+              {{ row.leading_stock ?? '—' }}
+            </template>
+          </el-table-column>
           <el-table-column prop="leading_change" label="领涨股涨幅" width="120">
             <template #default="{ row }">
               <span :class="getValueClass(row.leading_change)" class="change-cell">
-                {{ formatPercent(row.leading_change) }}
+                {{ row.leading_change === null ? '—' : formatPercent(row.leading_change) }}
               </span>
             </template>
           </el-table-column>

@@ -170,17 +170,32 @@ a, button, td, input, select, .clickable {
 
 /* ==================== Responsive Utility Classes ==================== */
 
-/* Hide on specific breakpoints */
-.hide-mobile {
-  display: block;
+/* Hide on specific breakpoints.
+   Semantics follow composables/useBreakpoint.ts:
+     mobile  = < 768px      tablet = 768–1024px      desktop = >= 1024px
+   Each utility only ever *hides* inside its own range — a base `display: block`
+   here previously fought the component's own `display: flex` (and, for
+   `.hide-desktop`, was never undone, so the element stayed hidden forever). */
+
+/* Hidden on mobile (<768px) */
+@media (max-width: 767px) {
+  .hide-mobile {
+    display: none !important;
+  }
 }
 
-.hide-tablet {
-  display: block;
+/* Hidden on tablet (768–1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .hide-tablet {
+    display: none !important;
+  }
 }
 
-.hide-desktop {
-  display: none;
+/* Hidden when not desktop (<=1024px) */
+@media (max-width: 1024px) {
+  .hide-desktop {
+    display: none !important;
+  }
 }
 
 /* Mobile-first responsive container */
@@ -271,18 +286,6 @@ a, button, td, input, select, .clickable {
     padding: var(--spacing-sm);
   }
   
-  /* Stack grids on tablet */
-  .dashboard-grid {
-    grid-template-columns: 1fr !important;
-  }
-  
-  .widget-fear-greed,
-  .widget-erp,
-  .widget-crowding,
-  .widget-style {
-    grid-column: span 1 !important;
-  }
-  
   /* Side panels become full-width */
   .side-panel {
     width: 100% !important;
@@ -320,15 +323,18 @@ a, button, td, input, select, .clickable {
   }
 }
 
-/* Desktop: 769-1024px */
-@media (max-width: 1024px) {
+/* Desktop: 769-1024px.
+   NOTE: this range must start at 769px.  When it was `max-width: 1024px` it
+   came *after* the ≤768px single-column rule and both used !important, so a
+   390px phone was handed a 2-column grid (2 × 405px) and the browser
+   shrink-to-fit zoomed the whole page out to 831px.
+   The `.dashboard-grid` column rules live in Dashboard.vue (scoped) because
+   this global copy used `!important` and therefore silently overrode the
+   component's own `minmax(0, 1fr)` tracks — which is what made the grid's
+   min-content floor push the page wider than the viewport. */
+@media (min-width: 769px) and (max-width: 1024px) {
   .hide-desktop {
     display: none !important;
-  }
-  
-  /* Reduce grid columns */
-  .dashboard-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
   }
 }
 

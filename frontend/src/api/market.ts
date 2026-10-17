@@ -136,7 +136,14 @@ export const getMoneyMarketRates = async (): Promise<Array<{
   sparkline_data: string | null
 }>> => {
   const response = await api.get('/market/bond/money-rates')
-  return response.data ?? []
+  // This route returns { data, _meta }; unwrap so callers bind an array.
+  if (response._error || response._meta.source === 'error') return []
+  const payload = response.data as
+    | Array<{ rate_code: string; trade_date: string; rate_value: number; sparkline_data: string | null }>
+    | { data?: Array<{ rate_code: string; trade_date: string; rate_value: number; sparkline_data: string | null }> }
+    | null
+  if (Array.isArray(payload)) return payload
+  return payload?.data ?? []
 }
 
 // Get rate history for sparkline

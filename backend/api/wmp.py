@@ -7,8 +7,9 @@ import logging
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
+from backend.core.config import settings
 from backend.schemas.wmp import (
     WMPItem,
     WMPFilterParams,
@@ -220,6 +221,15 @@ async def filter_wmp_products(params: WMPFilterParams):
             tiered_cache.set(cache_key, products, ttl=3600)
             logger.info(f"Cached WMP data ({len(products)} products) for 1 hour")
     
+    # No live WMP source is wired yet.  With the default policy this is an
+    # honest 503 rather than an empty 200, so the UI can say "数据源暂未接入"
+    # instead of "0 款产品" (which would imply the market has none).
+    if not products and not settings.allow_simulated_fallback:
+        raise HTTPException(
+            status_code=503,
+            detail="理财产品实时数据源暂未接入 (set allow_simulated_fallback=true to display tagged reference data)",
+        )
+
     # Apply filters
     filtered_products = _filter_products(products, params)
     
@@ -295,7 +305,15 @@ async def get_wmp_statistics():
         products, _, _ = await wmp_gateway.fetch_wmp_list()
         if products:
             tiered_cache.set(cache_key, products, ttl=3600)
-    
+
+    # No live WMP source wired: report unavailable instead of a 0-product
+    # aggregate, which would read as "the market has no products".
+    if not products and not settings.allow_simulated_fallback:
+        raise HTTPException(
+            status_code=503,
+            detail="理财产品实时数据源暂未接入 (set allow_simulated_fallback=true to display tagged reference data)",
+        )
+
     # Calculate statistics
     total_count = len(products)
     

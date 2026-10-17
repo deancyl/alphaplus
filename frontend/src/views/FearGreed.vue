@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { getFearGreedIndex } from '@/api/analytics'
+import api from '@/api/index'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
@@ -35,9 +34,9 @@ type DataSource = 'real' | 'delayed' | 'simulated'
 
 // Reactive state
 const fearGreedLoading = ref(true)
-const fearGreedDataSource = ref<DataSource>('simulated')
-const loading = ref(false)
+const fearGreedDataSource = ref<DataSource | ''>('')
 const fearGreedData = ref<FearGreedData[]>([])
+const loadError = ref(false)
 const gaugeChart = ref<echarts.ECharts | null>(null)
 const trendChart = ref<echarts.ECharts | null>(null)
 
@@ -405,26 +404,31 @@ const initTrendChart = () => {
 // Fetch data from API
 const fetchData = async () => {
   fearGreedLoading.value = true
-  loading.value = true
+  loadError.value = false
   try {
-    const response = await getFearGreedIndex()
-    if (response && Array.isArray(response) && response.length > 0) {
-      fearGreedData.value = response.sort((a, b) => 
-        a.trade_date.localeCompare(b.trade_date)
-      )
-      fearGreedDataSource.value = 'real'
+    // 直接调用 API 以读取 _error，用于区分「请求失败」与「无数据」
+    const response = await api.get<FearGreedData[]>('/analytics/fear-greed')
+    if (response._error || response.data === null) {
+      loadError.value = true
+      fearGreedData.value = []
+      fearGreedDataSource.value = ''
+      return
     }
-    
+    const rows = Array.isArray(response.data) ? response.data : []
+    if (rows.length > 0) {
+      fearGreedData.value = rows.sort((a, b) => a.trade_date.localeCompare(b.trade_date))
+      fearGreedDataSource.value = 'real'
+    } else {
+      fearGreedData.value = []
+      fearGreedDataSource.value = ''
+    }
+
     // Initialize charts after DOM update
     await nextTick()
     initGaugeChart()
     initTrendChart()
-  } catch (error) {
-    ElMessage.error('获取恐惧贪婪指数数据失败')
-    fearGreedDataSource.value = 'simulated'
   } finally {
     fearGreedLoading.value = false
-    loading.value = false
   }
 }
 
@@ -452,9 +456,12 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (resizeTimer) clearTimeout(resizeTimer)
   window.removeEventListener('resize', handleResize)
   gaugeChart.value?.dispose()
+  gaugeChart.value = null
   trendChart.value?.dispose()
+  trendChart.value = null
 })
 </script>
 
@@ -464,8 +471,9 @@ onUnmounted(() => {
     <div class="page-header">
       <h2>恐惧贪婪指数</h2>
       <div class="header-info">
-        <DataConfidenceBadge 
-          :source="fearGreedDataSource" 
+        <DataConfidenceBadge
+          v-if="fearGreedDataSource"
+          :source="fearGreedDataSource || 'real'"
           :timestamp="currentData?.trade_date"
         />
         <span class="update-time" v-if="currentData">
@@ -647,7 +655,8 @@ onUnmounted(() => {
 
     <!-- Empty state -->
     <div class="empty-state" v-else>
-      <p>暂无数据</p>
+      <p v-if="loadError">恐惧贪婪指数获取失败，请稍后重试</p>
+      <p v-else>暂无恐惧贪婪指数数据</p>
     </div>
   </ErrorBoundary>
 </div>

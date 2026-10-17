@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import type { EChartsOption } from 'echarts'
-import { getFundCompanies, getCompanyDistribution } from '@/api/fund'
+import { getCompanyDistribution } from '@/api/fund'
+import api from '@/api/index'
 import { formatNumber } from '@/utils/formatters'
 
 // Types
@@ -43,7 +44,8 @@ const companies = ref<CompanyItem[]>([])
 const filteredCompanies = ref<CompanyItem[]>([])
 const loading = ref(false)
 const chartLoading = ref(false)
-const isDataSimulated = ref(false)
+const hasError = ref(false)
+const treemapEmpty = ref(false)
 const selectedCompany = ref<CompanyItem | null>(null)
 const selectedNavCompany = ref<string | null>(null)
 const showDetailDialog = ref(false)
@@ -123,44 +125,6 @@ const treemapChartOption = ref<EChartsOption>({
   }],
 } as EChartsOption)
 
-// Bubble scatter chart option for manager performance
-const bubbleChartOption = ref<EChartsOption>({
-  tooltip: {
-    formatter: (params: any) => {
-      const data = params.data
-      return `${data[3]}<br/>基金数量: ${data[0]}<br/>平均收益: ${data[1]?.toFixed(2) || '-'}%<br/>总规模: ${data[2]?.toFixed(2) || '-'}亿`
-    },
-  },
-  grid: { left: 60, right: 30, top: 40, bottom: 50 },
-  xAxis: {
-    type: 'value',
-    name: '基金数量',
-    nameLocation: 'middle',
-    nameGap: 30,
-    splitLine: { lineStyle: { color: '#E5E8ED', type: 'dashed' } },
-  },
-  yAxis: {
-    type: 'value',
-    name: '平均收益率(%)',
-    nameLocation: 'middle',
-    nameGap: 40,
-    splitLine: { lineStyle: { color: '#E5E8ED', type: 'dashed' } },
-  },
-  series: [{
-    type: 'scatter',
-    symbolSize: (val: number[]) => Math.sqrt(val[2] || 1) * 3 + 8,
-    data: [],
-    itemStyle: { opacity: 0.75 },
-    emphasis: {
-      itemStyle: {
-        shadowBlur: 10,
-        shadowOffsetX: 0,
-        shadowColor: 'rgba(0, 0, 0, 0.3)',
-      },
-    },
-  }],
-} as EChartsOption)
-
 // Sort options
 const sortOptions = [
   { label: '按总规模', value: 'total_scale' },
@@ -214,14 +178,21 @@ const navTreeData = computed(() => {
 // Fetch data
 const fetchData = async () => {
   loading.value = true
+  hasError.value = false
   try {
-    const response = await getFundCompanies()
-    if (response && Array.isArray(response)) {
-      companies.value = response
-      applyFilters()
+    // 直接调用 API 以读取 _error，用于区分「请求失败」与「无数据」
+    const response = await api.get<CompanyItem[]>('/fund/company')
+    if (response._error || response.data === null) {
+      hasError.value = true
+      companies.value = []
+      filteredCompanies.value = []
+      return
     }
+    companies.value = Array.isArray(response.data) ? response.data : []
+    applyFilters()
   } catch {
-    // API interceptor already handled notification
+    // 兜底：理论上 axios 层不会 reject，此处仅防止意外
+    hasError.value = true
   } finally {
     loading.value = false
   }
@@ -350,169 +321,96 @@ const updateCharts = async () => {
     }],
   } as EChartsOption
 
-  // Treemap - fetch real asset distribution from API
+  // Treemap - fetch real per-company asset distribution from API and aggregate
   chartLoading.value = true
   try {
     const treemapData = await generateTreemapData(data)
-    treemapChartOption.value = {
-      ...treemapChartOption.value,
-      series: [{
-        type: 'treemap',
-        data: treemapData,
-      }],
-    } as EChartsOption
-  } catch (error) {
+    if (treemapData && treemapData.length > 0) {
+      treemapEmpty.value = false
+      treemapChartOption.value = {
+        ...treemapChartOption.value,
+        series: [{
+          type: 'treemap',
+          data: treemapData,
+        }],
+      } as EChartsOption
+    } else {
+      // 无可用的真实资产配置数据，展示空状态而非伪造数据
+      treemapEmpty.value = true
+      treemapChartOption.value = {
+        ...treemapChartOption.value,
+        series: [{
+          type: 'treemap',
+          data: [],
+        }],
+      } as EChartsOption
+    }
+  } catch {
+    // 异常时同样展示空状态，避免误渲染
+    treemapEmpty.value = true
   } finally {
     chartLoading.value = false
   }
-
-  // Bubble scatter - manager performance analysis
-  const bubbleData = generateBubbleData(data)
-  const { medianFunds, medianReturn } = calculateMedians(bubbleData)
-
-  bubbleChartOption.value = {
-    ...bubbleChartOption.value,
-    xAxis: {
-      name: '基金数量',
-      nameLocation: 'middle',
-      nameGap: 30,
-      splitLine: { lineStyle: { color: '#E5E8ED', type: 'dashed' } },
-      axisLabel: { fontSize: 11 },
-    },
-    yAxis: {
-      name: '平均收益率(%)',
-      nameLocation: 'middle',
-      nameGap: 40,
-      splitLine: { lineStyle: { color: '#E5E8ED', type: 'dashed' } },
-      axisLabel: { fontSize: 11 },
-    },
-    series: [{
-      type: 'scatter',
-      symbolSize: (val: number[]) => {
-        const scale = val[2] || 1
-        return Math.max(10, Math.min(60, Math.sqrt(scale) * 4))
-      },
-      data: bubbleData,
-      itemStyle: {
-        opacity: 0.7,
-        color: (params: any) => {
-          const funds = params.data[0]
-          const ret = params.data[1]
-          if (funds >= medianFunds && ret >= medianReturn) return '#2E7D32'
-          if (funds < medianFunds && ret < medianReturn) return '#E63935'
-          if (funds >= medianFunds && ret < medianReturn) return '#FF8C00'
-          return '#003399'
-        },
-      },
-      emphasis: {
-        itemStyle: {
-          shadowBlur: 10,
-          shadowOffsetX: 0,
-          shadowColor: 'rgba(0, 0, 0, 0.3)',
-        },
-      },
-      markLine: {
-        silent: true,
-        symbol: 'none',
-        lineStyle: { type: 'dashed', color: '#999', width: 1 },
-        label: { show: false },
-        data: [
-          { xAxis: medianFunds },
-          { yAxis: medianReturn },
-        ],
-      },
-    }],
-  } as EChartsOption
 }
 
-// Generate treemap data - fetch from API or use simulated fallback
+// Generate treemap data by aggregating real per-company asset distributions
 const generateTreemapData = async (companies: CompanyItem[]) => {
-  const assetClasses = [
-    { name: '股票型', scale: 0, color: ASSET_CLASS_COLORS['股票型'] },
-    { name: '混合型', scale: 0, color: ASSET_CLASS_COLORS['混合型'] },
-    { name: '债券型', scale: 0, color: ASSET_CLASS_COLORS['债券型'] },
-    { name: '货币型', scale: 0, color: ASSET_CLASS_COLORS['货币型'] },
-    { name: '指数型', scale: 0, color: ASSET_CLASS_COLORS['指数型'] },
-    { name: '其他', scale: 0, color: ASSET_CLASS_COLORS['其他'] },
-  ]
-  
-  const totalScale = companies.reduce((sum, c) => sum + (c.total_scale || 0), 0)
-  
-  // Try to fetch real distribution data from the first company
-  if (companies.length > 0 && companies[0].company_id) {
-    try {
-      const response = await getCompanyDistribution(companies[0].company_id, 'asset_class')
-      if (!response.is_simulated && response.items.length > 0) {
-        isDataSimulated.value = false
-        return response.items.map((item, idx) => ({
-          name: item.item_name,
-          value: totalScale * (item.weight / 100),
-          itemStyle: { color: assetClasses[idx]?.color || '#607D8B' },
-          children: generateCompanyChildren(companies, item.item_name, item.weight / 100),
-        }))
+  // 仅使用有规模数据的公司，按规模降序取前 30 家以控制请求量
+  const candidates = companies
+    .filter(c => c.total_scale && c.total_scale > 0)
+    .sort((a, b) => (b.total_scale || 0) - (a.total_scale || 0))
+    .slice(0, 30)
+
+  const results: Array<{ company: CompanyItem; items: Array<{ item_name: string; weight: number }> }> = []
+
+  // 分块并发（每批 8 个）拉取各公司真实资产配置
+  const CHUNK_SIZE = 8
+  for (let i = 0; i < candidates.length; i += CHUNK_SIZE) {
+    const chunk = candidates.slice(i, i + CHUNK_SIZE)
+    const settled = await Promise.all(chunk.map(async (company) => {
+      const response = await getCompanyDistribution(company.company_id, 'asset_class')
+      if (response && !response.is_simulated && Array.isArray(response.items) && response.items.length > 0) {
+        return { company, items: response.items }
       }
-    } catch {
-      // API failed, use simulated fallback below
+      return null
+    }))
+    settled.forEach(r => { if (r) results.push(r) })
+  }
+
+  // 全部公司均无真实数据时返回 null，由调用方展示空状态
+  if (results.length === 0) {
+    return null
+  }
+
+  // 按资产类别聚合（以公司规模加权）
+  const classMap = new Map<string, { value: number; children: Map<string, number> }>()
+  for (const { company, items } of results) {
+    for (const item of items) {
+      const contribution = (company.total_scale || 0) * (item.weight / 100)
+      if (contribution <= 0) continue
+      let entry = classMap.get(item.item_name)
+      if (!entry) {
+        entry = { value: 0, children: new Map() }
+        classMap.set(item.item_name, entry)
+      }
+      entry.value += contribution
+      entry.children.set(company.company_name, (entry.children.get(company.company_name) || 0) + contribution)
     }
   }
-  
-  // Fallback to simulated data
-  isDataSimulated.value = true
-  const distributionWeights = [0.15, 0.25, 0.35, 0.12, 0.08, 0.05]
-  
-  return assetClasses.map((cls, idx) => ({
-    name: cls.name,
-    value: totalScale * distributionWeights[idx],
-    itemStyle: { color: cls.color },
-    children: generateCompanyChildren(companies, cls.name, distributionWeights[idx]),
+
+  return Array.from(classMap.entries()).map(([name, entry]) => ({
+    name,
+    value: entry.value,
+    itemStyle: { color: ASSET_CLASS_COLORS[name] || '#607D8B' },
+    children: Array.from(entry.children.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([childName, childValue]) => ({
+        name: childName,
+        value: childValue,
+        itemStyle: { color: ASSET_CLASS_COLORS[name] || '#607D8B' },
+      })),
   }))
-}
-
-// Generate children nodes for treemap drill-down
-const generateCompanyChildren = (companies: CompanyItem[], assetClass: string, weight: number) => {
-  // Top companies as children
-  const topCompanies = companies
-    .filter(c => c.total_scale && c.total_scale > 0)
-    .slice(0, 8)
-  
-  return topCompanies.map(c => ({
-    name: c.company_name,
-    value: (c.total_scale || 0) * weight / 8,
-    itemStyle: { color: ASSET_CLASS_COLORS[assetClass] || '#607D8B' },
-  }))
-}
-
-// Generate bubble scatter data
-const generateBubbleData = (companies: CompanyItem[]) => {
-  return companies
-    .filter(c => c.fund_count && c.fund_count > 0 && c.total_scale && c.total_scale > 0)
-    .map(c => {
-      // Simulate average return based on scale (larger funds tend to be more stable)
-      const baseReturn = 8 - (c.total_scale || 100) / 500 * 2
-      const variance = (Math.random() - 0.5) * 10
-      const avgReturn = baseReturn + variance
-      
-      return [
-        c.fund_count,           // X: fund count
-        avgReturn,               // Y: average return
-        c.total_scale || 1,      // Size: total AUM
-        c.company_name,          // Name for tooltip
-      ]
-    })
-}
-
-// Calculate medians for quadrant lines
-const calculateMedians = (data: (string | number | null)[][]) => {
-  if (data.length === 0) return { medianFunds: 0, medianReturn: 0 }
-
-  const sortedFunds = [...data].sort((a, b) => (a[0] as number) - (b[0] as number))
-  const sortedReturn = [...data].sort((a, b) => (a[1] as number) - (b[1] as number))
-  const mid = Math.floor(data.length / 2)
-
-  return {
-    medianFunds: sortedFunds[mid]?.[0] as number || 0,
-    medianReturn: sortedReturn[mid]?.[1] as number || 0,
-  }
 }
 
 // Handle filter
@@ -539,11 +437,12 @@ const handleRowClick = (row: CompanyItem) => {
   showDetailDialog.value = true
 }
 
-// Handle sort change
+// Handle sort change (表格排序)
 const handleSortChange = ({ prop, order }: { prop: string; order: string | null }) => {
   if (prop && ['total_scale', 'fund_count', 'manager_count'].includes(prop)) {
     filterParams.value.sort_by = prop as FilterParams['sort_by']
     filterParams.value.sort_order = order === 'ascending' ? 'asc' : 'desc'
+    // 仅在此处调用一次 applyFilters，避免与 watch 重复请求
     applyFilters()
   }
 }
@@ -575,28 +474,8 @@ const handleTreemapClick = (params: any) => {
   }
 }
 
-// Handle bubble click
-const handleBubbleClick = (params: any) => {
-  if (params.data?.[3]) {
-    const companyName = params.data[3]
-    const company = companies.value.find(c => c.company_name === companyName)
-    if (company) {
-      selectedCompany.value = company
-      showDetailDialog.value = true
-    }
-  }
-}
-
-// Watch filter params
-watch(
-  () => filterParams.value.sort_by,
-  () => applyFilters()
-)
-
-watch(
-  () => filterParams.value.sort_order,
-  () => applyFilters()
-)
+// 排序变更统一由 handleSortChange 处理；筛选面板的排序通过「筛选」按钮触发，
+// 不再使用 watch 监听，避免与 handleSortChange 重复请求。
 
 onMounted(() => {
   fetchData()
@@ -608,19 +487,19 @@ onMounted(() => {
     <!-- Header Stats -->
     <div class="stats-row">
       <div class="stat-card">
-        <div class="stat-value">{{ formatNumber(totalStats.totalScale, 2, '亿') }}</div>
+        <div class="stat-value">{{ hasError ? '—' : formatNumber(totalStats.totalScale, 2, '亿') }}</div>
         <div class="stat-label">总管理规模</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ formatInteger(totalStats.totalFunds) }}</div>
+        <div class="stat-value">{{ hasError ? '—' : formatInteger(totalStats.totalFunds) }}</div>
         <div class="stat-label">基金总数</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ formatInteger(totalStats.totalManagers) }}</div>
+        <div class="stat-value">{{ hasError ? '—' : formatInteger(totalStats.totalManagers) }}</div>
         <div class="stat-label">基金经理</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ formatNumber(totalStats.avgScale, 2, '亿') }}</div>
+        <div class="stat-value">{{ hasError ? '—' : formatNumber(totalStats.avgScale, 2, '亿') }}</div>
         <div class="stat-label">平均规模</div>
       </div>
     </div>
@@ -679,15 +558,16 @@ onMounted(() => {
         <div class="chart-card chart-large">
           <div class="panel-header">
             <h3>资产配置分布 (Treemap)</h3>
-            <span v-if="isDataSimulated" class="simulated-badge">模拟数据</span>
             <span class="chart-hint">点击矩形查看公司详情</span>
           </div>
           <EChartsWrapper
+            v-if="!treemapEmpty"
             :option="treemapChartOption"
             :loading="chartLoading"
             height="320px"
             @click="handleTreemapClick"
           />
+          <div v-else class="chart-empty">该分析所需数据源暂未提供</div>
           <div v-if="chartLoading" class="chart-skeleton">
             <div class="skeleton-block"></div>
           </div>
@@ -715,36 +595,12 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Bubble Scatter Chart -->
+        <!-- Manager Quadrant Analysis - 数据源暂未提供 -->
         <div class="chart-card chart-large">
           <div class="panel-header">
             <h3>基金经理四象限分析</h3>
-            <span class="chart-hint">气泡大小=规模，颜色=象限</span>
           </div>
-          <EChartsWrapper
-            :option="bubbleChartOption"
-            :loading="loading"
-            height="320px"
-            @click="handleBubbleClick"
-          />
-          <div class="quadrant-legend">
-            <div class="quadrant-item">
-              <span class="quadrant-dot" style="background: #2E7D32"></span>
-              <span class="quadrant-label">明星 (高数量+高收益)</span>
-            </div>
-            <div class="quadrant-item">
-              <span class="quadrant-dot" style="background: #E63935"></span>
-              <span class="quadrant-label">落后 (低数量+低收益)</span>
-            </div>
-            <div class="quadrant-item">
-              <span class="quadrant-dot" style="background: #FF8C00"></span>
-              <span class="quadrant-label">规模型 (高数量+低收益)</span>
-            </div>
-            <div class="quadrant-item">
-              <span class="quadrant-dot" style="background: #003399"></span>
-              <span class="quadrant-label">潜力型 (低数量+高收益)</span>
-            </div>
-          </div>
+          <div class="chart-empty">该分析所需数据源暂未提供</div>
         </div>
       </div>
 
@@ -1136,12 +992,6 @@ onMounted(() => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-.charts-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
 .chart-card {
   background: var(--bg-card);
   border-radius: 4px;
@@ -1173,13 +1023,14 @@ onMounted(() => {
   color: var(--text-muted);
 }
 
-.simulated-badge {
-  font-size: 11px;
-  color: #FF8C00;
-  background: rgba(255, 140, 0, 0.1);
-  padding: 2px 8px;
-  border-radius: 4px;
-  margin-right: 8px;
+.chart-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .chart-skeleton {
@@ -1282,31 +1133,7 @@ onMounted(() => {
   border-radius: 2px;
 }
 
-/* Quadrant Legend */
-.quadrant-legend {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-line);
-}
-
-.quadrant-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.quadrant-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-.quadrant-label {
-  font-size: 11px;
-  color: var(--text-muted);
-}
+/* Quadrant Legend removed - manager quadrant analysis data source unavailable */
 
 .company-detail {
   padding: 8px 0;

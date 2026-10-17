@@ -30,7 +30,7 @@ const routes: RouteRecordRaw[] = [
     path: '/fof/fundSimilarity',
     name: 'FundSimilarity',
     component: () => import('@/views/FundSimilarity.vue'),
-    meta: { title: '相似度计算' },
+    meta: { title: '相似度计算器' },
   },
   {
     path: '/fof/fundIssue',
@@ -90,7 +90,7 @@ const routes: RouteRecordRaw[] = [
     path: '/market/fearGreed',
     name: 'FearGreed',
     component: () => import('@/views/FearGreed.vue'),
-    meta: { title: '恐慌贪婪' },
+    meta: { title: '恐惧贪婪指数' },
   },
   {
     path: '/market/styleStrength',
@@ -114,13 +114,13 @@ const routes: RouteRecordRaw[] = [
     path: '/market/indexValuation',
     name: 'IndexValuation',
     component: () => import('@/views/IndexValuation.vue'),
-    meta: { title: '指数估值' },
+    meta: { title: '主要指数估值' },
   },
   {
     path: '/market/forecast',
     name: 'Forecast',
     component: () => import('@/views/Forecast.vue'),
-    meta: { title: '走势预测' },
+    meta: { title: 'AI走势预测' },
   },
   {
     path: '/fof/fundCalcAIP',
@@ -177,6 +177,13 @@ const routes: RouteRecordRaw[] = [
     name: 'DepositERPLinkage',
     component: () => import('@/views/DepositERPLinkage.vue'),
     meta: { title: '存款-ERP联动' },
+  },
+  // 404：任何未声明的路径都给一个可离开的错误态，而不是白屏
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/NotFound.vue'),
+    meta: { title: '页面不存在' },
   },
 ]
 

@@ -131,14 +131,12 @@ const addToComparison = (fund: CompareFund) => {
   
   selectedFunds.value.push({ ...fund, selected: true })
   fund.selected = true
-  ElMessage.success(`已添加 ${fund.fund_name}`)
 }
 
 // Remove fund from comparison
 const removeFromComparison = (fundCode: string) => {
   const index = selectedFunds.value.findIndex(f => f.fund_code === fundCode)
   if (index > -1) {
-    const fund = selectedFunds.value[index]
     selectedFunds.value.splice(index, 1)
     
     // Update search result
@@ -146,8 +144,6 @@ const removeFromComparison = (fundCode: string) => {
     if (searchFund) {
       searchFund.selected = false
     }
-    
-    ElMessage.info(`已移除 ${fund.fund_name}`)
   }
 }
 
@@ -158,7 +154,6 @@ const clearSelection = () => {
   correlationMatrix.value = []
   radarData.value = []
   correlationStats.value = null
-  ElMessage.info('已清空对比列表')
 }
 
 // Calculate correlation statistics
@@ -225,6 +220,10 @@ const fetchComparisonData = async () => {
     await nextTick()
     renderCharts()
   } catch (error) {
+    // 失败时清空上一次的图表状态，避免展示过期的相关性数据
+    correlationMatrix.value = []
+    correlationStats.value = null
+    radarData.value = []
     ElMessage.error('获取对比数据失败')
   } finally {
     compareLoading.value = false
@@ -506,9 +505,18 @@ const handleResize = () => {
 
 onMounted(() => {
   window.addEventListener('resize', handleResize)
-  tableContainer.value?.addEventListener('scroll', updateScrollIndicators)
-  // Initial check
-  nextTick(() => updateScrollIndicators())
+})
+
+// tableContainer 通过 v-if 条件渲染，挂载时可能尚不存在；
+// 使用 watch 在元素出现/移除时正确绑定与清理滚动监听。
+watch(tableContainer, (el, oldEl) => {
+  if (oldEl) {
+    oldEl.removeEventListener('scroll', updateScrollIndicators)
+  }
+  if (el) {
+    el.addEventListener('scroll', updateScrollIndicators)
+    nextTick(() => updateScrollIndicators())
+  }
 })
 
 onUnmounted(() => {
@@ -633,6 +641,8 @@ onUnmounted(() => {
                   size="small"
                   circle
                   class="remove-btn"
+                  aria-label="移除基金"
+                  title="移除基金"
                   @click="removeFromComparison(fund.fund_code)"
                 >
                   <el-icon><Close /></el-icon>
@@ -705,7 +715,6 @@ onUnmounted(() => {
                 prop="scale"
                 label="规模(亿)"
                 width="100"
-                class-name="hidden sm:table-cell"
               >
                 <template #default="{ row }">
                   {{ formatNumber(row.scale) }}
@@ -716,7 +725,6 @@ onUnmounted(() => {
                 label="近1年%"
                 width="100"
                 sortable
-                class-name="hidden sm:table-cell md:table-cell"
               >
                 <template #default="{ row }">
                   <span :class="getValueClass(row.return_1y)">
@@ -729,7 +737,6 @@ onUnmounted(() => {
                 label="最大回撤%"
                 width="110"
                 sortable
-                class-name="hidden md:table-cell lg:table-cell"
               >
                 <template #default="{ row }">
                   <span :class="getValueClass(-row.max_drawdown_1y)">
@@ -742,7 +749,6 @@ onUnmounted(() => {
                 label="夏普"
                 width="80"
                 sortable
-                class-name="hidden lg:table-cell xl:table-cell"
               >
                 <template #default="{ row }">
                   {{ formatNumber(row.sharpe_1y) }}
@@ -753,7 +759,6 @@ onUnmounted(() => {
                 label="波动率%"
                 width="100"
                 sortable
-                class-name="hidden xl:table-cell"
               >
                 <template #default="{ row }">
                   {{ formatNumber(row.volatility_1y) }}
@@ -1224,15 +1229,6 @@ onUnmounted(() => {
 
 :root.dark .el-table .sticky-column::after {
   box-shadow: 4px 0 12px rgba(0, 0, 0, 0.4);
-}
-
-/* Second column also sticky if needed */
-.el-table .sticky-column-second {
-  position: sticky;
-  left: 150px;
-  z-index: calc(var(--z-sticky) - 1);
-  background: var(--bg-card);
-  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.08);
 }
 
 /* Table container with scroll detection */

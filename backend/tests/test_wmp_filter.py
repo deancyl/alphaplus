@@ -10,6 +10,7 @@ from backend.services.sources.wmp_source import (
     ChinaWealthSource,
     EastmoneyWMPSource,
     MockWMPSource,
+    UnavailableSource,
     WMPDataGateway,
 )
 
@@ -281,46 +282,50 @@ class TestWMPSources:
     """Tests for WMP data sources."""
     
     @pytest.mark.asyncio
-    async def test_chinawealth_source(self):
-        """Test ChinaWealth source adapter."""
+    async def test_chinawealth_source_declares_unavailable(self):
+        """ChinaWealth must report unavailable, never generate products.
+
+        The adapter previously returned randomly generated bank/yield/maturity
+        rows; that is fabricated market data and is now an explicit
+        UnavailableSource so callers can disclose it honestly.
+        """
         source = ChinaWealthSource()
-        data = await source.fetch("wmp_list")
-        
-        assert len(data) > 0
-        assert all("product_code" in p for p in data)
-        assert all("yield_rate" in p for p in data)
-        assert all("risk_level" in p for p in data)
-    
+        with pytest.raises(UnavailableSource):
+            await source.fetch("wmp_list")
+
     @pytest.mark.asyncio
-    async def test_eastmoney_source(self):
-        """Test Eastmoney WMP source adapter."""
+    async def test_eastmoney_source_declares_unavailable(self):
+        """Eastmoney must report unavailable, never generate products."""
         source = EastmoneyWMPSource()
-        data = await source.fetch("wmp_list")
-        
-        assert len(data) > 0
-        assert all("product_code" in p for p in data)
+        with pytest.raises(UnavailableSource):
+            await source.fetch("wmp_list")
     
     @pytest.mark.asyncio
-    async def test_mock_source(self):
-        """Test mock WMP source adapter."""
+    async def test_mock_source_rows_are_tagged(self):
+        """Reference rows must be self-identifying, never mistakable for live."""
         source = MockWMPSource()
         data = await source.fetch("wmp_list")
         
         assert len(data) > 0
         assert all("product_code" in p for p in data)
-    
+        assert all(p.get("is_simulated") is True for p in data)
+        assert all(p["product_code"].startswith("SIMULATED") for p in data)
+
     @pytest.mark.asyncio
-    async def test_wmp_gateway_failover(self):
-        """Test WMP gateway failover logic."""
+    async def test_wmp_gateway_skips_reference_source_by_default(self):
+        """With allow_simulated_fallback=False the reference source is skipped.
+
+        The gateway must return an honest empty result rather than falling
+        through to generated rows.
+        """
         gateway = WMPDataGateway()
         gateway.register_source("chinawealth", ChinaWealthSource(), priority=1)
         gateway.register_source("mock", MockWMPSource(), priority=99)
         
-        data, source_name, fallback_chain = await gateway.fetch_wmp_list()
+        data, source_name, _ = await gateway.fetch_wmp_list()
         
-        assert len(data) > 0
-        assert source_name in ["chinawealth", "mock"]
-        assert len(fallback_chain) >= 1
+        assert data == []
+        assert source_name is None
 
 
 # ==================== Schema Tests ====================

@@ -169,8 +169,10 @@ async function fetchIssueData() {
     
     const data = await getFundIssueCalendar()
     
-    // Filter by date range and transform API response to match component interface
-    const filteredByDate = data.filter(item => {
+    // Filter by date range and transform API response to match component interface.
+    // Guard the array: a failed request resolves with the `{ data, _meta }`
+    // envelope, and calling `.filter` on that object throws and blanks the page.
+    const filteredByDate = (Array.isArray(data) ? data : []).filter(item => {
       const subStart = item.subscribe_start_date
       return subStart >= startDate && subStart <= endDate
     })

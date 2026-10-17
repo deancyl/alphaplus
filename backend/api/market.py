@@ -5,12 +5,16 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import List
+import httpx
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.core import get_db
+from backend.core.envelope import fail, strip_status
+from backend.services.live_feed import DAILY_TTL, REALTIME_TTL, VALUATION_TTL, run_live
+from backend.services.quote_sources import UpstreamError, fetch_money_market_rates
 from backend.models.fund import (
     StockQuotesHistory,
     BondYieldCurveStructure,
@@ -362,60 +366,78 @@ async def get_bond_yield_curve(
 
 
 @router.get("/bond/money-rates")
-async def get_money_market_rates(
-    db: AsyncSession = Depends(get_db),
-):
-    """货币市场利率 - DR007, SHIBOR等."""
-    result = await db.execute(
-        select(MoneyMarketRates)
-        .order_by(MoneyMarketRates.trade_date.desc())
-        .limit(100)
+async def get_money_market_rates():
+    """货币市场利率 - live SHIBOR tenors.
+
+    Previously read the frozen ``money_market_rates`` table, whose ``rate_code``
+    held random numeric strings and whose ``rate_value`` was a constant 2.0.
+    Now computed from the interbank fixing (as-of = the published session) and
+    flattened one row per tenor so the existing table binding still works.
+    """
+    rows, meta = await run_live(
+        "market:money-rates", DAILY_TTL, _compute_money_rates
     )
-    rates = result.scalars().all()
-    
-    return [
+    return {"data": rows, "_meta": meta}
+
+
+async def _compute_money_rates(client: httpx.AsyncClient) -> tuple[list[dict], dict]:
+    series = await fetch_money_market_rates()
+    latest = series.points[-1]
+    rows = [
         {
-            "rate_code": r.rate_code,
-            "trade_date": r.trade_date,
-            "rate_value": r.rate_value,
-            "sparkline_data": r.sparkline_data,
+            "rate_code": code,
+            "trade_date": latest["date"],
+            "rate_value": value,
+            "sparkline_data": "",
         }
-        for r in rates
+        for code, value in latest.items()
+        if code != "date"
     ]
+    meta = {
+        "asOf": series.as_of,
+        "source": series.source,
+        "caliber": "SHIBOR 定盘利率（各期限），单行=单期限",
+    }
+    return rows, meta
 
 
 @router.get("/bond/rate-history")
 async def get_rate_history(
-    rate_code: str = Query(..., description="DR007, SHIBOR_1W, etc."),
+    rate_code: str = Query(..., description="O/N, 1W, 1M, 3M ..."),
     days: int = Query(30, description="Number of days"),
-    db: AsyncSession = Depends(get_db),
 ):
-    """货币利率历史趋势 - For sparkline rendering."""
-    from datetime import datetime, timedelta
-    
-    start_date = (datetime.now() - timedelta(days=days * 2)).strftime("%Y-%m-%d")
-    
-    result = await db.execute(
-        select(MoneyMarketRates)
-        .where(
-            MoneyMarketRates.rate_code == rate_code,
-            MoneyMarketRates.trade_date >= start_date
-        )
-        .order_by(MoneyMarketRates.trade_date.desc())
-        .limit(days)
+    """货币利率历史趋势 - live SHIBOR history for sparkline rendering."""
+    rows, meta = await run_live(
+        f"market:money-rates:history:{rate_code}:{days}",
+        DAILY_TTL,
+        lambda client: _compute_money_rate_history(client, rate_code, days),
     )
-    history = result.scalars().all()
-    
-    if not history:
-        return {"values": [], "dates": [], "is_simulated": True}
-    
-    history = list(reversed(history))
-    
     return {
-        "values": [h.rate_value for h in history],
-        "dates": [h.trade_date for h in history],
+        "values": [r["rate_value"] for r in rows],
+        "dates": [r["trade_date"] for r in rows],
         "is_simulated": False,
+        "_meta": meta,
     }
+
+
+async def _compute_money_rate_history(
+    client: httpx.AsyncClient, rate_code: str, days: int
+) -> tuple[list[dict], dict]:
+    series = await fetch_money_market_rates()
+    if rate_code not in (series.points[-1] if series.points else {}):
+        raise UpstreamError("unavailable_rate_code", series.source)
+    window = series.points[-days:] if len(series.points) > days else series.points
+    rows = [
+        {"trade_date": p["date"], "rate_value": p[rate_code]}
+        for p in window
+        if p.get(rate_code) is not None
+    ]
+    meta = {
+        "asOf": series.as_of,
+        "source": series.source,
+        "caliber": f"SHIBOR {rate_code}",
+    }
+    return rows, meta
 
 
 @router.get("/bond/credit-spread", response_model=List[CreditSpreadItem])

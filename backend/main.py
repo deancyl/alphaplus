@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -594,14 +594,28 @@ app.include_router(deposit_router, prefix="/api/v1/deposit", tags=["Deposit"])
 
 # Health check endpoint
 @app.get("/api/health")
-async def health_check():
-    """Health check endpoint with warmup status."""
-    return {
+async def health_check(probes: bool = False):
+    """Health check endpoint with warmup status.
+
+    ``?probes=true`` additionally probes every whitelisted market-data upstream
+    and reports latency/record counts — the same disclosure research-terminal's
+    ``action=health`` makes, so "is the data live?" is answerable from outside
+    the process rather than from a log line.
+    """
+    payload: dict = {
         "status": "healthy",
         "app": settings.app_name,
         "version": settings.app_version,
         "warmup": _warmup_status,
     }
+    if probes:
+        from backend.services.quote_sources import probe_upstreams
+
+        results = await probe_upstreams()
+        payload["upstreams"] = [p.as_dict() for p in results]
+        payload["upstreamsUp"] = sum(1 for p in results if p.status == "up")
+        payload["upstreamsTotal"] = len(results)
+    return payload
 
 
 # --- Unified envelope / error contract ---------------------------------------
@@ -628,7 +642,24 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
     Backward compatible: the legacy ``detail`` field is preserved so existing
     clients keep working, alongside the new ``ok``/``error``/``action`` contract.
+
+    SPA fallback: ``StaticFiles(html=True)`` only serves ``index.html`` for
+    directory paths, so a deep link such as ``/market/fearGreed`` (or any
+    refresh/bookmark on it) 404'd — which breaks mobile bookmarks and the
+    "add to home screen" entry points.  A browser navigation to a non-API path
+    is handed ``index.html`` instead so the Vue router resolves the route.
     """
+    if (
+        exc.status_code == 404
+        and request.method in ("GET", "HEAD")
+        and not request.url.path.startswith("/api")
+        and "text/html" in request.headers.get("accept", "")
+        and frontend_dist.exists()
+    ):
+        index_file = frontend_dist / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file), media_type="text/html")
+
     code = _HTTP_ERROR_CODES.get(exc.status_code, "internal_error")
     payload = fail_request(request, code, exc.status_code, exc.detail if isinstance(exc.detail, str) else None)
     body = strip_status(payload)

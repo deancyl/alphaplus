@@ -37,6 +37,7 @@ interface GoldHistoryData {
   history: GoldHistoryItem[]
   total: number
   is_simulated: boolean
+  timestamp?: string
 }
 
 // Responsive breakpoint
@@ -46,6 +47,9 @@ const { isMobile } = useBreakpoint()
 const loading = ref(false)
 const goldData = ref<GoldSpotData | null>(null)
 const historyData = ref<GoldHistoryItem[]>([])
+const historyError = ref(false)
+const historySimulated = ref(false)
+const historyTimestamp = ref('')
 
 // Computed chart options - Dual Y-axis configuration
 const chartOptions = computed(() => {
@@ -284,8 +288,15 @@ const fetchGoldData = async () => {
 const fetchHistoryData = async () => {
   try {
     const response = await axios.get<GoldHistoryData>('/api/v1/gold/history?days=30')
-    historyData.value = response.data.history
+    historyData.value = response.data.history ?? []
+    historySimulated.value = response.data.is_simulated === true
+    historyTimestamp.value = response.data.timestamp ?? ''
+    historyError.value = false
   } catch (error) {
+    historyError.value = true
+    historyData.value = []
+    historySimulated.value = false
+    historyTimestamp.value = ''
   }
 }
 
@@ -389,9 +400,24 @@ onMounted(() => {
 
     <!-- Price History Chart -->
     <div class="chart-section card">
-      <div class="card-title">价格走势 (近30天)</div>
-      <EChartsWrapper 
-        :option="chartOptions" 
+      <div class="card-title chart-title">
+        <span>价格走势 (近30天)</span>
+        <span v-if="historyTimestamp" class="chart-asof">数据截至 {{ formatTime(historyTimestamp) }}</span>
+      </div>
+      <div v-if="historySimulated" class="chart-notice">
+        <el-alert
+          title="模拟数据"
+          type="warning"
+          description="该历史走势为模拟数据，非真实行情。"
+          show-icon
+          :closable="false"
+        />
+      </div>
+      <div v-if="historyError" class="chart-empty">历史价格数据获取失败，请稍后重试</div>
+      <div v-else-if="historyData.length === 0" class="chart-empty">暂无历史价格数据</div>
+      <EChartsWrapper
+        v-else
+        :option="chartOptions"
         height="400px"
       />
     </div>
@@ -468,7 +494,7 @@ onMounted(() => {
 /* Price Cards */
 .price-cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-lg);
 }
@@ -568,10 +594,35 @@ onMounted(() => {
   border-bottom: 1px solid var(--border-line);
 }
 
+.chart-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chart-asof {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.chart-notice {
+  margin-bottom: var(--spacing-sm);
+}
+
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 /* Info Section */
 .info-section {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--spacing-md);
 }
 
@@ -620,7 +671,7 @@ onMounted(() => {
 /* Responsive */
 @media (max-width: 1200px) {
   .price-cards {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -637,11 +688,11 @@ onMounted(() => {
   }
   
   .price-cards {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   
   .info-section {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   
   .price-value {

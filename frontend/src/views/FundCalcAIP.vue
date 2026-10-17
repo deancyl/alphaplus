@@ -3,10 +3,11 @@ import { ref, watch, onMounted, nextTick, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, DataAnalysis, Loading } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
+import api from '@/api/index'
 import {
-  filterFunds,
   calculateAIP,
   type FundItem,
+  type FundFilterResponse,
   type AIPCalculateRequest,
   type AIPCalculateResponse
 } from '@/api/fund'
@@ -26,6 +27,9 @@ const searchQuery = ref('')
 const searchResults = ref<FundItem[]>([])
 const searchLoading = ref(false)
 const showSuggestions = ref(false)
+const searchError = ref(false)
+// 标记「正在通过下拉选择基金」，避免选择后 watcher 误清空 fund_code
+let selectingFund = false
 
 // Result state
 const result = ref<AIPCalculateResponse | null>(null)
@@ -66,16 +70,25 @@ const handleSearch = async () => {
   }
 
   searchLoading.value = true
+  searchError.value = false
   try {
-    const response = await filterFunds({ page: 1, page_size: 20 })
+    // 直接调用 API 以读取 _error，避免失败时静默无提示
+    const response = await api.post<FundFilterResponse>('/fund/filter', { page: 1, page_size: 20 })
+    if (response._error || response.data === null) {
+      searchError.value = true
+      searchResults.value = []
+      return
+    }
     const query = searchQuery.value.trim().toLowerCase()
-    searchResults.value = response.funds.filter(
+    searchResults.value = response.data.funds.filter(
       f =>
         f.fund_code.toLowerCase().includes(query) ||
         f.fund_name.toLowerCase().includes(query)
     )
     showSuggestions.value = searchResults.value.length > 0
-  } catch (error) {
+  } catch {
+    searchError.value = true
+    searchResults.value = []
   } finally {
     searchLoading.value = false
   }
@@ -83,9 +96,14 @@ const handleSearch = async () => {
 
 // Select fund from suggestions
 const selectFund = (fund: FundItem) => {
+  selectingFund = true
   formData.value.fund_code = fund.fund_code
   searchQuery.value = `${fund.fund_code} - ${fund.fund_name}`
   showSuggestions.value = false
+  // 在下一个 tick 解除标记，使 watcher 在本次变更中跳过清空逻辑
+  nextTick(() => {
+    selectingFund = false
+  })
 }
 
 // Handle input focus with scroll for keyboard occlusion
@@ -164,7 +182,7 @@ const loadLastCalculation = () => {
       if (parsed.fund_code) {
         searchQuery.value = parsed.fund_code
       }
-      ElMessage.success('已加载上次计算参数')
+      // 页面加载时不弹出 toast，静默恢复参数
     } catch {
       // Silent fail - localStorage parse error, use defaults
     }
@@ -337,6 +355,8 @@ watch(searchQuery, () => {
 
 // Clear fund code when search query changes manually
 watch(searchQuery, (newVal, oldVal) => {
+  // 下拉选择期间跳过清空，避免刚选中的基金代码被误清
+  if (selectingFund) return
   if (oldVal && newVal !== oldVal) {
     formData.value.fund_code = ''
   }
@@ -402,6 +422,7 @@ onUnmounted(() => {
                   <span class="fund-name">{{ fund.fund_name }}</span>
                 </div>
               </div>
+              <div v-if="searchError" class="search-error">搜索失败，请重试</div>
             </div>
           </el-form-item>
 
@@ -557,7 +578,8 @@ onUnmounted(() => {
             <div class="panel-header">
               <h3>净值走势曲线</h3>
             </div>
-            <div ref="chartRef" class="chart-container" />
+            <div v-if="result.nav_history && result.nav_history.length > 0" ref="chartRef" class="chart-container" />
+            <div v-else class="chart-empty">暂无净值走势数据</div>
           </div>
         </template>
       </div>
@@ -669,6 +691,12 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.search-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--market-up, #E63935);
 }
 
 /* Result Panel */
@@ -794,6 +822,15 @@ onUnmounted(() => {
 .chart-container {
   width: 100%;
   height: 400px;
+}
+
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+  color: var(--text-muted);
+  font-size: 14px;
 }
 
 /* Responsive */

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Clock, Refresh } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
@@ -141,6 +141,12 @@ const formatPrice = (val: number | null): string => {
   return val.toFixed(2)
 }
 
+// 平均涨跌幅：空数组时返回 null，避免除零得到 NaN
+const avgChangePct = computed<number | null>(() => {
+  if (indices.value.length === 0) return null
+  return indices.value.reduce((sum, i) => sum + i.change_pct, 0) / indices.value.length
+})
+
 // Region mapping for indices
 const regionMap: Record<string, string> = {
   'DJI': '美国',
@@ -153,14 +159,19 @@ const regionMap: Record<string, string> = {
   'CAC': '法国',
 }
 
-// Fetch global market data - progressive loading for each section
+// Fetch global market data - single request, derive all three sections
+let inFlight = false
 const fetchGlobalMarketData = async () => {
-  // Fetch indices independently
+  // 防止 30s 自动刷新重入
+  if (inFlight) return
+  inFlight = true
   indicesLoading.value = true
+  currenciesLoading.value = true
+  commoditiesLoading.value = true
   try {
     const response = await getGlobalMarket()
-    
-    indices.value = response.indices.map(idx => ({
+
+    indices.value = (response.indices ?? []).map(idx => ({
       code: idx.code,
       name: idx.name,
       price: idx.price,
@@ -168,36 +179,16 @@ const fetchGlobalMarketData = async () => {
       change_pct: idx.change_pct,
       region: regionMap[idx.code] || '其他',
     }))
-    
-    // Update chart
     updateIndicesChart()
-  } catch {
-    ElMessage.error('获取全球指数数据失败')
-  } finally {
-    indicesLoading.value = false
-  }
-  
-  // Fetch currencies independently
-  currenciesLoading.value = true
-  try {
-    const response = await getGlobalMarket()
-    currencies.value = response.currencies.map(curr => ({
+
+    currencies.value = (response.currencies ?? []).map(curr => ({
       pair: curr.name,
       rate: curr.price,
       change: curr.price * curr.change_pct / 100,
       change_pct: curr.change_pct,
     }))
-  } catch {
-    ElMessage.error('获取汇率数据失败')
-  } finally {
-    currenciesLoading.value = false
-  }
-  
-  // Fetch commodities independently
-  commoditiesLoading.value = true
-  try {
-    const response = await getGlobalMarket()
-    commodities.value = response.commodities.map(comm => ({
+
+    commodities.value = (response.commodities ?? []).map(comm => ({
       name: comm.name,
       code: comm.code,
       price: comm.price,
@@ -205,20 +196,16 @@ const fetchGlobalMarketData = async () => {
       change_pct: comm.change_pct,
       unit: '',
     }))
-    
-    // Set last update time
-    lastUpdate.value = response.update_time || new Date().toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
+
+    // 更新时间只取后端提供的值，不用本地时钟替代；无则渲染为"—"
+    lastUpdate.value = response.update_time || ''
   } catch {
-    ElMessage.error('获取大宗商品数据失败')
+    ElMessage.error('获取全球市场数据失败')
   } finally {
+    indicesLoading.value = false
+    currenciesLoading.value = false
     commoditiesLoading.value = false
+    inFlight = false
   }
 }
 
@@ -241,9 +228,11 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
   fetchGlobalMarketData()
   
-  // Auto refresh every 30 seconds
+  // Auto refresh every 30 seconds (skip when tab hidden; inFlight guard inside fetch)
   refreshTimer = setInterval(() => {
-    fetchGlobalMarketData()
+    if (document.visibilityState === 'visible') {
+      fetchGlobalMarketData()
+    }
   }, 30000)
 })
 
@@ -262,9 +251,9 @@ onUnmounted(() => {
       <div class="page-header">
         <h1 class="page-title">全球市场总览</h1>
         <div class="header-info">
-          <span class="update-time" v-if="lastUpdate">
+          <span class="update-time">
             <el-icon><Clock /></el-icon>
-            最后更新: {{ lastUpdate }}
+            最后更新: {{ lastUpdate || '—' }}
           </span>
           <el-button 
             type="primary" 
@@ -300,7 +289,8 @@ onUnmounted(() => {
           
           <!-- Indices Grid -->
           <template v-else>
-            <div class="indices-grid">
+            <div v-if="indices.length === 0" class="empty-block">暂无数据</div>
+            <div v-else class="indices-grid">
               <el-card 
                 v-for="idx in indices" 
                 :key="idx.code"
@@ -321,7 +311,7 @@ onUnmounted(() => {
             </div>
             
             <!-- Indices Comparison Chart -->
-            <el-card class="chart-card" shadow="never">
+            <el-card v-if="indices.length > 0" class="chart-card" shadow="never">
               <template #header>
                 <div class="card-header">
                   <span>指数涨跌幅对比</span>
@@ -355,7 +345,8 @@ onUnmounted(() => {
             
             <!-- Actual content when loaded -->
             <el-card v-else shadow="never" class="data-card">
-              <el-table :data="currencies" stripe size="small">
+              <div v-if="currencies.length === 0" class="empty-block">暂无数据</div>
+              <el-table v-else :data="currencies" stripe size="small">
                 <el-table-column prop="pair" label="货币对" width="100" />
                 <el-table-column prop="rate" label="汇率" width="100">
                   <template #default="{ row }">
@@ -391,7 +382,8 @@ onUnmounted(() => {
             
             <!-- Actual content when loaded -->
             <el-card v-else shadow="never" class="data-card">
-              <el-table :data="commodities" stripe size="small">
+              <div v-if="commodities.length === 0" class="empty-block">暂无数据</div>
+              <el-table v-else :data="commodities" stripe size="small">
                 <el-table-column prop="name" label="品种" width="90" />
                 <el-table-column prop="price" label="价格" width="100">
                   <template #default="{ row }">
@@ -433,28 +425,28 @@ onUnmounted(() => {
               <div class="summary-item">
                 <div class="summary-label">上涨指数</div>
                 <div class="summary-value text-up">
-                  {{ indices.filter(i => i.change_pct > 0).length }}
+                  {{ indices.length ? indices.filter(i => i.change_pct > 0).length : '—' }}
                 </div>
               </div>
               <div class="summary-item">
                 <div class="summary-label">下跌指数</div>
                 <div class="summary-value text-down">
-                  {{ indices.filter(i => i.change_pct < 0).length }}
+                  {{ indices.length ? indices.filter(i => i.change_pct < 0).length : '—' }}
                 </div>
               </div>
               <div class="summary-item">
                 <div class="summary-label">平盘指数</div>
                 <div class="summary-value text-flat">
-                  {{ indices.filter(i => i.change_pct === 0).length }}
+                  {{ indices.length ? indices.filter(i => i.change_pct === 0).length : '—' }}
                 </div>
               </div>
               <div class="summary-item">
                 <div class="summary-label">平均涨跌</div>
                 <div 
                   class="summary-value" 
-                  :class="getValueClass(indices.reduce((sum, i) => sum + i.change_pct, 0) / indices.length)"
+                  :class="getValueClass(avgChangePct)"
                 >
-                  {{ formatPercent(indices.reduce((sum, i) => sum + i.change_pct, 0) / indices.length) }}
+                  {{ avgChangePct === null ? '—' : formatPercent(avgChangePct) }}
                 </div>
               </div>
             </div>
@@ -519,6 +511,14 @@ onUnmounted(() => {
 .section-subtitle {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+/* 空数据占位 */
+.empty-block {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
 }
 
 /* Indices Grid */

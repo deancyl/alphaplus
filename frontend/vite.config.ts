@@ -12,7 +12,11 @@ export default defineConfig({
   css: {
     postcss: './postcss.config.js',
   },
-  base: './',  // Relative path for portable deployment
+  // Absolute asset paths. With `./` a deep link such as /market/fearGreed made
+  // the browser request /market/assets/index-*.js, which the SPA fallback then
+  // answered with index.html -> the app never booted (blank page). The backend
+  // serves dist at "/", so absolute is also the correct deployment shape.
+  base: '/',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

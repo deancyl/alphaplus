@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   getFundDetail,
   getFundHoldings,
@@ -17,11 +17,13 @@ import type { EChartsOption } from 'echarts'
 // ==================== Composables & State ====================
 
 const route = useRoute()
+const router = useRouter()
 const { isMobile } = useBreakpoint()
 
 // Fund basic info
 const fundInfo = ref<FundItem | null>(null)
 const fundLoading = ref(false)
+const fundError = ref(false)
 
 // Report dates
 const availableDates = ref<ReportDate[]>([])
@@ -30,10 +32,12 @@ const selectedDate = ref<string>('')
 // Holdings data
 const holdings = ref<HoldingItem[]>([])
 const holdingsLoading = ref(false)
+const holdingsError = ref(false)
 
 // Industry data
 const industries = ref<IndustryItem[]>([])
 const industryLoading = ref(false)
+const industryError = ref(false)
 
 // Get fund code from route
 const fundCode = computed(() => route.params.fundCode as string || route.query.code as string)
@@ -151,11 +155,20 @@ const fetchFundInfo = async () => {
   if (!fundCode.value) return
   
   fundLoading.value = true
+  fundError.value = false
   try {
     const data = await getFundDetail(fundCode.value)
-    if (data) fundInfo.value = data
+    if (data) {
+      fundInfo.value = data
+    } else {
+      // 请求失败或无数据
+      fundInfo.value = null
+      fundError.value = true
+    }
   } catch {
-    // API interceptor already handled notification
+    // 兜底：axios 层不会 reject，此处仅防意外
+    fundInfo.value = null
+    fundError.value = true
   } finally {
     fundLoading.value = false
   }
@@ -165,6 +178,7 @@ const fetchHoldings = async () => {
   if (!fundCode.value) return
   
   holdingsLoading.value = true
+  holdingsError.value = false
   try {
     const response = await getFundHoldings(fundCode.value, selectedDate.value || undefined)
     if (response && response.report_dates) {
@@ -173,9 +187,14 @@ const fetchHoldings = async () => {
         selectedDate.value = response.report_dates[0].report_date
       }
       holdings.value = response.holdings
+    } else {
+      // 请求失败
+      holdings.value = []
+      holdingsError.value = true
     }
   } catch {
-    // API interceptor already handled notification
+    holdings.value = []
+    holdingsError.value = true
   } finally {
     holdingsLoading.value = false
   }
@@ -185,13 +204,18 @@ const fetchIndustry = async () => {
   if (!fundCode.value) return
   
   industryLoading.value = true
+  industryError.value = false
   try {
     const response = await getFundIndustry(fundCode.value, selectedDate.value || undefined)
     if (response && response.industries) {
       industries.value = response.industries
+    } else {
+      industries.value = []
+      industryError.value = true
     }
   } catch {
-    // API interceptor already handled notification
+    industries.value = []
+    industryError.value = true
   } finally {
     industryLoading.value = false
   }
@@ -212,11 +236,7 @@ watch(fundCode, () => {
   }
 }, { immediate: true })
 
-onMounted(() => {
-  if (fundCode.value) {
-    fetchFundInfo()
-  }
-})
+// 注意：fundCode 的 watch 已设置 immediate，onMounted 无需再次调用 fetchFundInfo
 </script>
 
 <template>
@@ -253,6 +273,10 @@ onMounted(() => {
             <span class="honors-value">{{ fundInfo.manager_honors }}</span>
           </div>
         </template>
+        <div v-else class="header-error">
+          <p>{{ fundError ? '基金信息加载失败' : '未找到该基金信息' }}</p>
+          <el-button size="small" @click="router.back()">返回</el-button>
+        </div>
       </div>
     </div>
 
@@ -335,7 +359,11 @@ onMounted(() => {
           </el-table>
           
           <div v-if="!holdingsLoading && holdings.length === 0" class="empty-state">
-            暂无持仓数据
+            <template v-if="holdingsError">
+              <span>加载失败，</span>
+              <el-button size="small" text type="primary" @click="fetchHoldings">点击重试</el-button>
+            </template>
+            <template v-else>暂无持仓数据</template>
           </div>
         </div>
       </section>
@@ -355,15 +383,14 @@ onMounted(() => {
           />
           
           <div v-if="!industryLoading && industries.length === 0" class="empty-state">
-            暂无行业数据
+            <template v-if="industryError">
+              <span>加载失败，</span>
+              <el-button size="small" text type="primary" @click="fetchIndustry">点击重试</el-button>
+            </template>
+            <template v-else>暂无行业数据</template>
           </div>
         </div>
       </section>
-    </div>
-
-    <!-- Empty State -->
-    <div v-if="!fundCode" class="no-fund-selected">
-      <p>请选择一只基金查看详情</p>
     </div>
   </div>
 </template>
@@ -468,13 +495,15 @@ onMounted(() => {
 /* Content Grid */
 .content-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  /* minmax(0, …): `1fr`/`1.2fr` resolve min-content floors, and the holdings
+     table's min-content is wider than a phone — the page then zoomed out. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--spacing-md);
 }
 
 @media (min-width: 1024px) {
   .content-grid {
-    grid-template-columns: 1.2fr 1fr;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   }
 }
 
@@ -558,17 +587,23 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   min-height: 200px;
   color: var(--text-muted);
   font-size: 14px;
 }
 
-.no-fund-selected {
+.header-error {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 400px;
+  gap: 12px;
   color: var(--text-muted);
+  font-size: 14px;
+  padding: var(--spacing-sm) 0;
+}
+
+.header-error p {
+  margin: 0;
 }
 
 /* Loading Skeleton */
@@ -635,7 +670,18 @@ onMounted(() => {
 /* Tablet Responsive */
 @media (max-width: 1024px) {
   .content-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .holdings-section,
+  .industry-section {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .holdings-content,
+  .industry-content {
+    overflow-x: auto;
   }
   
   .industry-section {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
@@ -65,6 +65,8 @@ const searchQuery = ref<string>('')
 const searchResults = ref<FundSearchResult[]>([])
 const searchLoading = ref(false)
 const showSearchDropdown = ref(false)
+const searchError = ref(false)
+const similarityError = ref(false)
 
 const algorithmType = ref<string>('holdings')
 const minSimilarity = ref<number>(50)
@@ -81,18 +83,6 @@ const factorCalculationTime = ref<number>(0)
 const showFactorTable = ref(false)
 
 // Style box state
-interface StyleBoxData {
-  large_cap_value: number
-  large_cap_blend: number
-  large_cap_growth: number
-  mid_cap_value: number
-  mid_cap_blend: number
-  mid_cap_growth: number
-  small_cap_value: number
-  small_cap_blend: number
-  small_cap_growth: number
-}
-
 const styleBoxData = ref<StyleBoxData | null>(null)
 const styleBoxLoading = ref(false)
 
@@ -111,14 +101,19 @@ const handleSearch = async () => {
   }
 
   searchLoading.value = true
+  searchError.value = false
   try {
-    const response = await api.get('/fund/search', {
+    const response = await api.get<FundSearchResult[]>('/fund/search', {
       params: { keyword: searchQuery.value, limit: 20 }
-    }) as unknown as FundSearchResult[]
-    searchResults.value = response || []
-    showSearchDropdown.value = searchResults.value.length > 0
-  } catch (error) {
-    searchResults.value = []
+    })
+    if (response._error || response.data === null) {
+      searchError.value = true
+      searchResults.value = []
+      showSearchDropdown.value = false
+    } else {
+      searchResults.value = Array.isArray(response.data) ? response.data : []
+      showSearchDropdown.value = searchResults.value.length > 0
+    }
   } finally {
     searchLoading.value = false
   }
@@ -140,6 +135,8 @@ const clearSelection = () => {
   searchQuery.value = ''
   similarFunds.value = []
   hasSearched.value = false
+  similarityError.value = false
+  searchError.value = false
   factorExposures.value = []
   showFactorTable.value = false
   styleBoxData.value = null
@@ -181,69 +178,74 @@ const getFactorBgStyle = (weight: number): string => {
 
 // Fetch factor exposure for a fund
 const fetchFactorExposure = async (fundCode: string, fundName: string): Promise<FactorExposure | null> => {
-  try {
-    const today = new Date()
-    const endDate = today.toISOString().split('T')[0]
-    const startDate = new Date(today.setFullYear(today.getFullYear() - 1)).toISOString().split('T')[0]
-    
-    const response = await api.post('/analytics/factor-exposure', null, {
-      params: {
-        fund_code: fundCode,
-        start_date: startDate,
-        end_date: endDate,
-      }
-    }) as unknown as { fund_code: string; exposure: number[] }
-    
-    const exposure = response.exposure || []
-    
-    return {
+  const today = new Date()
+  const endDate = today.toISOString().split('T')[0]
+  const startDate = new Date(today.setFullYear(today.getFullYear() - 1)).toISOString().split('T')[0]
+
+  const response = await api.post<{ fund_code: string; exposure: number[] }>('/analytics/factor-exposure', null, {
+    params: {
       fund_code: fundCode,
-      fund_name: fundName,
-      large_cap_growth: exposure[0] || 0,
-      large_cap_value: exposure[1] || 0,
-      large_cap_blend: exposure[2] || 0,
-      mid_cap_growth: exposure[3] || 0,
-      mid_cap_value: exposure[4] || 0,
-      mid_cap_blend: exposure[5] || 0,
-      small_cap_growth: exposure[6] || 0,
-      small_cap_value: exposure[7] || 0,
-      small_cap_blend: exposure[8] || 0,
-      financial_sector: exposure[9] || 0,
-      technology_sector: exposure[10] || 0,
-      healthcare_sector: exposure[11] || 0,
-      consumer_sector: exposure[12] || 0,
-      industrial_sector: exposure[13] || 0,
-      energy_sector: exposure[14] || 0,
-      materials_sector: exposure[15] || 0,
-      utilities_sector: exposure[16] || 0,
+      start_date: startDate,
+      end_date: endDate,
     }
-  } catch (error) {
+  })
+
+  if (response._error || response.data === null) {
     return null
+  }
+
+  const exposure = response.data.exposure || []
+
+  return {
+    fund_code: fundCode,
+    fund_name: fundName,
+    large_cap_growth: exposure[0] || 0,
+    large_cap_value: exposure[1] || 0,
+    large_cap_blend: exposure[2] || 0,
+    mid_cap_growth: exposure[3] || 0,
+    mid_cap_value: exposure[4] || 0,
+    mid_cap_blend: exposure[5] || 0,
+    small_cap_growth: exposure[6] || 0,
+    small_cap_value: exposure[7] || 0,
+    small_cap_blend: exposure[8] || 0,
+    financial_sector: exposure[9] || 0,
+    technology_sector: exposure[10] || 0,
+    healthcare_sector: exposure[11] || 0,
+    consumer_sector: exposure[12] || 0,
+    industrial_sector: exposure[13] || 0,
+    energy_sector: exposure[14] || 0,
+    materials_sector: exposure[15] || 0,
+    utilities_sector: exposure[16] || 0,
   }
 }
 
 // Fetch style box data for selected fund
 const fetchStyleBoxData = async (fundCode: string): Promise<StyleBoxData | null> => {
+  styleBoxLoading.value = true
   try {
-    styleBoxLoading.value = true
     const today = new Date()
     const endDate = today.toISOString().split('T')[0]
     const startDate = new Date(today.setFullYear(today.getFullYear() - 1)).toISOString().split('T')[0]
-    
-    const response = await api.post('/analytics/factor-exposure', null, {
+
+    const response = await api.post<{
+      fund_code: string
+      style_factors: Array<{ name: string; weight: number }>
+      sector_factors: Array<{ name: string; weight: number }>
+    }>('/analytics/factor-exposure', null, {
       params: {
         fund_code: fundCode,
         start_date: startDate,
         end_date: endDate,
       }
-    }) as unknown as {
-      fund_code: string
-      style_factors: Array<{ name: string; weight: number }>
-      sector_factors: Array<{ name: string; weight: number }>
+    })
+
+    // 请求失败或数据缺失时返回 null，由界面展示空状态
+    if (response._error || response.data === null) {
+      return null
     }
-    
+
     // Extract style factors from response
-    const styleFactors = response.style_factors || []
+    const styleFactors = response.data.style_factors || []
     const getWeight = (name: string): number => {
       const factor = styleFactors.find(f => f.name === name)
       return factor ? factor.weight * 100 : 0
@@ -294,19 +296,6 @@ const fetchStyleBoxData = async (fundCode: string): Promise<StyleBoxData | null>
       small_cap_value: smallRow.value,
       small_cap_blend: smallRow.blend,
       small_cap_growth: smallRow.growth,
-    }
-  } catch (error) {
-    // Return a balanced default distribution
-    return {
-      large_cap_value: 15,
-      large_cap_blend: 25,
-      large_cap_growth: 15,
-      mid_cap_value: 10,
-      mid_cap_blend: 15,
-      mid_cap_growth: 10,
-      small_cap_value: 5,
-      small_cap_blend: 5,
-      small_cap_growth: 5,
     }
   } finally {
     styleBoxLoading.value = false
@@ -378,24 +367,23 @@ const calculateSimilarity = async () => {
 
   loading.value = true
   hasSearched.value = true
+  similarityError.value = false
   try {
-    const response = await api.post('/fund/similarity', {
+    const response = await api.post<{ similar_funds: SimilarFund[] }>('/fund/similarity', {
       source_fund_code: sourceFundCode.value,
       algorithm: algorithmType.value,
       min_similarity: minSimilarity.value / 100,
       top_n: topN.value,
-    }) as unknown as { similar_funds: SimilarFund[] }
-    similarFunds.value = response.similar_funds || []
-    
-    if (similarFunds.value.length === 0) {
-      ElMessage.info('未找到符合条件的相似基金')
+    })
+    if (response._error || response.data === null) {
+      similarityError.value = true
+      similarFunds.value = []
+    } else {
+      similarFunds.value = response.data.similar_funds || []
+      if (similarFunds.value.length === 0) {
+        ElMessage.info('未找到符合条件的相似基金')
+      }
     }
-    
-    // Fetch style box data for selected fund
-    await fetchStyleBoxData(sourceFundCode.value)
-  } catch (error) {
-    ElMessage.error('相似度计算失败，请重试')
-    similarFunds.value = []
   } finally {
     loading.value = false
   }
@@ -563,6 +551,15 @@ const handleClickOutside = (event: MouseEvent) => {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
 })
+
+onUnmounted(() => {
+  // 清理全局监听与防抖定时器，避免泄漏
+  document.removeEventListener('click', handleClickOutside)
+  if (searchTimeout) {
+    clearTimeout(searchTimeout)
+    searchTimeout = null
+  }
+})
 </script>
 
 <template>
@@ -601,6 +598,7 @@ onMounted(() => {
                 <span class="fund-type">{{ fund.fund_type }}</span>
               </div>
             </div>
+            <div v-if="searchError" class="search-error">搜索失败，请重试</div>
           </div>
 
           <div v-if="sourceFundCode" class="selected-fund">
@@ -622,6 +620,7 @@ onMounted(() => {
               <el-icon class="is-loading"><Loading /></el-icon>
               <span>加载风格数据...</span>
             </div>
+            <div v-else class="style-box-empty">风格数据暂不可用</div>
           </div>
         </div>
 
@@ -691,6 +690,11 @@ onMounted(() => {
         </div>
 
         <template v-else>
+          <!-- Error hint -->
+          <div v-if="similarityError" class="similarity-error">
+            相似度计算失败，请重试
+          </div>
+
           <!-- Style Box Section -->
           <div v-if="styleBoxData" class="style-box-section">
             <StyleBox 
@@ -728,7 +732,7 @@ onMounted(() => {
             
             <el-table
               :data="similarFunds"
-              :loading="loading"
+              v-loading="loading"
               stripe
               max-height="400"
             >
@@ -1047,6 +1051,32 @@ onMounted(() => {
 
 .style-box-loading .el-icon {
   font-size: 16px;
+}
+
+.style-box-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 51, 153, 0.05);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.search-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--market-up, #E63935);
+}
+
+.similarity-error {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: rgba(230, 57, 53, 0.08);
+  border-radius: 4px;
+  color: var(--market-up, #E63935);
+  font-size: 13px;
 }
 
 /* Form Items */

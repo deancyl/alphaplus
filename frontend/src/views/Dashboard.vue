@@ -45,6 +45,8 @@ const styleStrengthLoading = ref(true)
 const heatmapLoading = ref(true)
 const sectorsLoading = ref(true)
 const gainersLoading = ref(true)
+// 后台静默刷新标记：仅用于提示，不触发骨架屏（骨架屏只在首次加载出现）
+const refreshing = ref(false)
 
 // Data source states - track real/delayed/simulated data for each widget
 type DataSource = 'real' | 'delayed' | 'simulated'
@@ -124,7 +126,6 @@ interface SectorPerformance {
   volume: number
 }
 const sectorPerformance = ref<SectorPerformance[]>([])
-const sectorPeriod = ref('today')
 
 // Word cloud keywords derived from sector performance
 const wordCloudKeywords = computed(() => {
@@ -142,8 +143,10 @@ const wordCloudKeywords = computed(() => {
 
 // Fear/Greed chart option
 const fearGreedOption = computed<EChartsOption>(() => {
-  const score = fearGreedData.value?.composite_score ?? 50
-  const status = fearGreedData.value?.sentiment_status ?? '中性'
+  // 无数据时不伪造数值，交由模板展示"数据暂不可用"占位
+  if (!fearGreedData.value) return {}
+  const score = fearGreedData.value.composite_score
+  const status = fearGreedData.value.sentiment_status ?? '中性'
   
   // Dynamic color based on score
   let color = '#003399'
@@ -415,61 +418,41 @@ const heatmapOption = ref<EChartsOption>({
 // Fetch all data (indices handled by store)
 // Progressive widget loaders - each widget loads independently
 const fetchFearGreedWidget = async () => {
-  fearGreedLoading.value = true
+  if (!refreshing.value) fearGreedLoading.value = true
   try {
     const data = await getFearGreedIndex()
     if (data && Array.isArray(data) && data.length > 0) {
       fearGreedData.value = data[0]
       fearGreedHistory.value = data.slice(0, 30)
       fearGreedDataSource.value = 'real'
+    } else {
+      // 无数据：保持为 null，由模板显示"数据暂不可用"，不伪造数值
+      fearGreedData.value = null
+      fearGreedHistory.value = []
     }
-  } catch {
-    // Fallback: neutral state
-    fearGreedData.value = {
-      trade_date: new Date().toISOString().split('T')[0],
-      composite_score: 50,
-      sentiment_status: '中性',
-      factor_volatility: null,
-      factor_safe_haven: null,
-      factor_margin_ratio: null,
-      factor_volume_deviation: null,
-      factor_futures_basis: null,
-      factor_stock_strength: null
-    }
-    fearGreedDataSource.value = 'simulated'
   } finally {
-    fearGreedLoading.value = false
+    if (!refreshing.value) fearGreedLoading.value = false
   }
 }
 
 const fetchERPWidget = async () => {
-  erpLoading.value = true
+  if (!refreshing.value) erpLoading.value = true
   try {
     const data = await getERPSpread()
     if (data && Array.isArray(data) && data.length > 0) {
       erpData.value = data[0]
       erpDataSource.value = 'real'
+    } else {
+      // 无数据：保持为 null，由模板显示"数据暂不可用"，不伪造数值
+      erpData.value = null
     }
-  } catch {
-    // Fallback: placeholder data
-    erpData.value = {
-      index_code: '000300',
-      index_name: '沪深300',
-      trade_date: new Date().toISOString().split('T')[0],
-      pe_ttm: 12.0,
-      treasury_yield_10y: 2.5,
-      erp_spread: 5.5,
-      percentile_rank_10y: 50,
-      index_close_price: null
-    }
-    erpDataSource.value = 'simulated'
   } finally {
-    erpLoading.value = false
+    if (!refreshing.value) erpLoading.value = false
   }
 }
 
 const fetchCrowdingWidget = async () => {
-  crowdingLoading.value = true
+  if (!refreshing.value) crowdingLoading.value = true
   try {
     const data = await getCrowdingAnalysis()
     if (data && Array.isArray(data)) {
@@ -481,12 +464,12 @@ const fetchCrowdingWidget = async () => {
     crowdingData.value = []
     crowdingDataSource.value = 'simulated'
   } finally {
-    crowdingLoading.value = false
+    if (!refreshing.value) crowdingLoading.value = false
   }
 }
 
 const fetchStyleStrengthWidget = async () => {
-  styleStrengthLoading.value = true
+  if (!refreshing.value) styleStrengthLoading.value = true
   try {
     const data = await getStyleStrength()
     if (data && Array.isArray(data)) {
@@ -498,12 +481,12 @@ const fetchStyleStrengthWidget = async () => {
     styleStrengthData.value = []
     styleStrengthDataSource.value = 'simulated'
   } finally {
-    styleStrengthLoading.value = false
+    if (!refreshing.value) styleStrengthLoading.value = false
   }
 }
 
 const fetchHeatmapWidget = async () => {
-  heatmapLoading.value = true
+  if (!refreshing.value) heatmapLoading.value = true
   try {
     const heatmap = await getMarketHeatmap()
     if (heatmap && heatmap.rows && heatmap.cols && heatmap.cells) {
@@ -523,12 +506,12 @@ const fetchHeatmapWidget = async () => {
   } catch {
     heatmapDataSource.value = 'simulated'
   } finally {
-    heatmapLoading.value = false
+    if (!refreshing.value) heatmapLoading.value = false
   }
 }
 
 const fetchSectorsWidget = async () => {
-  sectorsLoading.value = true
+  if (!refreshing.value) sectorsLoading.value = true
   try {
     const data = await getDomesticMarket()
     if (data && data.sectors && data.sectors.length > 0) {
@@ -544,12 +527,12 @@ const fetchSectorsWidget = async () => {
     sectorPerformance.value = []
     sectorsDataSource.value = 'simulated'
   } finally {
-    sectorsLoading.value = false
+    if (!refreshing.value) sectorsLoading.value = false
   }
 }
 
 const fetchTopFundsWidget = async () => {
-  gainersLoading.value = true
+  if (!refreshing.value) gainersLoading.value = true
   try {
     const data = await getTopFunds(10)
     if (data) {
@@ -563,7 +546,7 @@ const fetchTopFundsWidget = async () => {
     topLosers.value = []
     gainersDataSource.value = 'simulated'
   } finally {
-    gainersLoading.value = false
+    if (!refreshing.value) gainersLoading.value = false
   }
 }
 
@@ -608,15 +591,21 @@ onMounted(() => {
   fetchTopFundsWidget()
   
   // Auto-refresh every 30s (only when tab is visible)
+  // 刷新时保留现有内容，仅显示轻微提示，不重新触发骨架屏
   refreshInterval = setInterval(() => {
     if (document.visibilityState === 'visible') {
-      fetchFearGreedWidget()
-      fetchERPWidget()
-      fetchCrowdingWidget()
-      fetchStyleStrengthWidget()
-      fetchHeatmapWidget()
-      fetchSectorsWidget()
-      fetchTopFundsWidget()
+      refreshing.value = true
+      Promise.allSettled([
+        fetchFearGreedWidget(),
+        fetchERPWidget(),
+        fetchCrowdingWidget(),
+        fetchStyleStrengthWidget(),
+        fetchHeatmapWidget(),
+        fetchSectorsWidget(),
+        fetchTopFundsWidget(),
+      ]).finally(() => {
+        refreshing.value = false
+      })
     }
   }, REFRESH_INTERVAL)
   
@@ -639,7 +628,10 @@ onUnmounted(() => {
     <div class="index-bar">
       <div class="index-bar-header">
         <h2 class="index-bar-title">实时行情</h2>
-        <span class="refresh-hint">每30秒自动刷新</span>
+        <span class="refresh-hint">
+          <span v-if="refreshing" class="refreshing-dot"></span>
+          每30秒自动刷新
+        </span>
       </div>
       <div class="index-bar-content" v-loading="indicesLoading">
         <!-- Skeleton when loading -->
@@ -663,9 +655,6 @@ onUnmounted(() => {
             <div class="index-change" :class="getValueClass(quote?.change ?? null)">
               {{ formatChange(quote?.change_pct ?? null) }}
             </div>
-          </div>
-          <div v-if="Object.keys(indexQuotes).length === 0" class="index-empty">
-            暂无行情数据
           </div>
         </template>
         
@@ -735,6 +724,9 @@ onUnmounted(() => {
           
           <!-- Actual content when loaded -->
           <template v-else>
+            <!-- 无数据时的诚实空状态 -->
+            <div v-if="!fearGreedData" class="widget-empty">数据暂不可用</div>
+            <template v-else>
             <div class="widget-content">
               <div class="gauge-container">
                 <EChartsWrapper
@@ -763,7 +755,8 @@ onUnmounted(() => {
                 <span class="factor-value">{{ formatNumber(fearGreedData.factor_margin_ratio) }}</span>
               </div>
             </div>
-            <div class="risk-warning" v-if="!fearGreedLoading">
+            </template>
+            <div class="risk-warning" v-if="fearGreedData">
               <el-icon><Warning /></el-icon>
               <span>投资有风险，决策需谨慎</span>
             </div>
@@ -791,6 +784,9 @@ onUnmounted(() => {
           
           <!-- Actual content when loaded -->
           <template v-else>
+            <!-- 无数据时的诚实空状态 -->
+            <div v-if="!erpData" class="widget-empty">数据暂不可用</div>
+            <template v-else>
             <div class="widget-content">
               <EChartsWrapper
                 :option="erpOption"
@@ -811,7 +807,8 @@ onUnmounted(() => {
                 <span class="detail-value">{{ erpData.index_close_price?.toFixed(2) ?? '-' }}</span>
               </div>
             </div>
-            <div class="risk-warning" v-if="!erpLoading">
+            </template>
+            <div class="risk-warning" v-if="erpData">
               <el-icon><Warning /></el-icon>
               <span>仅供参考，不构成投资建议。投资有风险，决策需谨慎</span>
             </div>
@@ -1015,11 +1012,6 @@ onUnmounted(() => {
         <div class="card-title">板块表现概览</div>
         <div class="card-actions">
           <DataConfidenceBadge :source="sectorsDataSource" />
-          <el-radio-group v-model="sectorPeriod" size="small">
-            <el-radio-button value="today">今日</el-radio-button>
-            <el-radio-button value="5d">近5日</el-radio-button>
-            <el-radio-button value="20d">近20日</el-radio-button>
-          </el-radio-group>
         </div>
       </div>
 
@@ -1112,6 +1104,23 @@ onUnmounted(() => {
 .refresh-hint {
   font-size: 12px;
   color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 后台刷新时的轻微提示（不遮挡内容） */
+.refreshing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand-navy-active);
+  animation: pulse-refresh 1s ease-in-out infinite;
+}
+
+@keyframes pulse-refresh {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .index-bar-content {
@@ -1146,12 +1155,6 @@ onUnmounted(() => {
 .index-change {
   font-size: 13px;
   font-weight: 500;
-}
-
-.index-empty {
-  color: var(--text-muted);
-  font-size: 13px;
-  padding: 20px;
 }
 
 /* Mobile Index Carousel */
@@ -1284,7 +1287,11 @@ onUnmounted(() => {
   }
 }
 
-/* Dashboard Grid - 12-column responsive system */
+/* Dashboard Grid - 12-column responsive system.
+   `minmax(0, 1fr)` (not `1fr`) on every variant: a bare `1fr` is
+   `minmax(auto, 1fr)`, so a card whose content has a wide min-content (an
+   el-table, a nowrap header row) forced the track past the viewport and the
+   browser shrink-to-fit zoomed the whole page out on phones. */
 .dashboard-grid {
   display: grid;
   gap: 16px;
@@ -1293,7 +1300,15 @@ onUnmounted(() => {
 
 /* Mobile (<768px): Single column, all widgets full-width */
 .dashboard-grid.grid-mobile {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Every direct card is allowed to shrink below its content's min-content size;
+   without this a wide el-table / echarts canvas / nowrap header row inside one
+   card widened its `1fr` track and the page scrolled (or zoomed) sideways. */
+.dashboard-grid > .card {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .dashboard-grid.grid-mobile .widget-fear-greed,
@@ -1307,7 +1322,7 @@ onUnmounted(() => {
 
 /* Tablet (768-1024px): 2-column layout */
 .dashboard-grid.grid-tablet {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .dashboard-grid.grid-tablet .widget-fear-greed,
@@ -1324,7 +1339,7 @@ onUnmounted(() => {
 
 /* Desktop (1024-1400px): 2-column layout with proper spans */
 .dashboard-grid.grid-desktop {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .dashboard-grid.grid-desktop .widget-fear-greed,
@@ -1341,7 +1356,7 @@ onUnmounted(() => {
 
 /* Wide (>1400px): 12-column grid with custom spans */
 .dashboard-grid.grid-wide {
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
 }
 
 /* Row 1: Fear/Greed (5 cols) + ERP (3 cols) + Crowding (4 cols) */
@@ -1397,14 +1412,19 @@ onUnmounted(() => {
   color: var(--text-primary);
 }
 
-.card-subtitle {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
 .card-actions {
   display: flex;
   gap: 8px;
+}
+
+/* 无数据占位 */
+.widget-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-muted);
+  font-size: 14px;
 }
 
 /* Widget Specific Styles */
@@ -1449,11 +1469,6 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-}
-
-.factor-label {
-  font-size: 11px;
-  color: var(--text-muted);
 }
 
 .factor-value {
@@ -1667,13 +1682,6 @@ onUnmounted(() => {
 .sector-detail .detail-value {
   font-size: 15px;
   font-weight: 600;
-}
-
-.sector-empty {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: 40px;
-  color: var(--text-muted);
 }
 
 /* Table Overrides */

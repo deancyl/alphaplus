@@ -7,6 +7,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import './assets/styles/main.css'
+import { logger } from './utils/logger'
 
 const app = createApp(App)
 
@@ -17,12 +18,13 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 
 // Global error handler
 app.config.errorHandler = (err, instance, info) => {
-  // Log error for debugging
-  if (import.meta.env.DEV) {
-    console.error('[Global Error]', err)
-    console.error('[Error Info]', info)
-    console.error('[Component]', instance?.$options?.name || 'Unknown')
-  }
+  // Route through the shared dev-only logger: the failure is already handled
+  // (ErrorBoundary shows the fallback UI), so this is pure diagnostics.
+  logger.info('global error', {
+    error: err,
+    info,
+    component: instance?.$options?.name || 'Unknown',
+  })
   
   // In production: could send to error tracking service
   // e.g., Sentry, LogRocket, etc.
@@ -36,9 +38,7 @@ app.config.errorHandler = (err, instance, info) => {
 
 // Handle unhandled promise rejections
 window.addEventListener('unhandledrejection', (event) => {
-  if (import.meta.env.DEV) {
-    console.error('[Unhandled Promise Rejection]', event.reason)
-  }
+  logger.info('unhandled promise rejection', event.reason)
   // Prevent default behavior (logging to console)
   event.preventDefault()
 })

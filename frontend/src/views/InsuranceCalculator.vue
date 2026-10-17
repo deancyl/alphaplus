@@ -3,7 +3,8 @@ import { ref, computed, onMounted, nextTick, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DataAnalysis, Loading, CircleCheckFilled, WarningFilled, Hide } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
-import { calculateInsurance, type InsurancePolicyRequest, type InsuranceCalculateResponse } from '@/api/insurance'
+import api from '@/api/index'
+import { type InsurancePolicyRequest, type InsuranceCalculateResponse } from '@/api/insurance'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { formatPercent } from '@/utils/formatters'
 
@@ -20,6 +21,8 @@ const formData = ref<InsurancePolicyRequest>({
 // Result state
 const result = ref<InsuranceCalculateResponse | null>(null)
 const loading = ref(false)
+const calcError = ref(false)
+const detailError = ref('')
 
 // Chart ref
 const chartRef = ref<HTMLElement | null>(null)
@@ -75,32 +78,51 @@ const handleCalculate = async () => {
   if (!validateForm()) return
 
   loading.value = true
+  calcError.value = false
+  detailError.value = ''
   try {
-    const response = await calculateInsurance(formData.value)
-    result.value = response
+    // 直接调用 API 以读取 _error，区分「请求失败」与「无数据」
+    const response = await api.post<InsuranceCalculateResponse>('/insurance/calculate', formData.value)
+    if (response._error || response.data === null) {
+      calcError.value = true
+      detailError.value = response._error?.message || ''
+      result.value = null
+      return
+    }
+    result.value = response.data
 
     // Save to localStorage
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(formData.value))
+    saveParams(formData.value)
 
     // Render chart
     await nextTick()
     renderChart()
-  } catch (error: unknown) {
-    const err = error as { response?: { data?: { detail?: string } } }
-    ElMessage.error(err?.response?.data?.detail || '计算失败，请重试')
   } finally {
     loading.value = false
   }
 }
 
+// 保存参数到 localStorage（隐私模式等场景下可能抛错，静默忽略）
+const saveParams = (params: InsurancePolicyRequest) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(params))
+  } catch {
+    // 忽略：localStorage 不可用时不阻断计算流程
+  }
+}
+
 // Load last calculation from localStorage
 const loadLastCalculation = () => {
-  const saved = localStorage.getItem(STORAGE_KEY)
+  let saved: string | null = null
+  try {
+    saved = localStorage.getItem(STORAGE_KEY)
+  } catch {
+    saved = null
+  }
   if (saved) {
     try {
       const parsed = JSON.parse(saved) as InsurancePolicyRequest
       formData.value = { ...formData.value, ...parsed }
-      ElMessage.success('已加载上次计算参数')
     } catch {
       // Silent fail - localStorage parse error, use defaults
     }
@@ -436,8 +458,17 @@ onUnmounted(() => {
 
       <!-- Result Panel -->
       <div class="result-panel">
+        <!-- Error State -->
+        <div v-if="calcError && !loading" class="error-state">
+          <el-icon :size="48" color="#fa8c16">
+            <WarningFilled />
+          </el-icon>
+          <p>计算失败，请稍后重试</p>
+          <p v-if="detailError" class="error-detail">{{ detailError }}</p>
+        </div>
+
         <!-- Empty State -->
-        <div v-if="!result && !loading" class="empty-state">
+        <div v-else-if="!result && !loading" class="empty-state">
           <el-icon :size="64" color="var(--text-muted)">
             <DataAnalysis />
           </el-icon>
@@ -622,7 +653,8 @@ onUnmounted(() => {
 }
 
 .empty-state,
-.loading-state {
+.loading-state,
+.error-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -632,9 +664,16 @@ onUnmounted(() => {
 }
 
 .empty-state p,
-.loading-state p {
+.loading-state p,
+.error-state p {
   margin-top: var(--spacing-md);
   font-size: 14px;
+}
+
+.error-state .error-detail {
+  margin-top: var(--spacing-xs);
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* Break-even Banner */

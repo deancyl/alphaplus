@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getIndexValuation, type IndexValuationItem } from '@/api/market'
+import api from '@/api/index'
+import type { IndexValuationItem } from '@/api/market'
 import { formatNumber, formatPercent } from '@/utils/formatters'
 
 // Category configuration
@@ -16,9 +17,17 @@ const categories = [
 // State
 const activeTab = ref('broad')
 const loading = ref(false)
+const loadError = ref(false)
 const allIndices = ref<IndexValuationItem[]>([])
 const selectedForComparison = ref<IndexValuationItem[]>([])
 const comparisonDrawerVisible = ref(false)
+
+// 抽屉宽度：移动端自适应
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
+const drawerSize = computed(() => (windowWidth.value <= 768 ? '92%' : 680))
+const handleResize = () => {
+  windowWidth.value = window.innerWidth
+}
 
 // Constants
 const MAX_COMPARISON = 5
@@ -53,12 +62,16 @@ const getZoneTagType = (zone: string): 'success' | 'warning' | 'danger' | 'info'
 // Fetch index data
 const fetchIndexData = async () => {
   loading.value = true
+  loadError.value = false
   try {
-    const response = await getIndexValuation()
-    // Axios interceptor returns response.data, which has { items, total }
-    allIndices.value = (response as any).items ?? []
-  } catch (error) {
-    ElMessage.error('获取指数数据失败，请稍后重试')
+    // 直接使用 axios 层以读取 _error/_meta，区分"加载失败"与"真实空数据"
+    const response = await api.get<{ items: IndexValuationItem[]; total: number }>('/market/index-valuation')
+    if (response._error || response._meta.source === 'error' || response.data === null) {
+      loadError.value = true
+      allIndices.value = []
+      return
+    }
+    allIndices.value = response.data.items ?? []
   } finally {
     loading.value = false
   }
@@ -71,7 +84,6 @@ const toggleComparison = (index: IndexValuationItem) => {
   if (idx > -1) {
     // Remove from comparison
     selectedForComparison.value.splice(idx, 1)
-    ElMessage.info(`已移除 ${index.index_name}`)
   } else {
     // Add to comparison
     if (selectedForComparison.value.length >= MAX_COMPARISON) {
@@ -79,7 +91,6 @@ const toggleComparison = (index: IndexValuationItem) => {
       return
     }
     selectedForComparison.value.push(index)
-    ElMessage.success(`已添加 ${index.index_name}`)
   }
 }
 
@@ -97,12 +108,6 @@ const openComparisonDrawer = () => {
   comparisonDrawerVisible.value = true
 }
 
-// Navigate to IndexValuation view
-const navigateToValuation = (indexCode: string) => {
-  // For now, we'll show a message. In production, this would navigate to a detailed view
-  ElMessage.info(`跳转到指数 ${indexCode} 的估值详情页`)
-}
-
 // Clear all selections
 const clearSelections = () => {
   selectedForComparison.value = []
@@ -112,6 +117,11 @@ const clearSelections = () => {
 // Lifecycle
 onMounted(() => {
   fetchIndexData()
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
 })
 </script>
 
@@ -160,7 +170,7 @@ onMounted(() => {
         border
         size="small"
         class="index-table"
-        :empty-text="activeTab === 'broad' ? '暂无数据' : '该分类数据即将上线'"
+        :empty-text="loadError ? '加载失败，请重试' : '暂无数据'"
       >
         <el-table-column label="对比" width="60" align="center">
           <template #default="{ row }">
@@ -176,15 +186,6 @@ onMounted(() => {
 
         <el-table-column prop="index_name" label="名称" min-width="120" />
 
-        <el-table-column label="涨跌幅" width="100" align="right">
-          <template #default="{ row }">
-            <span :class="getValueClass(row.pe_percentile - 50)">
-              <!-- Mock change % since API doesn't provide it -->
-              {{ formatPercent((Math.random() - 0.5) * 4) }}
-            </span>
-          </template>
-        </el-table-column>
-
         <el-table-column label="PE(TTM)" width="100" align="right">
           <template #default="{ row }">
             {{ formatNumber(row.pe_ttm) }}
@@ -198,19 +199,6 @@ onMounted(() => {
             </el-tag>
           </template>
         </el-table-column>
-
-        <el-table-column label="操作" width="100" align="center">
-          <template #default="{ row }">
-            <el-button
-              type="primary"
-              link
-              size="small"
-              @click="navigateToValuation(row.index_code)"
-            >
-              详情
-            </el-button>
-          </template>
-        </el-table-column>
       </el-table>
     </div>
 
@@ -219,7 +207,7 @@ onMounted(() => {
       v-model="comparisonDrawerVisible"
       title="指数对比"
       direction="rtl"
-      :size="680"
+      :size="drawerSize"
       class="comparison-drawer"
     >
       <template #header>

@@ -107,7 +107,8 @@ export const getFundIssueCalendar = async (
   const params: Record<string, string> = {}
   if (status) params.status = status
   const response = await api.get('/fund/issue', { params })
-  return response.data ?? []
+  // Array-safe: never hand a non-array to a .filter/.map call site.
+  return Array.isArray(response.data) ? response.data : []
 }
 
 // Get fund companies
@@ -121,7 +122,8 @@ export const getFundCompanies = async (): Promise<Array<{
   manager_count: number | null
 }>> => {
   const response = await api.get('/fund/company')
-  return response.data ?? []
+  // Array-safe: never hand a non-array to a .filter/.map call site.
+  return Array.isArray(response.data) ? response.data : []
 }
 
 // Get company distribution for treemap/bubble

@@ -16,7 +16,9 @@ export const getFearGreedIndex = async (): Promise<Array<{
   factor_stock_strength: number | null
 }>> => {
   const response = await api.get('/analytics/fear-greed')
-  return response.data ?? []
+  // Array-safe: a failed request or an unexpected envelope must not reach a
+  // `.filter/.map` call site (that throws and blanks the page).
+  return Array.isArray(response.data) ? response.data : []
 }
 
 // Get ERP spread
@@ -41,7 +43,9 @@ export const getERPSpread = async (
       risk_free_type: riskFreeType
     } 
   })
-  return response.data ?? []
+  // Array-safe: a failed request or an unexpected envelope must not reach a
+  // `.filter/.map` call site (that throws and blanks the page).
+  return Array.isArray(response.data) ? response.data : []
 }
 
 // Get style strength
@@ -53,7 +57,9 @@ export const getStyleStrength = async (): Promise<Array<{
   percentile_rank_3y: number | null
 }>> => {
   const response = await api.get('/analytics/style-strength')
-  return response.data ?? []
+  // Array-safe: a failed request or an unexpected envelope must not reach a
+  // `.filter/.map` call site (that throws and blanks the page).
+  return Array.isArray(response.data) ? response.data : []
 }
 
 // Get crowding analysis
@@ -70,7 +76,9 @@ export const getCrowdingAnalysis = async (
   const params: Record<string, string> = {}
   if (category) params.category = category
   const response = await api.get('/analytics/crowding', { params })
-  return response.data ?? []
+  // Array-safe: a failed request or an unexpected envelope must not reach a
+  // `.filter/.map` call site (that throws and blanks the page).
+  return Array.isArray(response.data) ? response.data : []
 }
 
 // Get rotation vectors
@@ -95,7 +103,9 @@ export const getRotationVectors = async (
       category,
     },
   })
-  return response.data ?? []
+  // Array-safe: a failed request or an unexpected envelope must not reach a
+  // `.filter/.map` call site (that throws and blanks the page).
+  return Array.isArray(response.data) ? response.data : []
 }
 
 // --- Forecast (AI / economic-model trend analysis) -------------------------

@@ -374,7 +374,11 @@ const fetchData = async () => {
   loading.value = true
   try {
     const response = await getStyleStrength()
-    styleData.value = response
+    // Guard the array: when the endpoint fails the client resolves with the
+    // `{ data, _meta }` envelope (data === null), and assigning that object made
+    // `styleData.value.filter(...)` in the dimensionData computed throw
+    // "filter is not a function", blanking the page behind the ErrorBoundary.
+    styleData.value = Array.isArray(response) ? response : []
     
     // Set data source based on response
     if (response && response.length > 0) {

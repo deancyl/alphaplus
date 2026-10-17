@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
-import { getCrowdingAnalysis, getRotationVectors } from '@/api/analytics'
+import api from '@/api/index'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 
 // Crowding data type
@@ -30,12 +29,14 @@ interface RotationVector {
 
 // Reactive state
 const loading = ref(false)
+const loadError = ref(false)
 const crowdingData = ref<CrowdingData[]>([])
 const selectedCategory = ref('sector')
 
 // Trajectory state
 const trajectoryData = ref<RotationVector[]>([])
 const trajectoryLoading = ref(false)
+const trajectoryError = ref(false)
 const t0Date = ref('')
 const t1Date = ref('')
 const isPlaying = ref(false)
@@ -903,15 +904,26 @@ const fetchRotationVectors = async () => {
   }
 
   trajectoryLoading.value = true
+  trajectoryError.value = false
   try {
-    const response = await getRotationVectors(t0Date.value, t1Date.value, selectedCategory.value)
-    trajectoryData.value = response
-    
+    // 直接调用 API 以读取 _error，用于区分「请求失败」与「无数据」
+    const response = await api.get<RotationVector[]>('/analytics/rotation-vector', {
+      params: {
+        t0_date: t0Date.value,
+        t1_date: t1Date.value,
+        category: selectedCategory.value,
+      },
+    })
+    if (response._error || response.data === null) {
+      trajectoryError.value = true
+      trajectoryData.value = []
+      return
+    }
+    trajectoryData.value = Array.isArray(response.data) ? response.data : []
+
     setTimeout(() => {
       initTrajectoryChart()
     }, 100)
-  } catch (error) {
-    ElMessage.error('获取轨迹向量数据失败')
   } finally {
     trajectoryLoading.value = false
   }
@@ -1001,12 +1013,21 @@ watch([t0Date, t1Date], () => {
 // Fetch data from API
 const fetchData = async () => {
   loading.value = true
+  loadError.value = false
   try {
-    const response = await getCrowdingAnalysis(selectedCategory.value)
-    crowdingData.value = response.sort((a, b) => 
+    // 直接调用 API 以读取 _error，用于区分「请求失败」与「无数据」
+    const response = await api.get<CrowdingData[]>('/analytics/crowding', {
+      params: selectedCategory.value ? { category: selectedCategory.value } : {}
+    })
+    if (response._error || response.data === null) {
+      loadError.value = true
+      crowdingData.value = []
+      return
+    }
+    crowdingData.value = (Array.isArray(response.data) ? response.data : []).sort((a, b) =>
       a.trade_date.localeCompare(b.trade_date)
     )
-    
+
     // Initialize charts after data is loaded
     setTimeout(() => {
       initGaugeChart()
@@ -1016,8 +1037,6 @@ const fetchData = async () => {
       // Fetch rotation vectors after crowding data is loaded
       fetchRotationVectors()
     }, 100)
-  } catch (error) {
-    ElMessage.error('获取市场拥挤度数据失败')
   } finally {
     loading.value = false
   }
@@ -1051,10 +1070,15 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   gaugeChart.value?.dispose()
+  gaugeChart.value = null
   heatmapChart.value?.dispose()
+  heatmapChart.value = null
   barChart.value?.dispose()
+  barChart.value = null
   trendChart.value?.dispose()
+  trendChart.value = null
   trajectoryChart.value?.dispose()
+  trajectoryChart.value = null
   stopAnimation()
 })
 </script>
@@ -1087,7 +1111,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Summary cards -->
-    <div class="summary-cards">
+    <div class="summary-cards" v-if="crowdingData.length > 0">
       <div class="summary-card">
         <div class="summary-label">综合拥挤度</div>
         <div class="summary-value" :style="{ color: getCrowdingColor(compositeScore) }">
@@ -1230,7 +1254,11 @@ onUnmounted(() => {
             </el-select>
           </div>
         </div>
-        <div class="trajectory-container" ref="trajectoryChartRef" v-loading="trajectoryLoading"></div>
+        <div class="trajectory-chart-wrapper">
+          <div class="trajectory-container" ref="trajectoryChartRef" v-loading="trajectoryLoading"></div>
+          <div v-if="trajectoryError" class="trajectory-empty">轨迹向量数据获取失败，请稍后重试</div>
+          <div v-else-if="!trajectoryLoading && trajectoryData.length === 0" class="trajectory-empty">暂无轨迹向量数据</div>
+        </div>
         <div class="trajectory-progress" v-if="isPlaying">
           <el-slider
             v-model="animationProgress"
@@ -1259,7 +1287,8 @@ onUnmounted(() => {
 
     <!-- Empty state -->
     <div class="empty-state" v-else-if="!loading">
-      <p>暂无数据</p>
+      <p v-if="loadError">市场拥挤度数据获取失败，请稍后重试</p>
+      <p v-else>暂无数据</p>
     </div>
     </div>
   </ErrorBoundary>
@@ -1302,7 +1331,7 @@ onUnmounted(() => {
 /* Summary cards */
 .summary-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 16px;
   margin-bottom: 20px;
 }
@@ -1542,9 +1571,24 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
+.trajectory-chart-wrapper {
+  position: relative;
+}
+
 .trajectory-container {
   width: 100%;
   height: 400px;
+}
+
+.trajectory-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--bg-card);
 }
 
 .trajectory-progress {

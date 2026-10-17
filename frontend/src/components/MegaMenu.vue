@@ -31,14 +31,16 @@ const menuItems = [
       { label: '基金筛选', path: '/fof/fundFilter', group: '公募基金研究' },
       { label: '基金对比', path: '/fof/fundCompare', group: '公募基金研究' },
       { label: 'FOF回测', path: '/fof/fofBacktest', group: '公募基金研究', isNew: true },
-      { label: '相似度计算', path: '/fof/fundSimilarity', group: '公募基金研究' },
+      { label: '相似度计算器', path: '/fof/fundSimilarity', group: '公募基金研究' },
       { label: '基金发行', path: '/fof/fundIssue', group: '公募基金研究' },
       { label: '基金公司', path: '/fof/fundCompany', group: '公募基金研究' },
+      { label: '机构抱团分析', path: '/fof/stockReverse', group: '公募基金研究', isNew: true },
       { label: '定投计算器', path: '/fof/fundCalcAIP', group: '公募基金研究', isNew: true },
       { label: '银行理财筛选', path: '/product/wmpFilter', group: '理财产品', isNew: true },
-      { label: '保险筛选', path: '/product/insuranceFilter', group: '其他产品', isNew: true },
+      { label: '保险测算器', path: '/product/insuranceFilter', group: '其他产品', isNew: true },
       { label: '存款产品', path: '/product/deposit', group: '其他产品', isNew: true },
       { label: '黄金产品', path: '/product/gold', group: '其他产品', isNew: true },
+      { label: '存款-ERP联动', path: '/product/depositERPLinkage', group: '其他产品', isNew: true },
     ],
   },
   {
@@ -68,7 +70,7 @@ const menuItems = [
   {
     label: '宏观研判',
     children: [
-      { label: '恐慌贪婪指数', path: '/market/fearGreed' },
+      { label: '恐惧贪婪指数', path: '/market/fearGreed' },
       { label: '风格强度', path: '/market/styleStrength' },
       { label: '股债ERP', path: '/market/erpSpread' },
       { label: '拥挤度分析', path: '/market/marketCrowding', isNew: true },
@@ -156,6 +158,14 @@ const handleOpenFavorites = () => {
   emit('open-favorites')
 }
 
+/** 当前路由是否落在该菜单项（或其子项）上——桌面端高亮依据 */
+const isItemActive = (item: any): boolean => {
+  if (item.path) return route.path === item.path
+  return (item.children || []).some((c: any) => c.path && route.path === c.path)
+}
+
+const isChildActive = (child: any): boolean => !!child.path && route.path === child.path
+
 const getGroupedChildren = (children: any[] | undefined) => {
   if (!children) return {}
   // ...rest of the function
@@ -194,13 +204,18 @@ onUnmounted(() => {
     </div>
     
     <!-- Desktop Menu -->
-    <div class="menu-items hide-mobile">
+    <div class="menu-items desktop-only">
       <div
         v-for="item in menuItems"
         :key="item.label"
         class="menu-item"
-        :class="{ 'has-dropdown': item.children }"
+        :class="{ 'has-dropdown': item.children, 'is-active': isItemActive(item) }"
+        role="button"
+        tabindex="0"
+        :aria-expanded="item.children ? activeMenu === item.label : undefined"
         @click="handleMenuClick(item)"
+        @keydown.enter.prevent="handleMenuClick(item)"
+        @keydown.space.prevent="handleMenuClick(item)"
         @mouseenter="item.children ? handleMouseEnter(item.label) : undefined"
         @mouseleave="item.children ? handleMouseLeave() : undefined"
       >
@@ -219,7 +234,11 @@ onUnmounted(() => {
                   v-for="child in groupChildren"
                   :key="child.path"
                   class="dropdown-item"
+                  :class="{ 'is-active': isChildActive(child) }"
+                  role="button"
+                  tabindex="0"
                   @click="navigateTo(child.path)"
+                  @keydown.enter.prevent="navigateTo(child.path)"
                 >
                   <span>{{ child.label }}</span>
                   <span v-if="child.isNew" class="new-badge">新</span>
@@ -231,7 +250,11 @@ onUnmounted(() => {
                 v-for="child in getGroupedChildren(item.children).ungrouped"
                 :key="child.path"
                 class="dropdown-item"
+                :class="{ 'is-active': isChildActive(child) }"
+                role="button"
+                tabindex="0"
                 @click="navigateTo(child.path)"
+                @keydown.enter.prevent="navigateTo(child.path)"
               >
                 <span>{{ child.label }}</span>
                 <span v-if="child.isNew" class="new-badge">新</span>
@@ -243,7 +266,16 @@ onUnmounted(() => {
     </div>
 
     <!-- Favorites Icon -->
-    <div class="favorites-icon hide-mobile" @click="handleOpenFavorites">
+    <div
+      class="favorites-icon desktop-only"
+      role="button"
+      tabindex="0"
+      aria-label="打开收藏夹"
+      aria-haspopup="dialog"
+      @click="handleOpenFavorites"
+      @keydown.enter.prevent="handleOpenFavorites"
+      @keydown.space.prevent="handleOpenFavorites"
+    >
       <ElBadge
         :value="favoritesCount"
         :hidden="favoritesCount === 0"
@@ -257,7 +289,7 @@ onUnmounted(() => {
 
     <!-- Mobile Hamburger Button -->
     <button 
-      class="hamburger-btn hide-tablet hide-desktop" 
+      class="hamburger-btn mobile-only" 
       @click="toggleMobileMenu"
       :aria-expanded="mobileMenuOpen"
       aria-label="Toggle navigation menu"
@@ -501,6 +533,25 @@ onUnmounted(() => {
   cursor: pointer;
   gap: 5px;
   touch-action: manipulation;
+}
+
+/* Nav visibility.  These were previously driven by the global
+   .hide-mobile/.hide-tablet/.hide-desktop utilities, which were mutually
+   inconsistent: below 480px BOTH the desktop menu and the hamburger were
+   hidden, so phones had no navigation at all (and the .hide-desktop base rule
+   never un-hid anything).  Owning the rule here keeps the pair in lockstep. */
+.mobile-only {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-only {
+    display: flex !important;
+  }
 }
 
 .hamburger-line {

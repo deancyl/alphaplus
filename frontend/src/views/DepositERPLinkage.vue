@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import type { EChartsOption } from 'echarts'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
-import { getERPSpread } from '@/api/analytics'
+import api from '@/api/index'
 
 type RiskFreeType = 'deposit_1y' | 'deposit_3y' | 'deposit_5y'
 
@@ -21,6 +20,7 @@ interface ERPDataItem {
 
 const erpData = ref<ERPDataItem[]>([])
 const loading = ref(false)
+const loadError = ref(false)
 const selectedIndex = ref('000300')
 
 const riskFreeType = ref<RiskFreeType>(
@@ -48,6 +48,8 @@ const currentERP = computed(() => {
   if (erpData.value.length === 0) return null
   return erpData.value[erpData.value.length - 1]
 })
+
+const lastTradeDate = computed(() => currentERP.value?.trade_date ?? '')
 
 const historicalData = computed(() => {
   return erpData.value.slice(-500)
@@ -187,11 +189,23 @@ const spreadCurveOption = computed<EChartsOption>(() => {
 
 const fetchData = async () => {
   loading.value = true
+  loadError.value = false
   try {
-    const response = await getERPSpread(selectedIndex.value, riskFreeType.value)
-    erpData.value = response.sort((a, b) => a.trade_date.localeCompare(b.trade_date))
-  } catch (error) {
-    ElMessage.error('获取ERP数据失败')
+    // 直接调用 API 以读取 _error，用于区分「请求失败」与「无数据」
+    const response = await api.get<ERPDataItem[]>('/analytics/erp', {
+      params: {
+        index_code: selectedIndex.value,
+        risk_free_type: riskFreeType.value,
+      },
+    })
+    if (response._error || response.data === null) {
+      loadError.value = true
+      erpData.value = []
+      return
+    }
+    erpData.value = (Array.isArray(response.data) ? response.data : []).sort((a, b) =>
+      a.trade_date.localeCompare(b.trade_date)
+    )
   } finally {
     loading.value = false
   }
@@ -268,7 +282,14 @@ onMounted(() => {
       </div>
     </div>
 
+    <div class="metrics-asof" v-if="lastTradeDate">
+      数据截至 {{ lastTradeDate }}
+    </div>
+
     <div class="charts-container">
+      <div v-if="loadError" class="charts-empty">ERP数据获取失败，请稍后重试</div>
+      <div v-else-if="!loading && erpData.length === 0" class="charts-empty">暂无ERP数据</div>
+      <template v-else>
       <div class="chart-card full-width">
         <div class="chart-header">
           <h3>存款利率与ERP双轴图</h3>
@@ -290,6 +311,7 @@ onMounted(() => {
           height="300px"
         />
       </div>
+      </template>
     </div>
   </div>
 </template>
@@ -341,6 +363,24 @@ onMounted(() => {
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 20px;
+}
+
+.metrics-asof {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: -12px 0 16px;
+}
+
+.charts-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--bg-card);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .metric-card {

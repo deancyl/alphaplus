@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
-import * as echarts from 'echarts'
-import { getFuturesQuotes } from '@/api/market'
+import { ref, computed, onMounted, watch } from 'vue'
+import api from '@/api/index'
 import { formatNumber } from '@/utils/formatters'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 
@@ -20,6 +18,7 @@ interface FuturesContract {
   spot_price: number
   basis: number
   basis_pct: number
+  update_time?: string
 }
 
 // 期货分类配置
@@ -43,144 +42,37 @@ const selectedMonth = ref(0)
 const contracts = ref<FuturesContract[]>([])
 const selectedContract = ref<FuturesContract | null>(null)
 const loading = ref(false)
-const chartInstance = ref<echarts.ECharts | null>(null)
+const loadError = ref(false)
 
 // 加载数据
 const loadData = async () => {
   loading.value = true
+  loadError.value = false
   try {
-    const data = await getFuturesQuotes(activeCategory.value)
-    contracts.value = data
-    if (contracts.value.length > 0 && !selectedContract.value) {
-      selectedContract.value = contracts.value[0]
-      await nextTick()
-      initChart()
+    // 直接调用 API 以读取 _error，用于区分「请求失败」与「无数据」
+    const response = await api.get<FuturesContract[]>('/market/futures/quotes', {
+      params: activeCategory.value ? { category: activeCategory.value } : {}
+    })
+    if (response._error || response.data === null) {
+      loadError.value = true
+      contracts.value = []
+      selectedContract.value = null
+      return
     }
-  } catch (error) {
-    ElMessage.error('加载期货数据失败')
+    contracts.value = Array.isArray(response.data) ? response.data : []
+    if (contracts.value.length > 0) {
+      selectedContract.value = contracts.value[0]
+    } else {
+      selectedContract.value = null
+    }
   } finally {
     loading.value = false
   }
 }
 
-// 初始化图表
-const initChart = () => {
-  const chartDom = document.getElementById('price-chart')
-  if (!chartDom) return
-  
-  if (chartInstance.value) {
-    chartInstance.value.dispose()
-  }
-  
-  chartInstance.value = echarts.init(chartDom)
-  updateChart()
-}
-
-// 更新图表
-const updateChart = () => {
-  if (!chartInstance.value) return
-  
-  const option: echarts.EChartsOption = {
-    title: {
-      text: selectedContract.value ? `${selectedContract.value.name} 价格走势` : '价格走势',
-      left: 'center',
-      textStyle: {
-        fontSize: 14,
-        color: 'var(--text-primary)',
-      },
-    },
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      borderColor: 'var(--border-line)',
-      textStyle: {
-        color: 'var(--text-regular)',
-      },
-    },
-    legend: {
-      data: ['期货价格', '现货价格'],
-      bottom: 10,
-      textStyle: {
-        color: 'var(--text-regular)',
-      },
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '15%',
-      top: '15%',
-      containLabel: true,
-    },
-    xAxis: {
-      type: 'category',
-      data: [],
-      boundaryGap: false,
-      axisLine: {
-        lineStyle: {
-          color: 'var(--border-line)',
-        },
-      },
-      axisLabel: {
-        color: 'var(--text-muted)',
-        fontSize: 11,
-      },
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: {
-        show: false,
-      },
-      axisLabel: {
-        color: 'var(--text-muted)',
-        fontSize: 11,
-      },
-      splitLine: {
-        lineStyle: {
-          color: 'var(--border-line)',
-          type: 'dashed',
-        },
-      },
-    },
-    series: [
-      {
-        name: '期货价格',
-        type: 'line',
-        data: [],
-        smooth: true,
-        symbol: 'none',
-        lineStyle: {
-          width: 2,
-          color: 'var(--brand-navy-dark)',
-        },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(0, 51, 153, 0.3)' },
-            { offset: 1, color: 'rgba(0, 51, 153, 0.05)' },
-          ]),
-        },
-      },
-      {
-        name: '现货价格',
-        type: 'line',
-        data: [],
-        smooth: true,
-        symbol: 'none',
-        lineStyle: {
-          width: 2,
-          color: 'var(--market-up)',
-          type: 'dashed',
-        },
-      },
-    ],
-  }
-  
-  chartInstance.value.setOption(option)
-}
-
 // 选择合约
 const handleSelectContract = (contract: FuturesContract) => {
   selectedContract.value = contract
-  updateChart()
 }
 
 // 获取涨跌样式
@@ -197,6 +89,11 @@ const formatVolume = (val: number): string => {
   return val.toString()
 }
 
+// 数据更新时间（取自接口返回的 update_time 字段）
+const updateTime = computed(() => {
+  return contracts.value[0]?.update_time || ''
+})
+
 // 监听分类切换
 watch(activeCategory, () => {
   selectedContract.value = null
@@ -208,14 +105,8 @@ watch(selectedMonth, () => {
   loadData()
 })
 
-// 窗口大小变化时重绘图表
-const handleResize = () => {
-  chartInstance.value?.resize()
-}
-
 onMounted(() => {
   loadData()
-  window.addEventListener('resize', handleResize)
 })
 </script>
 
@@ -254,17 +145,17 @@ onMounted(() => {
       <div class="quote-panel">
         <div class="panel-header">
           <h3>期货行情</h3>
-          <span class="update-time">更新时间: {{ new Date().toLocaleTimeString() }}</span>
+          <span v-if="updateTime" class="update-time">更新时间: {{ updateTime }}</span>
         </div>
         
-        <el-table
-          :data="contracts"
-          :loading="loading"
-          stripe
-          highlight-current-row
-          @current-change="handleSelectContract"
-          height="calc(100dvh - 280px)"
-        >
+        <div class="quote-table-wrapper" v-loading="loading">
+          <el-table
+            :data="contracts"
+            stripe
+            highlight-current-row
+            @current-change="handleSelectContract"
+            height="calc(100dvh - 280px)"
+          >
           <el-table-column prop="code" label="代码" width="70" fixed />
           <el-table-column prop="name" label="名称" width="90" />
           <el-table-column prop="price" label="最新价" width="100" align="right">
@@ -297,16 +188,13 @@ onMounted(() => {
             </template>
           </el-table-column>
         </el-table>
+        </div>
+        <div v-if="loadError" class="table-state">期货行情获取失败，请稍后重试</div>
+        <div v-else-if="!loading && contracts.length === 0" class="table-state">暂无期货行情数据</div>
       </div>
       
-      <!-- 右侧图表与基差分析 -->
+      <!-- 右侧基差分析 -->
       <div class="chart-panel">
-        <!-- 价格走势图 -->
-        <div class="chart-container">
-          <div id="price-chart" class="price-chart" />
-        </div>
-        
-        <!-- 基差分析 -->
         <div class="basis-panel">
           <div class="panel-header">
             <h3>基差分析</h3>
@@ -457,24 +345,17 @@ onMounted(() => {
   min-width: 0;
 }
 
-.chart-container {
-  flex: 1;
-  background: var(--bg-card);
-  border-radius: 4px;
-  padding: 16px;
-  min-height: 300px;
-}
-
-.price-chart {
-  width: 100%;
-  height: 100%;
-  min-height: 280px;
-}
-
 .basis-panel {
   background: var(--bg-card);
   border-radius: 4px;
   padding: 16px;
+}
+
+.table-state {
+  padding: 12px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .panel-header {
@@ -602,5 +483,40 @@ onMounted(() => {
 
 .text-flat {
   color: var(--market-flat);
+}
+
+/* Mobile / tablet: the fixed 680px quote panel overflowed every phone and
+   triggered a shrink-to-fit zoom. Stack the panels and contain the table. */
+@media (max-width: 1024px) {
+  .futures-info {
+    height: auto;
+    min-height: 0;
+  }
+
+  .control-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .main-content {
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .quote-panel {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .chart-panel {
+    width: 100%;
+  }
+
+  .quote-panel .el-table,
+  .basis-panel .el-table {
+    max-width: 100%;
+  }
 }
 </style>

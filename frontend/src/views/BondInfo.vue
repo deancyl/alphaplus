@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
-import { getBondYieldCurve } from '@/api/market'
+import api from '@/api/index'
 import { formatNumber } from '@/utils/formatters'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 
@@ -20,8 +19,9 @@ const selectedBondType = ref('国债')
 const searchKeyword = ref('')
 const loading = ref(false)
 const yieldCurveData = ref<Record<string, Array<{ tenor: number; yield_ytm: number }>>>({})
+const yieldCurveError = ref(false)
+const yieldCurveUpdateTime = ref('')
 const selectedBond = ref<BondDetail | null>(null)
-const bondList = ref<BondItem[]>([])
 const chartInstance = ref<echarts.ECharts | null>(null)
 const chartContainer = ref<HTMLElement | null>(null)
 
@@ -35,57 +35,32 @@ interface BondDetail {
   yield_ytm: number
   duration: number
   issue_amount: number
-  maturity_date: string
-  coupon_rate: number
+  maturity_date?: string | null
+  coupon_rate?: number | null
 }
-
-// 债券列表项接口
-interface BondItem {
-  bond_code: string
-  bond_name: string
-  bond_type: string
-  issuer: string
-  credit_rating: string
-  yield_ytm: number
-  duration: number
-  issue_amount: number
-}
-
-// 过滤后的债券列表
-const filteredBondList = computed(() => {
-  let result = bondList.value
-  
-  if (selectedBondType.value !== '信用债') {
-    result = result.filter(bond => bond.bond_type === selectedBondType.value)
-  } else {
-    result = result.filter(bond => bond.bond_type === '信用债')
-  }
-  
-  if (searchKeyword.value) {
-    const keyword = searchKeyword.value.toLowerCase()
-    result = result.filter(bond => 
-      bond.bond_code.toLowerCase().includes(keyword) ||
-      bond.bond_name.toLowerCase().includes(keyword) ||
-      bond.issuer.toLowerCase().includes(keyword)
-    )
-  }
-  
-  return result
-})
 
 // 获取收益率曲线数据
 const fetchYieldCurve = async () => {
   loading.value = true
+  yieldCurveError.value = false
   try {
-    const data = await getBondYieldCurve(selectedBondType.value)
-    yieldCurveData.value = data
-    await nextTick()
-    renderYieldCurveChart()
-  } catch (error) {
-    ElMessage.error('获取收益率曲线失败')
+    // 直接调用 API 以读取 _error，用于区分「请求失败」与「无数据」
+    const response = await api.get<Record<string, Array<{ tenor: number; yield_ytm: number }>>>(
+      '/market/bond/yield-curve',
+      { params: { bond_type: selectedBondType.value } }
+    )
+    if (response._error || response.data === null) {
+      yieldCurveError.value = true
+      yieldCurveData.value = {}
+    } else {
+      yieldCurveData.value = response.data ?? {}
+      yieldCurveUpdateTime.value = response._meta?.asOf ?? ''
+    }
   } finally {
     loading.value = false
   }
+  await nextTick()
+  renderYieldCurveChart()
 }
 
 // 渲染收益率曲线图表
@@ -198,15 +173,6 @@ const renderYieldCurveChart = () => {
   chartInstance.value.setOption(option)
 }
 
-// 选择债券
-const handleSelectBond = (bond: BondItem) => {
-  selectedBond.value = {
-    ...bond,
-    maturity_date: '2029-12-31',
-    coupon_rate: bond.yield_ytm - 0.1,
-  }
-}
-
 // 获取评级样式
 const getRatingClass = (rating: string): string => {
   if (rating === 'AAA') return 'rating-aaa'
@@ -223,12 +189,17 @@ const handleResize = () => {
 // 监听债券类型变化
 watch(selectedBondType, () => {
   fetchYieldCurve()
-  selectedBond.value = null
 })
 
 onMounted(() => {
   fetchYieldCurve()
   window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  chartInstance.value?.dispose()
+  chartInstance.value = null
 })
 </script>
 
@@ -265,9 +236,17 @@ onMounted(() => {
       <div class="yield-curve-panel">
         <div class="panel-header">
           <h3>{{ selectedBondType }}收益率曲线</h3>
-          <span class="update-time">数据更新: 今日</span>
+          <span class="update-time">数据更新: {{ yieldCurveUpdateTime || '—' }}</span>
         </div>
-        <div ref="chartContainer" class="chart-container" />
+        <div class="chart-wrapper" v-loading="loading">
+          <div ref="chartContainer" class="chart-container" />
+          <div v-if="yieldCurveError" class="chart-error">
+            收益率曲线获取失败，请稍后重试
+          </div>
+          <div v-else-if="!loading && !(yieldCurveData[selectedBondType] || []).length" class="chart-error">
+            暂无收益率曲线数据
+          </div>
+        </div>
       </div>
 
       <!-- 右侧：债券详情 -->
@@ -306,15 +285,15 @@ onMounted(() => {
             </div>
             <div class="detail-item">
               <label>票面利率</label>
-              <span class="value">{{ formatNumber(selectedBond.coupon_rate, 2, '%') }}</span>
+              <span class="value">{{ selectedBond.coupon_rate != null ? formatNumber(selectedBond.coupon_rate, 2, '%') : '—' }}</span>
             </div>
             <div class="detail-item">
               <label>发行规模</label>
-              <span class="value">{{ selectedBond.issue_amount }}亿</span>
+              <span class="value">{{ selectedBond.issue_amount != null ? `${selectedBond.issue_amount}亿` : '—' }}</span>
             </div>
             <div class="detail-item">
               <label>到期日</label>
-              <span class="value">{{ selectedBond.maturity_date }}</span>
+              <span class="value">{{ selectedBond.maturity_date || '—' }}</span>
             </div>
           </div>
         </div>
@@ -326,7 +305,7 @@ onMounted(() => {
               <path fill="currentColor" d="M492 400h-80c-4.4 0-8 3.6-8 8v240c0 4.4 3.6 8 8 8h80c4.4 0 8-3.6 8-8V408c0-4.4-3.6-8-8-8zm-40 224a24 24 0 1 1 0-48 24 24 0 0 1 0 48z"/>
             </svg>
           </el-icon>
-          <p>请从下方列表选择债券查看详情</p>
+          <p>债券详情数据源暂未接入</p>
         </div>
       </div>
     </div>
@@ -334,75 +313,12 @@ onMounted(() => {
     <!-- 底部：债券列表 -->
     <div class="bond-list-panel">
       <div class="panel-header">
-        <h3>{{ selectedBondType }}列表 ({{ filteredBondList.length }} 只)</h3>
+        <h3>债券列表</h3>
       </div>
-      
-      <el-table
-        :data="filteredBondList"
-        :loading="loading"
-        stripe
-        height="280"
-        @row-click="handleSelectBond"
-      >
-        <el-table-column
-          prop="bond_code"
-          label="债券代码"
-          width="120"
-          fixed
-        ></el-table-column>
-        <el-table-column
-          prop="bond_name"
-          label="债券名称"
-          min-width="140"
-          fixed
-        ></el-table-column>
-        <el-table-column
-          prop="issuer"
-          label="发行人"
-          min-width="120"
-        ></el-table-column>
-        <el-table-column
-          prop="credit_rating"
-          label="信用评级"
-          width="100"
-        >
-          <template #default="{ row }">
-            <span :class="['rating-badge-small', getRatingClass(row.credit_rating)]">
-              {{ row.credit_rating }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="yield_ytm"
-          label="到期收益率(%)"
-          width="120"
-          sortable
-        >
-          <template #default="{ row }">
-            <span class="text-up">{{ formatNumber(row.yield_ytm) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="duration"
-          label="久期(年)"
-          width="100"
-          sortable
-        >
-          <template #default="{ row }">
-            {{ formatNumber(row.duration) }}
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="issue_amount"
-          label="发行规模(亿)"
-          width="120"
-        >
-          <template #default="{ row }">
-            {{ row.issue_amount }}
-          </template>
-        </el-table-column>
-        </el-table>
+      <div class="empty-detail list-empty">
+        <p>债券列表数据源暂未接入</p>
       </div>
+    </div>
     </div>
   </ErrorBoundary>
 </template>
@@ -461,8 +377,7 @@ onMounted(() => {
 }
 
 .panel-header {
-  display: flex;
-  justify-content: space-between;
+  display: flex;  justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
   padding-bottom: 10px;
@@ -480,9 +395,32 @@ onMounted(() => {
   color: var(--text-muted);
 }
 
+.chart-wrapper {
+  flex: 1;
+  min-height: 200px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
 .chart-container {
   flex: 1;
   min-height: 200px;
+}
+
+.chart-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--bg-card);
+}
+
+.list-empty {
+  padding: 40px 0;
 }
 
 .bond-detail-card {
@@ -614,5 +552,38 @@ onMounted(() => {
 :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
   background-color: var(--brand-navy-dark);
   border-color: var(--brand-navy-dark);
+}
+
+/* Mobile / tablet: the fixed 360px detail panel plus the yield-curve panel
+   never fit a phone, which forced a shrink-to-fit zoom of the whole page.
+   Stack them and let wide content scroll inside its own box. */
+@media (max-width: 1024px) {
+  .bond-info {
+    height: auto;
+    min-height: 0;
+  }
+
+  .top-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .main-content {
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .yield-curve-panel,
+  .detail-panel {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .bond-type-tabs,
+  .bond-list-panel {
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }
 </style>

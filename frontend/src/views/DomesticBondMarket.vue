@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { getBondYieldCurve, getMoneyMarketRates, getRateHistory } from '@/api/market'
@@ -48,10 +48,18 @@ interface BondIssuanceItem {
 const loading = ref(false)
 const activeTab = ref('yield')
 
-// Yield curve data
-const yieldCurveData = ref<YieldCurveData>({})
+// Yield curve data - 国债与国开债分开存储
+const treasuryCurveData = ref<YieldCurveData>({})
+const cdbCurveData = ref<YieldCurveData>({})
 const selectedDate = ref<string>('')
-const availableDates = computed(() => Object.keys(yieldCurveData.value).sort().reverse())
+const yieldCurveError = ref(false)
+const availableDates = computed(() => {
+  const all = new Set([
+    ...Object.keys(treasuryCurveData.value),
+    ...Object.keys(cdbCurveData.value),
+  ])
+  return Array.from(all).sort().reverse()
+})
 
 // Credit spread data
 const creditSpreadData = ref<CreditSpreadItem[]>([])
@@ -91,6 +99,16 @@ const tenorOrder = [0.083, 0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30]
 
 // Rate code labels
 const rateLabels: Record<string, string> = {
+  // Live SHIBOR tenors (quote_sources.fetch_money_market_rates)
+  'O/N': 'SHIBOR 隔夜',
+  '1W': 'SHIBOR 1周',
+  '2W': 'SHIBOR 2周',
+  '1M': 'SHIBOR 1月',
+  '3M': 'SHIBOR 3月',
+  '6M': 'SHIBOR 6月',
+  '9M': 'SHIBOR 9月',
+  '1Y': 'SHIBOR 1年',
+  // Legacy frozen-table codes, kept so an old cached payload still renders.
   'DR007': 'DR007',
   'SHIBOR_ON': 'SHIBOR隔夜',
   'SHIBOR_1W': 'SHIBOR1周',
@@ -98,12 +116,6 @@ const rateLabels: Record<string, string> = {
   'SHIBOR_3M': 'SHIBOR3月',
   'LPR_1Y': 'LPR1年',
   'LPR_5Y': 'LPR5年',
-}
-
-// Format date
-const formatDate = (dateStr: string): string => {
-  if (!dateStr || dateStr.length < 10) return dateStr
-  return dateStr
 }
 
 // Format percentage
@@ -122,38 +134,39 @@ const formatAmount = (val: number): string => {
 
 // ==================== Fetch Data ====================
 const fetchYieldCurve = async () => {
+  yieldCurveError.value = false
   try {
-    // Fetch both 国债 and 国开债
+    // Fetch both 国债 and 国开债 separately so each curve is populated honestly
     const [treasuryData, cdbData] = await Promise.all([
       getBondYieldCurve('国债'),
       getBondYieldCurve('国开'),
     ])
     
-    // Merge data - use latest date
-    const allDates = new Set([
-      ...Object.keys(treasuryData),
-      ...Object.keys(cdbData),
-    ])
-    
-    yieldCurveData.value = {}
-    for (const date of allDates) {
-      yieldCurveData.value[date] = [
-        ...(treasuryData[date] || []),
-        ...(cdbData[date] || []),
-      ]
-    }
+    treasuryCurveData.value = treasuryData ?? {}
+    cdbCurveData.value = cdbData ?? {}
     
     if (availableDates.value.length > 0) {
-      selectedDate.value = availableDates.value[0]
+      // 保留当前选择，若无效则回退到最新日期
+      if (!availableDates.value.includes(selectedDate.value)) {
+        selectedDate.value = availableDates.value[0]
+      }
+    } else {
+      selectedDate.value = ''
     }
   } catch (error) {
+    // 记录错误并在曲线卡片中显示，而非静默吞掉
+    yieldCurveError.value = true
+    treasuryCurveData.value = {}
+    cdbCurveData.value = {}
   }
 }
 
 const fetchCreditSpread = async () => {
   try {
     const response = await api.get<CreditSpreadItem[]>('/market/bond/credit-spread')
-    creditSpreadData.value = response as unknown as CreditSpreadItem[]
+    // Assign the payload, never the `{ data, _meta }` envelope (see
+    // fetchIssuanceData): a non-array reaching el-table throws.
+    creditSpreadData.value = Array.isArray(response.data) ? response.data : []
   } catch (error) {
     creditSpreadData.value = []
   }
@@ -164,19 +177,21 @@ const fetchMoneyRates = async () => {
     const response = await getMoneyMarketRates()
     moneyRates.value = response
     
-    // Fetch sparkline data for each rate
-    for (const rate of moneyRates.value) {
-      try {
-        const historyResponse = await getRateHistory(rate.rate_code, 30)
-        if (historyResponse.values.length > 0) {
-          rate.isSimulated = historyResponse.is_simulated
-          rate.sparklineOption = createSparklineOption(historyResponse.values)
-        }
-      } catch {
-        // Silent fail - sparkline not critical, continue without it
+    // Fetch sparkline data for each rate in parallel (avoid N+1 serial awaits)
+    const histories = await Promise.all(
+      moneyRates.value.map(rate =>
+        getRateHistory(rate.rate_code, 30).catch(() => null)
+      )
+    )
+    moneyRates.value.forEach((rate, i) => {
+      const historyResponse = histories[i]
+      if (historyResponse && historyResponse.values.length > 0) {
+        rate.isSimulated = historyResponse.is_simulated
+        rate.sparklineOption = createSparklineOption(historyResponse.values)
+      } else {
         rate.sparklineOption = undefined
       }
-    }
+    })
   } catch (error) {
     moneyRates.value = []
   }
@@ -215,7 +230,11 @@ const createSparklineOption = (values: number[]): EChartsOption => {
 const fetchIssuanceData = async () => {
   try {
     const response = await api.get<BondIssuanceItem[]>('/market/bond/issuance')
-    issuanceData.value = response as unknown as BondIssuanceItem[]
+    // `.data` is required: assigning the whole `{ data, _meta }` envelope made
+    // el-table receive a non-iterable object, which threw "e is not iterable"
+    // inside updateAllSelected and blanked the page behind the ErrorBoundary.
+    const rows = Array.isArray(response.data) ? response.data : []
+    issuanceData.value = rows
   } catch (error) {
     issuanceData.value = []
   }
@@ -231,20 +250,58 @@ const initYieldChart = () => {
 
   yieldChart.value = echarts.init(yieldChartRef.value)
   
-  // Separate by bond type - use yieldCurveData
+  // 国债与国开债分别取自各自接口，避免用同一份数据伪造两条曲线
   const treasuryCurve: [number, number][] = []
   const cdbCurve: [number, number][] = []
   
-  // Get data from selectedDate
-  const curveData = yieldCurveData.value[selectedDate.value] || []
+  const treasuryData = treasuryCurveData.value[selectedDate.value] || []
+  const cdbData = cdbCurveData.value[selectedDate.value] || []
   
-  // Separate treasury and CDB data by checking bond_type if available
-  // For now, we'll use what we have from the API
-  curveData.forEach((point: YieldCurvePoint) => {
-    // Since API doesn't return bond_type, we need to make separate calls
-    // For simplicity, we'll just use all data for both curves
+  treasuryData.forEach((point: YieldCurvePoint) => {
     treasuryCurve.push([point.tenor, point.yield_ytm])
   })
+  cdbData.forEach((point: YieldCurvePoint) => {
+    cdbCurve.push([point.tenor, point.yield_ytm])
+  })
+  
+  // 仅当对应数据存在时才绘制该序列，避免空序列进入图例
+  const series: any[] = []
+  if (treasuryCurve.length > 0) {
+    series.push({
+      name: '国债',
+      type: 'line',
+      data: treasuryCurve.map(d => d[1]),
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 6,
+      lineStyle: { color: '#003399', width: 2 },
+      itemStyle: { color: '#003399' },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(0, 51, 153, 0.15)' },
+          { offset: 1, color: 'rgba(0, 51, 153, 0.02)' },
+        ]),
+      },
+    })
+  }
+  if (cdbCurve.length > 0) {
+    series.push({
+      name: '国开债',
+      type: 'line',
+      data: cdbCurve.map(d => d[1]),
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 6,
+      lineStyle: { color: '#E63935', width: 2 },
+      itemStyle: { color: '#E63935' },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(230, 57, 53, 0.15)' },
+          { offset: 1, color: 'rgba(230, 57, 53, 0.02)' },
+        ]),
+      },
+    })
+  }
   
   const option: echarts.EChartsOption = {
     tooltip: {
@@ -267,7 +324,7 @@ const initYieldChart = () => {
       },
     },
     legend: {
-      data: ['国债', '国开债'],
+      data: series.map(s => (s as { name: string }).name),
       top: 10,
       textStyle: { color: 'var(--text-regular)' },
     },
@@ -293,40 +350,7 @@ const initYieldChart = () => {
       axisLine: { show: false },
       axisLabel: { color: 'var(--text-regular)', fontSize: 11 },
     },
-    series: [
-      {
-        name: '国债',
-        type: 'line',
-        data: treasuryCurve.map(d => d[1]),
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        lineStyle: { color: '#003399', width: 2 },
-        itemStyle: { color: '#003399' },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(0, 51, 153, 0.15)' },
-            { offset: 1, color: 'rgba(0, 51, 153, 0.02)' },
-          ]),
-        },
-      },
-      {
-        name: '国开债',
-        type: 'line',
-        data: cdbCurve.map(d => d[1]),
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        lineStyle: { color: '#E63935', width: 2 },
-        itemStyle: { color: '#E63935' },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(230, 57, 53, 0.15)' },
-            { offset: 1, color: 'rgba(230, 57, 53, 0.02)' },
-          ]),
-        },
-      },
-    ],
+    series,
   }
 
   yieldChart.value.setOption(option)
@@ -498,6 +522,42 @@ const handleResize = () => {
   issuanceChart.value?.resize()
 }
 
+// el-tabs 切换时，隐藏面板中的图表初始化为空白尺寸；切回时重新初始化/调整尺寸
+const handleTabChange = (name: string | number) => {
+  nextTick(() => {
+    setTimeout(() => {
+      if (name === 'yield') {
+        if (!yieldChart.value && yieldChartRef.value) {
+          initYieldChart()
+        } else {
+          yieldChart.value?.resize()
+        }
+      } else if (name === 'spread') {
+        if (!spreadChart.value && spreadChartRef.value) {
+          initSpreadChart()
+        } else {
+          spreadChart.value?.resize()
+        }
+      } else if (name === 'issuance') {
+        if (!issuanceChart.value && issuanceChartRef.value) {
+          initIssuanceChart()
+        } else {
+          issuanceChart.value?.resize()
+        }
+      }
+    }, 50)
+  })
+}
+
+// 日期选择变化时重新渲染收益率曲线
+watch(selectedDate, () => {
+  nextTick(() => {
+    if (yieldChartRef.value) {
+      initYieldChart()
+    }
+  })
+})
+
 const fetchAllData = async () => {
   loading.value = true
   try {
@@ -554,10 +614,11 @@ onUnmounted(() => {
     </div>
 
     <!-- Tabs -->
-    <el-tabs v-model="activeTab" class="market-tabs">
+    <el-tabs v-model="activeTab" class="market-tabs" @tab-change="handleTabChange">
       <el-tab-pane label="收益率曲线" name="yield">
         <div class="chart-card card">
           <div class="card-title">国债与国开债收益率曲线</div>
+          <div v-if="yieldCurveError" class="chart-error">收益率曲线数据加载失败，请稍后重试</div>
           <div class="chart-container" ref="yieldChartRef"></div>
           <div class="chart-legend">
             <div class="legend-item">
@@ -590,7 +651,7 @@ onUnmounted(() => {
             </el-table-column>
             <el-table-column prop="trade_date" label="日期" width="120">
               <template #default="{ row }">
-                {{ formatDate(row.trade_date) }}
+                {{ row.trade_date }}
               </template>
             </el-table-column>
             <el-table-column prop="rate_value" label="利率(%)" width="120">
@@ -607,7 +668,6 @@ onUnmounted(() => {
                     :is-sparkline="true"
                     height="30px"
                   />
-                  <span v-else-if="row.isSimulated" class="sparkline-placeholder">加载中...</span>
                   <span v-else class="text-muted">暂无数据</span>
                 </div>
                 <span v-if="row.isSimulated && row.sparklineOption" class="simulated-badge-mini">模拟</span>
@@ -710,6 +770,16 @@ onUnmounted(() => {
   height: 400px;
 }
 
+.chart-error {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: rgba(230, 57, 53, 0.08);
+  border: 1px solid rgba(230, 57, 53, 0.3);
+  border-radius: 4px;
+  color: var(--market-up);
+  font-size: 13px;
+}
+
 .chart-height-md {
   height: 320px;
 }
@@ -750,11 +820,6 @@ onUnmounted(() => {
   height: 30px;
   display: flex;
   align-items: center;
-}
-
-.sparkline-placeholder {
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 .simulated-badge-mini {

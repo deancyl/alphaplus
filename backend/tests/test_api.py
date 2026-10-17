@@ -34,6 +34,36 @@ async def test_health_check(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_health_check_probes(client: AsyncClient, monkeypatch):
+    """``?probes=true`` must report per-upstream status, never 500.
+
+    Regression: ``@_reg`` appended the raw coroutine function while
+    ``probe_upstreams()`` unpacked ``(id, label, factory)``, so this endpoint
+    died with ``TypeError: 'function' object is not subscriptable``.
+    """
+    from backend.services import quote_sources
+
+    async def fake_probe(client):  # noqa: ARG001 - signature is the contract
+        return [{"ok": True}]
+
+    monkeypatch.setattr(
+        quote_sources,
+        "HEALTH_TARGETS",
+        [("tencent", "腾讯行情", fake_probe)],
+    )
+
+    response = await client.get("/api/health?probes=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["upstreamsTotal"] == 1
+    assert data["upstreamsUp"] == 1
+    entry = data["upstreams"][0]
+    assert entry["id"] == "tencent"
+    assert entry["status"] == "up"
+    assert entry["records"] == 1
+
+
+@pytest.mark.asyncio
 async def test_fund_filter_empty(client: AsyncClient):
     """Test fund filter with empty database."""
     response = await client.post(

@@ -33,9 +33,25 @@ const selectedIndex = ref('000300')
 // Mobile breakpoint detection
 const { isMobile } = useBreakpoint()
 
+// 安全读取 localStorage，避免隐私模式/禁用存储导致崩溃
+const readStorage = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+const writeStorage = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // 忽略存储失败
+  }
+}
+
 // 无风险利率选择 - 从 localStorage 恢复
 const riskFreeType = ref<RiskFreeType>(
-  (localStorage.getItem('erp-risk-free-type') as RiskFreeType) || 'treasury_10y'
+  (readStorage('erp-risk-free-type') as RiskFreeType) || 'treasury_10y'
 )
 
 // 当前无风险利率值
@@ -50,17 +66,17 @@ const comparisonData = ref<Array<{
 
 // 分析模式 - 从 localStorage 恢复
 const analysisMode = ref<AnalysisMode>(
-  (localStorage.getItem('erp-analysis-mode') as AnalysisMode) || 'sd'
+  (readStorage('erp-analysis-mode') as AnalysisMode) || 'sd'
 )
 
 // 监听模式变化，保存到 localStorage
 watch(analysisMode, (newMode) => {
-  localStorage.setItem('erp-analysis-mode', newMode)
+  writeStorage('erp-analysis-mode', newMode)
 })
 
 // 监听无风险利率类型变化，保存到 localStorage
 watch(riskFreeType, (newType) => {
-  localStorage.setItem('erp-risk-free-type', newType)
+  writeStorage('erp-risk-free-type', newType)
 })
 
 // 指数选项
@@ -82,10 +98,10 @@ const historicalData = computed(() => {
   return erpData.value.slice(-500)
 })
 
-// 计算统计数据
+// 计算统计数据（无数据时返回 null，避免在空数组上计算得到无意义数值）
 const statistics = computed(() => {
   const data = historicalData.value
-  if (data.length === 0) return { mean: 0, std: 0, p25: 0, p50: 0, p75: 0 }
+  if (data.length === 0) return null
   
   const erpValues = data.map(d => d.erp_spread).sort((a, b) => a - b)
   const n = erpValues.length
@@ -142,7 +158,7 @@ const lineChartOption = computed<EChartsOption>(() => {
   const erpValues = historicalData.value.map(d => d.erp_spread)
   const indexPrices = historicalData.value.map(d => d.index_close_price ?? 0)
   
-  const { mean, std, p25, p50, p75 } = statistics.value
+  const { mean, std, p25, p50, p75 } = statistics.value ?? { mean: 0, std: 0, p25: 0, p50: 0, p75: 0 }
   const isSDMode = analysisMode.value === 'sd'
   
   // SD 模式的参考线
@@ -469,6 +485,12 @@ watch(riskFreeType, () => {
   fetchData()
 })
 
+// 监听指数切换，重新获取数据与对比数据
+watch(selectedIndex, () => {
+  fetchData()
+  fetchComparison()
+})
+
 onMounted(() => {
   fetchData()
   fetchComparison()
@@ -521,28 +543,34 @@ onMounted(() => {
     </div>
     
     <!-- 统计数据展示 -->
-    <div class="stats-row" v-if="historicalData.length > 0">
+    <div class="stats-row" v-if="historicalData.length > 0 && statistics">
       <div class="stats-card" v-if="analysisMode === 'sd'">
         <div class="stats-title">标准差统计</div>
         <div class="stats-values">
-          <span>均值 (μ): {{ statistics.mean.toFixed(2) }}%</span>
-          <span>标准差 (σ): {{ statistics.std.toFixed(2) }}%</span>
-          <span>+1σ: {{ (statistics.mean + statistics.std).toFixed(2) }}%</span>
-          <span>-1σ: {{ (statistics.mean - statistics.std).toFixed(2) }}%</span>
+          <span>均值 (μ): {{ statistics?.mean?.toFixed(2) }}%</span>
+          <span>标准差 (σ): {{ statistics?.std?.toFixed(2) }}%</span>
+          <span>+1σ: {{ statistics ? (statistics.mean + statistics.std).toFixed(2) : '—' }}%</span>
+          <span>-1σ: {{ statistics ? (statistics.mean - statistics.std).toFixed(2) : '—' }}%</span>
         </div>
       </div>
       <div class="stats-card" v-else>
         <div class="stats-title">百分位统计</div>
         <div class="stats-values">
-          <span>25th: {{ statistics.p25.toFixed(2) }}%</span>
-          <span>50th (中位数): {{ statistics.p50.toFixed(2) }}%</span>
-          <span>75th: {{ statistics.p75.toFixed(2) }}%</span>
+          <span>25th: {{ statistics?.p25?.toFixed(2) }}%</span>
+          <span>50th (中位数): {{ statistics?.p50?.toFixed(2) }}%</span>
+          <span>75th: {{ statistics?.p75?.toFixed(2) }}%</span>
         </div>
       </div>
     </div>
 
+    <!-- 数据不可用时的诚实空状态 -->
+    <div class="empty-state" v-if="!loading && historicalData.length === 0">
+      <div class="empty-title">暂无ERP数据</div>
+      <div class="empty-desc">当前指数或所选无风险利率基准暂无可用数据。</div>
+    </div>
+
     <!-- 核心指标卡片 -->
-    <div class="metrics-row">
+    <div class="metrics-row" v-else-if="currentERP">
       <div class="metric-card">
         <div class="metric-label">当前ERP</div>
         <div class="metric-value" :style="{ color: currentSignal?.color ?? '#1A1A1A' }">
@@ -585,7 +613,7 @@ onMounted(() => {
     </div>
 
     <!-- 图表区域 -->
-    <div class="charts-container">
+    <div class="charts-container" v-if="currentERP">
       <!-- 历史ERP折线图 -->
       <div class="chart-card full-width">
         <!-- Mobile Dynamic Text Header -->
@@ -614,6 +642,7 @@ onMounted(() => {
         
         <div class="chart-header">
           <h3>ERP历史走势 (近500天) - {{ analysisMode === 'sd' ? '标准差视角' : '百分位视角' }}</h3>
+          <span class="as-of" v-if="currentERP">数据截至 {{ currentERP.trade_date }}</span>
           <div class="legend-items" v-if="analysisMode === 'sd'">
             <span class="legend-item"><i class="dot" style="background: #2E7D32"></i>低于-1σ (低估区)</span>
             <span class="legend-item"><i class="dot" style="background: #1A1A1A"></i>均值 μ</span>
@@ -958,6 +987,33 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.as-of {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 无数据空状态 */
+.empty-state {
+  padding: 40px;
+  text-align: center;
+  background: var(--bg-card);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-bottom: 20px;
+}
+
+.empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.empty-desc {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .legend-items {

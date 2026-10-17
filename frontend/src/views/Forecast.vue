@@ -120,18 +120,18 @@ onMounted(() => fetchForecast(false))
     <el-card class="control-card">
       <div class="controls">
         <div class="control">
-          <label>标的</label>
-          <el-select v-model="selectedIndex" style="width: 160px" @change="fetchForecast">
+          <label for="fc-index">标的</label>
+          <el-select id="fc-index" v-model="selectedIndex" style="width: 160px" @change="() => fetchForecast()">
             <el-option v-for="o in INDEX_OPTIONS" :key="o.code" :label="o.name" :value="o.code" />
           </el-select>
         </div>
         <div class="control">
-          <label>预测天数</label>
-          <el-input-number v-model="horizon" :min="1" :max="120" @change="fetchForecast" />
+          <label for="fc-horizon">预测天数</label>
+          <el-input-number id="fc-horizon" v-model="horizon" :min="1" :max="120" @change="() => fetchForecast()" />
         </div>
         <div class="control">
-          <label>估计回看</label>
-          <el-input-number v-model="lookback" :min="60" :max="2500" :step="100" @change="fetchForecast" />
+          <label for="fc-lookback">估计回看</label>
+          <el-input-number id="fc-lookback" v-model="lookback" :min="60" :max="2500" :step="100" @change="() => fetchForecast()" />
         </div>
         <el-button type="primary" :loading="loading" @click="fetchForecast(false)">重新计算</el-button>
         <el-button :loading="llmLoading" @click="runWithLlm">AI 解读</el-button>

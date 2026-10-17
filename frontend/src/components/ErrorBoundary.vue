@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onErrorCaptured, type ComponentPublicInstance } from 'vue'
+import { ref, computed, onErrorCaptured, type ComponentPublicInstance } from 'vue'
 import { Warning } from '@element-plus/icons-vue'
 import { ElButton } from 'element-plus'
+import { logger } from '@/utils/logger'
 
 /**
  * ErrorBoundary Component
@@ -46,16 +47,33 @@ const hasError = ref(false)
 const capturedError = ref<Error | null>(null)
 
 /**
+ * One-line technical summary of the captured error, shown inside the fallback
+ * so the failure stays diagnosable even when nothing reaches the console
+ * (production builds, or a user who only sees a blank panel).
+ */
+const errorSummary = computed(() => {
+  const err = capturedError.value
+  if (!err) return ''
+  const name = err.name || 'Error'
+  const message = String(err.message || err).slice(0, 300)
+  return `${name}: ${message}`
+})
+
+/**
  * Vue 3 error capture lifecycle hook
  * Returns false to prevent the error from propagating to parent components
  */
 onErrorCaptured((error: Error, instance: ComponentPublicInstance | null, info: string) => {
   hasError.value = true
   capturedError.value = error
-  
+
+  // Surface the captured error: silently swallowing it made a blank panel
+  // impossible to diagnose from the browser console.
+  logger.info('captured error', { error, info, instance })
+
   // Emit error event for logging or analytics
   emit('error', error, instance, info)
-  
+
   // Prevent error from propagating (stop cascading failures)
   return false
 })
@@ -90,6 +108,12 @@ const handleRetry = () => {
       <p class="error-fallback__description">
         请检查数据或刷新页面重试
       </p>
+
+      <!-- The captured error itself: never swallow it silently. -->
+      <details v-if="errorSummary" class="error-fallback__details">
+        <summary class="error-fallback__summary">技术详情</summary>
+        <p class="error-fallback__message">{{ errorSummary }}</p>
+      </details>
       
       <!-- Retry button with WCAG touch target compliance -->
       <el-button
@@ -148,6 +172,33 @@ const handleRetry = () => {
   min-height: var(--touch-target-min);
   min-width: var(--touch-target-min);
   touch-action: manipulation;
+}
+
+.error-fallback__details {
+  margin-top: var(--spacing-sm);
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.error-fallback__summary {
+  cursor: pointer;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.error-fallback__message {
+  margin: var(--spacing-xs, 4px) 0 0;
+  padding: var(--spacing-sm);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: var(--font-mono, monospace);
+  background-color: var(--bg-secondary, #f5f6f7);
+  border-radius: 4px;
+  color: var(--text-secondary);
 }
 
 /* Mobile adjustments */

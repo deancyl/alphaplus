@@ -38,22 +38,28 @@ export interface WMPFilterParams {
 }
 
 /**
- * WMP filter response
+ * WMP filter response.
+ *
+ * `unavailable` is set when the backend reports that no live WMP source is
+ * wired (HTTP 503), so the view can say so explicitly instead of rendering an
+ * empty result set that reads as "no products matched".
  */
 export interface WMPFilterResponse {
   total: number                 // 总数量
   page: number                  // 当前页码
   page_size: number             // 每页数量
   products: WMPItem[]           // 产品列表
+  unavailable?: boolean
+  message?: string
 }
 
 /**
  * WMP statistics response
  */
 export interface WMPStatistics {
-  total_products: number        // 产品总数
-  avg_yield_rate: number        // 平均收益率
-  avg_duration: number          // 平均期限
+  total_products: number          // 产品总数
+  avg_yield_rate: number | null   // 平均收益率 (%) — null when unavailable
+  avg_duration: number | null     // 平均期限 (天) — null when unavailable
   risk_level_distribution: {    // 风险等级分布
     PR1: number
     PR2: number
@@ -66,16 +72,40 @@ export interface WMPStatistics {
     product_count: number
     avg_yield: number
   }>
+  // Raw backend aliases. The live /wmp/statistics returns the aggregate under
+  // `statistics` with total_count / avg_yield / risk_distribution / issuer_count,
+  // while this view reads total_products / avg_yield_rate / avg_duration.
+  // The mismatch previously made `avg_yield_rate.toFixed()` throw inside a
+  // computed and the ErrorBoundary blanked the whole page.
+  total_count?: number
+  avg_yield?: number
+  issuer_count?: number
+  risk_distribution?: Record<string, number>
 }
 
 // ==================== API Functions ====================
 
 /**
- * Filter WMP products with criteria
+ * Filter WMP products with criteria.
+ *
+ * A 503 from the backend means "no live WMP source is wired" — surfaced as an
+ * `unavailable` result so the view can state that plainly, rather than showing
+ * an empty table as if the filters had simply matched nothing.
  */
 export async function filterWMP(params: WMPFilterParams): Promise<WMPFilterResponse> {
-  const response = await api.post('/wmp/filter', params)
-  return response.data!
+  const response = await api.post<WMPFilterResponse>('/wmp/filter', params)
+  if (response._error || response._meta.source === 'error') {
+    const unavailable = response._error?.status === 503
+    return {
+      total: 0,
+      page: params.page ?? 1,
+      page_size: params.page_size ?? 50,
+      products: [],
+      unavailable,
+      message: unavailable ? '理财产品实时数据源暂未接入' : '数据加载失败',
+    }
+  }
+  return response.data ?? { total: 0, page: 1, page_size: 50, products: [] }
 }
 
 /**
@@ -85,18 +115,46 @@ export async function getWMPList(
   page: number = 1,
   pageSize: number = 50
 ): Promise<WMPFilterResponse> {
-  const response = await api.get('/wmp/list', {
+  const response = await api.get<WMPFilterResponse>('/wmp/list', {
     params: { page, page_size: pageSize }
   })
-  return response.data!
+  if (response._error || response._meta.source === 'error') {
+    return {
+      total: 0,
+      page,
+      page_size: pageSize,
+      products: [],
+      unavailable: response._error?.status === 503,
+      message: '数据加载失败',
+    }
+  }
+  return response.data ?? { total: 0, page, page_size: pageSize, products: [] }
 }
 
 /**
- * Get WMP statistics
+ * Get WMP statistics.
+ *
+ * Normalises the live backend shape (nested under `statistics`, using
+ * total_count/avg_yield/…) into the flat contract the view consumes, so a
+ * backend field rename can never crash the page again.
  */
 export async function getWMPStatistics(): Promise<WMPStatistics> {
   const response = await api.get('/wmp/statistics')
-  return response.data!
+  const raw = (response.data?.statistics ?? response.data ?? {}) as Partial<WMPStatistics>
+  const total = raw.total_products ?? raw.total_count ?? 0
+  const avgYield = raw.avg_yield_rate ?? raw.avg_yield ?? null
+  return {
+    total_products: total,
+    avg_yield_rate: avgYield,
+    // 平均期限 is not published by the live aggregate: stay null (renders "-")
+    // rather than inventing a number.
+    avg_duration: raw.avg_duration ?? null,
+    risk_level_distribution: raw.risk_level_distribution ?? (raw.risk_distribution as WMPStatistics['risk_level_distribution']) ?? { PR1: 0, PR2: 0, PR3: 0, PR4: 0, PR5: 0 },
+    top_issuers: raw.top_issuers ?? [],
+    total_count: raw.total_count,
+    avg_yield: raw.avg_yield,
+    issuer_count: raw.issuer_count,
+  }
 }
 
 /**

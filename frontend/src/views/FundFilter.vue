@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { filterFunds, getFundNavTrend, type FundFilterParams, type FundItem } from '@/api/fund'
 import { useFilterTemplates } from '@/composables/useFilterTemplates'
 import SplitPanel from '@/components/SplitPanel.vue'
 import EChartsWrapper from '@/components/EChartsWrapper.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import JargonTooltip from '@/components/JargonTooltip.vue'
 import type { EChartsOption } from 'echarts'
 import jargonData from '@/data/jargon.json'
@@ -13,7 +14,6 @@ import jargonData from '@/data/jargon.json'
 const {
   templates,
   defaultTemplateKey,
-  loading: templatesLoading,
   offlineMode,
   loadTemplates,
   saveTemplate,
@@ -21,11 +21,6 @@ const {
   setDefault,
   loadTemplateParams,
 } = useFilterTemplates()
-
-// Use templatesLoading to avoid unused variable warning
-if (templatesLoading.value) {
-  // Template loading state is managed by composable
-}
 
 const selectedTemplateKey = ref<string>('')
 
@@ -65,11 +60,26 @@ const tableData = ref<FundItem[]>([])
 const total = ref(0)
 const loading = ref(false)
 const filterTimeMs = ref<number | null>(null)
-const splitPanelRef = ref<InstanceType<typeof SplitPanel> | null>(null)
 
-// Sparkline cache and loading states
-const sparklineCache = ref<Map<string, { option: EChartsOption; isSimulated: boolean }>>(new Map())
+// Sparkline 缓存与加载状态（Map 上限 200，超出后淘汰最旧项，避免无界增长）
+// 缓存用 shallowRef：ECharts option 内含 zrender 类实例，深层 reactive/UnwrapRef
+// 会破坏其类型结构（vue-tsc TS2322）；渲染刷新由 sparklineLoading（ref<Set>）的
+// 变更触发——每次写缓存后紧接着都会 delete 加载标记。
+const SPARKLINE_CACHE_MAX = 200
+const sparklineCache = shallowRef<Map<string, EChartsOption | null>>(new Map())
 const sparklineLoading = ref<Set<string>>(new Set())
+
+const setSparklineCache = (key: string, option: EChartsOption | null) => {
+  const cache = sparklineCache.value
+  if (cache.has(key)) {
+    cache.delete(key)
+  } else if (cache.size >= SPARKLINE_CACHE_MAX) {
+    // 淘汰最旧的一项
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
+  cache.set(key, option)
+}
 
 // Debounce timer for filter
 let filterDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -93,9 +103,11 @@ const handleFilter = async () => {
     if (response && response.funds) {
       tableData.value = response.funds
       total.value = response.total
+      // 后台分块加载当前页缺失的 sparkline（并发上限 8），不阻塞表格渲染
+      void fetchMissingSparklines(response.funds)
     }
   } catch {
-    // API interceptor already handled notification
+    // API 层已处理提示
   } finally {
     loading.value = false
     filterTimeMs.value = Math.round(performance.now() - startTime)
@@ -133,7 +145,11 @@ const handleSaveTemplate = async () => {
       const key = await saveTemplate(name, filterParams.value)
       selectedTemplateKey.value = key
     }
-  } catch {
+  } catch (error) {
+    // 用户取消不提示；保存失败提示重试
+    if (error !== 'cancel') {
+      ElMessage.error('保存失败，请重试')
+    }
   }
 }
 
@@ -172,7 +188,11 @@ const handleDeleteTemplate = async (key: string) => {
     if (selectedTemplateKey.value === key) {
       selectedTemplateKey.value = ''
     }
-  } catch {
+  } catch (error) {
+    // 用户取消不提示；删除失败提示重试
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败，请重试')
+    }
   }
 }
 
@@ -296,18 +316,9 @@ const handleExportCSV = () => {
 // Generate sparkline option for fund return trend
 const getSparklineOption = (fund: FundItem): EChartsOption | null => {
   // Check cache first
-  const cached = sparklineCache.value.get(fund.fund_code)
-  if (cached) {
-    return cached.option as EChartsOption
+  if (sparklineCache.value.has(fund.fund_code)) {
+    return sparklineCache.value.get(fund.fund_code) ?? null
   }
-
-  // If loading, return null (will show skeleton)
-  if (sparklineLoading.value.has(fund.fund_code)) {
-    return null
-  }
-
-  // Fetch data in background
-  fetchSparklineData(fund.fund_code)
 
   // Return null to show loading state
   return null
@@ -324,7 +335,7 @@ const fetchSparklineData = async (fundCode: string) => {
   try {
     const response = await getFundNavTrend(fundCode, 30)
     
-    if (response.nav_values?.length > 0) {
+    if (response && !response.is_simulated && response.nav_values?.length > 0) {
       const firstValue = response.nav_values[0]
       const lastValue = response.nav_values[response.nav_values.length - 1]
       const isUp = lastValue >= firstValue
@@ -352,55 +363,35 @@ const fetchSparklineData = async (fundCode: string) => {
         }]
       } as EChartsOption
       
-      sparklineCache.value.set(fundCode, { option, isSimulated: response.is_simulated })
+      setSparklineCache(fundCode, option)
     } else {
-      // Fallback to simulated data
-      const fallbackOption = createFallbackSparkline(fundCode)
-      sparklineCache.value.set(fundCode, { option: fallbackOption, isSimulated: true })
+      // 数据为空或为模拟数据：不生成随机走势，标记为无数据
+      setSparklineCache(fundCode, null)
     }
   } catch {
-    // Graceful degradation - use fallback sparkline
-    const fallbackOption = createFallbackSparkline(fundCode)
-    sparklineCache.value.set(fundCode, { option: fallbackOption, isSimulated: true })
+    // 请求异常：同样不伪造数据
+    setSparklineCache(fundCode, null)
   } finally {
     sparklineLoading.value.delete(fundCode)
   }
 }
 
-// Create fallback sparkline when API fails
-const createFallbackSparkline = (_fundCode: string): EChartsOption => {
-  const data: number[] = []
-  for (let i = 0; i < 30; i++) {
-    data.push(1 + (Math.random() - 0.5) * 0.1)
-  }
-
-  return {
-    xAxis: { type: 'category' as const, show: false },
-    yAxis: { type: 'value' as const, show: false },
-    grid: { left: 0, right: 0, top: 0, bottom: 0 },
-    series: [{
-      type: 'line' as const,
-      data,
-      lineStyle: { color: '#999', width: 1 },
-      areaStyle: {
-        color: {
-          type: 'linear' as const,
-          x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(150, 150, 150, 0.2)' },
-            { offset: 1, color: 'rgba(255, 255, 255, 0)' }
-          ]
-        }
-      },
-      symbol: 'none',
-    }]
-  } as EChartsOption
+// Check if sparkline is currently loading
+const isSparklineLoading = (fundCode: string): boolean => {
+  return sparklineLoading.value.has(fundCode)
 }
 
-// Check if sparkline is simulated
-const isSparklineSimulated = (fundCode: string): boolean => {
-  const cached = sparklineCache.value.get(fundCode)
-  return cached?.isSimulated ?? false
+// 获取表格当前页缺失的 sparkline，按并发上限分块请求
+const fetchMissingSparklines = async (funds: FundItem[]) => {
+  const missing = funds
+    .map(f => f.fund_code)
+    .filter(code => !sparklineCache.value.has(code) && !sparklineLoading.value.has(code))
+
+  const CHUNK_SIZE = 8
+  for (let i = 0; i < missing.length; i += CHUNK_SIZE) {
+    const chunk = missing.slice(i, i + CHUNK_SIZE)
+    await Promise.all(chunk.map(code => fetchSparklineData(code)))
+  }
 }
 
 // Handle input focus with scroll for keyboard occlusion
@@ -446,12 +437,21 @@ onMounted(async () => {
   
   handleFilter()
 })
+
+onUnmounted(() => {
+  // 清理防抖定时器与 sparkline 缓存，避免泄漏
+  if (filterDebounceTimer) {
+    clearTimeout(filterDebounceTimer)
+    filterDebounceTimer = null
+  }
+  sparklineCache.value.clear()
+  sparklineLoading.value.clear()
+})
 </script>
 
 <template>
   <div class="fund-filter">
     <SplitPanel
-      ref="splitPanelRef"
       :initial-left-size="320"
       :min-left-size="260"
       :max-left-size="480"
@@ -715,8 +715,8 @@ onMounted(async () => {
                     :is-sparkline="true"
                     height="40px"
                   />
-                  <div v-else class="sparkline-skeleton"></div>
-                  <span v-if="isSparklineSimulated(row.fund_code)" class="simulated-badge-mini">模拟</span>
+                  <div v-else-if="isSparklineLoading(row.fund_code)" class="sparkline-skeleton"></div>
+                  <span v-else class="sparkline-empty">—</span>
                 </div>
               </template>
             </el-table-column>
@@ -939,20 +939,17 @@ onMounted(async () => {
   border-radius: 2px;
 }
 
+.sparkline-empty {
+  display: inline-block;
+  width: 80px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 @keyframes skeleton-loading {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
-}
-
-.simulated-badge-mini {
-  position: absolute;
-  top: 0;
-  right: 0;
-  font-size: 9px;
-  color: #FF8C00;
-  background: rgba(255, 140, 0, 0.1);
-  padding: 1px 3px;
-  border-radius: 2px;
 }
 
 .filter-actions {

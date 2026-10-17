@@ -10,7 +10,6 @@ import { useBreakpoint } from '@/composables/useBreakpoint'
 import {
   searchFunds,
   createPortfolio,
-  getPortfolios,
   deletePortfolio,
   runBacktest,
   BENCHMARK_OPTIONS,
@@ -20,6 +19,7 @@ import {
   type BacktestConfig,
   type BacktestResult,
 } from '@/api/portfolio'
+import api from '@/api/index'
 import { saveBacktest, getAllBacktests, deleteBacktest, type BacktestHistoryRecord } from '@/services/idb'
 
 // ==================== State ====================
@@ -33,11 +33,10 @@ const activeChartTab = ref<'performance' | 'brinson'>('performance')
 // Portfolio Builder
 const portfolioName = ref('')
 const fundRows = ref<PortfolioFundItem[]>([])
-const fundSearchResults = ref<FundSearchResult[]>([])
-const fundSearchLoading = ref<string | null>(null) // fund_code being searched
 const savingPortfolio = ref(false)
 const portfolios = ref<PortfolioItem[]>([])
 const loadingPortfolios = ref(false)
+const portfoliosError = ref(false)
 
 // Backtest Configuration
 const startDate = ref('')
@@ -57,6 +56,7 @@ const activePortfolioId = ref<string | null>(null)
 // Backtest history (IndexedDB)
 const backtestHistory = ref<BacktestHistoryRecord[]>([])
 const loadingHistory = ref(false)
+const historyError = ref(false)
 
 // ==================== Computed ====================
 
@@ -172,7 +172,7 @@ const brinsonChartOption = computed<EChartsOption | null>(() => {
   
   const { brinson_attribution } = backtestResult.value
   
-  // Waterfall chart data: [value, positive part, negative part]
+  // Waterfall chart data - 每个条目仅使用自身 value 绘制
   const data = [
     { name: '配置效应', value: brinson_attribution.allocation_effect },
     { name: '选择效应', value: brinson_attribution.selection_effect },
@@ -180,20 +180,13 @@ const brinsonChartOption = computed<EChartsOption | null>(() => {
     { name: '总超额收益', value: brinson_attribution.total_excess_return }
   ]
   
-  // Calculate cumulative for waterfall effect
-  let cumulative = 0
-  const waterfallData = data.map((item) => {
-    const end = cumulative + item.value
-    cumulative = end
-    
-    return {
-      name: item.name,
-      value: item.value,
-      itemStyle: {
-        color: item.value >= 0 ? 'var(--market-up)' : 'var(--market-down)'
-      }
+  const waterfallData = data.map((item) => ({
+    name: item.name,
+    value: item.value,
+    itemStyle: {
+      color: item.value >= 0 ? 'var(--market-up)' : 'var(--market-down)'
     }
-  })
+  }))
   
   return {
     tooltip: {
@@ -351,26 +344,19 @@ const removeFundRow = (index: number) => {
 }
 
 /**
- * Search funds for autocomplete
+ * Search funds for autocomplete (el-autocomplete fetch-suggestions)
  */
-const handleFundSearch = async (query: string, index: number) => {
+const handleFundSearch = async (query: string, cb: (results: FundSearchResult[]) => void) => {
   if (!query || query.length < 2) {
-    fundSearchResults.value = []
+    cb([])
     return
   }
-  
-  const row = fundRows.value[index]
-  if (!row) return
-  
-  fundSearchLoading.value = row.fund_code
-  
+
   try {
     const results = await searchFunds(query)
-    fundSearchResults.value = results
-  } catch (error) {
-    ElMessage.error('基金搜索失败，请重试')
-  } finally {
-    fundSearchLoading.value = null
+    cb(results)
+  } catch {
+    cb([])
   }
 }
 
@@ -383,7 +369,6 @@ const selectFund = (fund: FundSearchResult, index: number) => {
     fund_name: fund.fund_name,
     weight: fundRows.value[index].weight || 0
   }
-  fundSearchResults.value = []
 }
 
 /**
@@ -435,16 +420,20 @@ const savePortfolio = async () => {
  */
 const loadPortfolios = async () => {
   loadingPortfolios.value = true
-  
-  try {
-    portfolios.value = await getPortfolios()
-  } catch (error) {
-    ElMessage.error('加载组合列表失败')
-    // Use empty array on error
+  portfoliosError.value = false
+
+  // 直接调用 API 以读取 _error，区分「请求失败」与「暂无组合」
+  const response = await api.get<PortfolioItem[] | { portfolios: PortfolioItem[] }>('/portfolio')
+  if (response._error || response.data === null) {
+    portfoliosError.value = true
     portfolios.value = []
-  } finally {
-    loadingPortfolios.value = false
+  } else {
+    const payload = response.data
+    portfolios.value = Array.isArray(payload)
+      ? payload
+      : (Array.isArray(payload.portfolios) ? payload.portfolios : [])
   }
+  loadingPortfolios.value = false
 }
 
 /**
@@ -564,8 +553,12 @@ const getValueClass = (value: number | null | undefined): string => {
  */
 const loadBacktestHistory = async () => {
   loadingHistory.value = true
+  historyError.value = false
   try {
     backtestHistory.value = await getAllBacktests()
+  } catch (error) {
+    historyError.value = true
+    backtestHistory.value = []
   } finally {
     loadingHistory.value = false
   }
@@ -690,7 +683,7 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
                 <!-- Fund Code Autocomplete -->
                 <el-autocomplete
                   v-model="row.fund_code"
-                  :fetch-suggestions="(q: string, _cb: any) => handleFundSearch(q, index)"
+                  :fetch-suggestions="handleFundSearch"
                   placeholder="搜索基金代码/名称"
                   clearable
                   class="fund-autocomplete"
@@ -722,6 +715,8 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
                   size="small"
                   @click="removeFundRow(index)"
                   :icon="Delete"
+                  aria-label="删除基金行"
+                  title="删除基金行"
                   circle
                 />
               </div>
@@ -750,6 +745,10 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
               <div v-if="loadingPortfolios" class="loading-placeholder">
                 加载中...
               </div>
+              <div v-else-if="portfoliosError" class="empty-hint">
+                加载失败，
+                <el-button size="small" text type="primary" @click="loadPortfolios">点击重试</el-button>
+              </div>
               <div v-else-if="portfolios.length === 0" class="empty-hint">
                 暂无保存的组合
               </div>
@@ -759,7 +758,11 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
                   :key="portfolio.id"
                   class="portfolio-item"
                   :class="{ 'portfolio-item--active': activePortfolioId === portfolio.id }"
+                  role="button"
+                  tabindex="0"
                   @click="loadPortfolio(portfolio)"
+                  @keydown.enter="loadPortfolio(portfolio)"
+                  @keydown.space.prevent="loadPortfolio(portfolio)"
                 >
                   <div class="portfolio-info">
                     <span class="portfolio-name">{{ portfolio.name }}</span>
@@ -768,6 +771,8 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
                   <el-button
                     type="danger"
                     size="small"
+                    aria-label="删除组合"
+                    title="删除组合"
                     @click.stop="handleDeletePortfolio(portfolio)"
                     :icon="Delete"
                     circle
@@ -884,6 +889,9 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
               <div v-if="loadingHistory" class="loading-placeholder">
                 加载中...
               </div>
+              <div v-else-if="historyError" class="empty-hint">
+                历史记录加载失败
+              </div>
               <div v-else-if="backtestHistory.length === 0" class="empty-hint">
                 暂无历史回测记录
               </div>
@@ -892,7 +900,11 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
                   v-for="record in backtestHistory"
                   :key="record.id"
                   class="history-item"
+                  role="button"
+                  tabindex="0"
                   @click="loadHistoryResult(record)"
+                  @keydown.enter="loadHistoryResult(record)"
+                  @keydown.space.prevent="loadHistoryResult(record)"
                 >
                   <div class="history-info">
                     <div class="history-name">{{ record.portfolio_name }}</div>
@@ -909,6 +921,8 @@ watch([startDate, endDate, selectedBenchmark, linkingMethod, periodGranularity, 
                   <el-button
                     type="danger"
                     size="small"
+                    aria-label="删除历史回测"
+                    title="删除历史回测"
                     @click.stop="handleDeleteHistory(record)"
                     :icon="Delete"
                     circle
